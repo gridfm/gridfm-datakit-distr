@@ -1,0 +1,46 @@
+name: Conformance
+
+# Network data are fetched with checksum verification and cached by the catalog fingerprint
+# (catalog.yaml and the manifests): a catalog change refreshes the cache.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GRIDFM_DISTR_CACHE: ${{ github.workspace }}/.network-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: RAR5 extractor for the EDP archives
+        run: sudo apt-get update && sudo apt-get install -y 7zip
+      - uses: actions/cache@v4
+        with:
+          path: .network-cache
+          key: networks-${{ hashFiles('gridfm_datakit_distr/networks/catalog.yaml', 'gridfm_datakit_distr/networks/manifests/*.sha256') }}
+      - name: Fetch networks (verified; a no-op when cached)
+        run: uv run gridfm_datakit_distr fetch epri_ieee csiro_enwl edp
+      - name: Conformance tests
+        run: uv run pytest -m "network_data and not slow and not julia and not perf"
+      - name: Conformance suite against the golden files (C1-C7) on the reference set
+        run: >-
+          uv run gridfm_datakit_distr validate $(cat integrationtests/golden/networks.txt)
+          --golden integrationtests/golden --out validation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation
+          path: validation/

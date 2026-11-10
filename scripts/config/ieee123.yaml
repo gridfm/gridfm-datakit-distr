@@ -1,0 +1,22 @@
+# A power-flow dataset on the IEEE 123-bus feeder (regulators, capacitors, single-phase laterals):
+# the tutorial's second example (README.md). Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: ieee123_pf
+networks:
+  include: [ieee123]
+  voltage_limits:
+    preset: ansi_a           # 0.95 to 1.05 pu
+variants:
+  n_variants: 4
+  admittance:
+    line_length_scale: {distribution: uniform, low: 0.9, high: 1.1}
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.4}
+scenarios:
+  n_scenarios_per_variant: 250
+controls:
+  mode: static_settle
+  tap_jitter_steps: 1
+settings:
+  seed: 123
+  chunk_size: 250

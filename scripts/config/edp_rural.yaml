@@ -1,0 +1,17 @@
+# Power-flow dataset on the EDP rural MV/LV network with the loads from EDP's smart-meter data
+# (profile provider edp_smart_meter). Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: edp_rural_pf
+networks:
+  include: [edp/rural]
+  voltage_limits:
+    vmin_pu: 0.90          # EN 50160: ±10 % of the nominal voltage
+    vmax_pu: 1.10
+variants:
+  n_variants: 4
+scenarios:
+  n_scenarios_per_variant: 500
+  profiles:
+    provider: edp_smart_meter
+    same_timestamp: true
+settings:
+  seed: 7

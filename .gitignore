@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.venv*/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Julia environment created by juliapkg/juliacall
+julia_env/
+pyjuliapkg/
+
+# Data: never commit networks, profiles or generated datasets
+/data/
+/cache/
+/validation/
+*.parquet
+*.zip
+*.7z
+*.tar.gz
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Documentation site build
+site/
+
+# Local, untracked instructions for Claude Code
+CLAUDE.md

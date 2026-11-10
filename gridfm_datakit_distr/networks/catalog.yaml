@@ -1,0 +1,128 @@
+# Network catalog.
+#
+# A *source* is a downloadable unit. Every file it contains is listed with its SHA-256 in
+# manifests/<source>.sha256; `gridfm_datakit_distr fetch` downloads a source into the cache
+# and verifies every file. A *network* is a master file inside a source. This file holds only
+# URLs, checksums and metadata: no third-party data.
+#
+# URLs, layouts and licences verified on 2026-11-06.
+
+sources:
+  epri_ieee:
+    kind: github
+    title: IEEE PES distribution test feeders and IEEE European LV test feeder (OpenDSS models)
+    homepage: https://github.com/dss-extensions/electricdss-tst
+    repo: dss-extensions/electricdss-tst  # DSS-Extensions mirror of the EPRI OpenDSS distribution
+    revision: 3b208397160213cae4a9e2d0a7d1aa3528ce26e1  # 2024-06-24, latest commit
+    subdir: Version8/Distrib/IEEETestCases
+    include: [IEEELineCodes.DSS, 13Bus/, 34Bus/, 37Bus/, 123Bus/, LVTestCase/, 8500-Node/]
+    license: >-
+      Feeder data: IEEE PES test feeders, no formal licence. OpenDSS scripts: BSD-3-Clause
+      (Copyright EPRI and DSS-Extensions contributors; License.txt of the repository).
+    citation: >-
+      IEEE PES Distribution Test Feeders, https://cmte.ieee.org/pes-testfeeders/resources;
+      OpenDSS models from the EPRI OpenDSS distribution.
+
+  csiro_enwl:
+    kind: csiro_dap
+    title: Four-wire low voltage power network dataset (ENWL feeders)
+    homepage: https://data.csiro.au/collection/csiro:62996
+    doi: 10.25919/jaae-vc35
+    collection: 62996
+    version: 1
+    exclude: ["*.DS_Store"]
+    license: >-
+      CC-BY-4.0 (collection licence) AND CC-BY-NC-3.0 for the cable impedance data adapted
+      from Urquhart & Thomson (2019), as stated in README.md and in every Master.dss.
+    citation: >-
+      Heidarihaei, R.; Geth, F.; Claeys, S. (2024): Four-wire low voltage power network
+      dataset. v1. CSIRO. Data Collection. https://doi.org/10.25919/jaae-vc35
+    notes: >-
+      No loadshapes are included. README.md says loads default to 1 kW, but the four-wire files
+      hold 7539 loads of 0.114-9.74 kW (median 0.324), PF 0.95, 7530 single-phase
+      phase-to-neutral (checked 2026-11-06). Master files set no VoltageBases. Original ENWL
+      data: Low Voltage Network Solutions project.
+
+  edp:
+    kind: archives
+    title: Non-synthetic European LV rural, LV urban and MV/LV industrial distribution networks
+    homepage: https://data.mendeley.com/datasets/gspyzvvrhm/2
+    doi: 10.17632/gspyzvvrhm.2
+    archives:  # SHA-256 published by Mendeley Data, copied to manifests/edp.sha256
+      Industrial.rar: https://data.mendeley.com/public-files/datasets/gspyzvvrhm/files/7cea053d-c767-4a2c-b869-0e22962db139/file_downloaded
+      Rural.rar: https://data.mendeley.com/public-files/datasets/gspyzvvrhm/files/4c5ab724-47b9-4ea1-9339-934d1095b06d/file_downloaded
+      Urban.rar: https://data.mendeley.com/public-files/datasets/gspyzvvrhm/files/3ed18f16-16f9-49ab-8bdd-4f5fbc74f2fa/file_downloaded
+    license: CC-BY-4.0
+    citation: >-
+      Tegene, T. T.; Mohamed, B.; Arboleya, P.; Suárez Ramón, L. (2023): A Set of
+      Non-Synthetic Test Systems of European LV Rural, LV Urban and Hybrid MV/LV Industrial
+      Distribution Networks. Mendeley Data, V2. https://doi.org/10.17632/gspyzvvrhm.2
+    notes: >-
+      RAR5 archives: extraction needs unrar, 7z, 7zz or bsdtar on PATH. Smart-meter profiles
+      in PQ_csv/ (rural, urban) and LV_PQ_csv/, MV_PQ_csv/ (industrial).
+
+networks:
+  - {id: ieee13, source: epri_ieee, master: 13Bus/IEEE13Nodeckt.dss, neutral: kron}
+  - id: ieee34
+    source: epri_ieee
+    master: 34Bus/ieee34Mod1.dss
+    neutral: kron
+    # The 832-858 distributed loads are delta (IEEE data: D-PQ) but name one node each,
+    # so OpenDSS ties their second conductor to ground. Phase pairs as the file's other
+    # single-phase delta loads (a: 1.2, b: 2.3, c: 3.1).
+    extra_commands:
+      - Edit Load.D832_858sa bus1=832.1.2
+      - Edit Load.D832_858ra bus1=858.1.2
+      - Edit Load.D832_858sb bus1=832.2.3
+      - Edit Load.D832_858rb bus1=858.2.3
+      - Edit Load.D832_858sc bus1=832.3.1
+      - Edit Load.D832_858rc bus1=858.3.1
+  - {id: ieee37, source: epri_ieee, master: 37Bus/ieee37.dss, neutral: kron}
+  - id: ieee8500
+    source: epri_ieee
+    master: 8500-Node/Master.dss  # balanced load case, the reference of the test feeder
+    neutral: kron
+    representations: {unbalanced: 8500-Node/Master-unbal.dss}
+  - {id: ieee123, source: epri_ieee, master: 123Bus/IEEE123Master.dss, neutral: kron}
+  - {id: ieee_eulv, source: epri_ieee, master: LVTestCase/Master.dss, neutral: kron}
+  # EDP masters go on to add monitors (and a 1e-7 kW dummy load at every bus), run a
+  # daily simulation and export CSV files; only the network definition before the first monitor
+  # redirect is compiled. Base loads are placeholders (kW = kvar = 1): each takes the mean of
+  # its daily loadshape. The voltage bases sit after the cut.
+  - id: edp/industrial
+    source: edp
+    master: Industrial/Master/master.dss
+    neutral: mixed
+    master_stop_before: redirect LV_Load_Monitor.txt
+    base_loads: loadshape_mean
+    extra_commands:
+      - Set VoltageBases=[22 0.4]
+      # LV neutrals grounded as in the rural and urban networks of the same dataset.
+      - BatchEdit Transformer..* wdg=2 Rneut=5 Xneut=0.01
+  - id: edp/rural
+    source: edp
+    master: Rural/Master/master.dss
+    neutral: explicit
+    master_stop_before: redirect MonBus.dss
+    base_loads: loadshape_mean
+    extra_commands: ["Set VoltageBases=[22 0.4]"]
+  - id: edp/urban
+    source: edp
+    master: Urban/Master/master.dss
+    neutral: explicit
+    master_stop_before: redirect MonBus.dss
+    base_loads: loadshape_mean
+    extra_commands: ["Set VoltageBases=[22 0.4]"]
+
+# Collections expand into one network per feeder from the source manifest.
+collections:
+  - source: csiro_enwl
+    id: "csiro_enwl/n{network:02d}_f{feeder}"
+    match: '^(?P<representation>[^/]+)/[Nn]etwork_(?P<network>\d+)/Feeder_(?P<feeder>\d+)/Master\.dss$'
+    representations:  # folder -> representation name
+      Four-wire: four_wire
+      Three-wire-Kron-reduced: kron
+      Three-wire-phase-to-neutral: phase_to_neutral
+      Three-wire-modified-phase-to-neutral: modified_phase_to_neutral
+    default: four_wire
+    neutral: explicit

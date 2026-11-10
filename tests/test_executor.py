@@ -1,0 +1,325 @@
+"""Tests for the executor: units, processes x contexts, manifest, resume."""
+
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pyarrow.parquet as pq
+import pytest
+
+from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.io import schema
+from gridfm_datakit_distr.io.manifest import Manifest
+from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
+from gridfm_datakit_distr.solve import executor
+from gridfm_datakit_distr.solve.executor import (
+    GenerationError,
+    generate,
+    jobs_of,
+    plan_tasks,
+    plan_units,
+)
+from gridfm_datakit_distr.views import datakit_columns as datakit
+from gridfm_datakit_distr.views.posseq import power_balance
+from gridfm_datakit_distr.views.posseq_export import export_posseq
+from tests.circuits import VARIANT_FEEDER, write_circuit
+
+# A regulator bank with controllers (the states vary with tap jitter) and a lateral.
+REGULATED = {
+    "master.dss": """\
+Clear
+New Circuit.reg basekv=12.47 pu=1.0 phases=3 bus1=src angle=0 MVAsc3=200 MVAsc1=200
+New Transformer.ra phases=1 windings=2 buses=[src.1 r.1] conns=[wye wye] kvs=[7.2 7.2]
+~ kvas=[500 500] xhl=1 %rs=[0.1 0.1] bank=reg
+New Transformer.rb phases=1 windings=2 buses=[src.2 r.2] conns=[wye wye] kvs=[7.2 7.2]
+~ kvas=[500 500] xhl=1 %rs=[0.1 0.1] bank=reg
+New Transformer.rc phases=1 windings=2 buses=[src.3 r.3] conns=[wye wye] kvs=[7.2 7.2]
+~ kvas=[500 500] xhl=1 %rs=[0.1 0.1] bank=reg
+New RegControl.ca transformer=ra winding=2 vreg=122 band=2 ptratio=60
+New RegControl.cb transformer=rb winding=2 vreg=122 band=2 ptratio=60
+New RegControl.cc transformer=rc winding=2 vreg=122 band=2 ptratio=60
+New Line.l1 bus1=r.1.2.3 bus2=a.1.2.3 phases=3 r1=0.3 x1=0.6 r0=0.6 x0=1.2 c1=10 c0=5
+~ length=2 units=km
+New Line.lat bus1=a.1 bus2=x.1 phases=1 r1=0.4 x1=0.4 r0=0.4 x0=0.4 c1=0 c0=0
+~ length=0.5 units=km
+New Load.la bus1=a.1.2.3 phases=3 kV=12.47 kW=1500 kvar=500 model=1
+New Load.lb bus1=a.2 phases=1 kV=7.2 kW=300 kvar=100 model=1
+New Load.lx bus1=x.1 phases=1 kV=7.2 kW=200 kvar=50 model=1
+Set VoltageBases=[12.47]
+CalcVoltageBases
+""",
+}
+
+CONFIG: dict[str, Any] = {
+    "dataset_name": "d",
+    "networks": {"include": ["t/*"]},
+    "variants": {"n_variants": 2},
+    "der": {"pv": {"penetration": 0.5}},
+    "controls": {"tap_jitter_steps": 1},
+    "scenarios": {"n_scenarios_per_variant": 5},
+    "settings": {"seed": 11, "chunk_size": 2, "num_processes": 1},
+}
+TIMINGS = {"t_solve_s", "t_extract_s"}
+
+
+def catalog(root: Path) -> Catalog:
+    write_circuit(root / "src" / "feeder", VARIANT_FEEDER)
+    write_circuit(root / "src" / "reg", REGULATED)
+    source = ArchivesSource(
+        kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
+        citation="-", archives={},
+    )  # fmt: skip
+    networks = {
+        "t/feeder": Network(id="t/feeder", source="src", master="feeder/master.dss"),
+        "t/reg": Network(id="t/reg", source="src", master="reg/master.dss"),
+    }
+    return Catalog(sources={"src": source}, networks=networks)
+
+
+def config(**settings: Any) -> GenerationConfig:
+    data = copy.deepcopy(CONFIG)
+    data["settings"].update(settings)
+    return GenerationConfig.model_validate(data)
+
+
+def files(root: Path) -> dict[str, Path]:
+    return {
+        str(p.relative_to(root)): p
+        for p in sorted(root.rglob("*"))
+        if p.is_file() and p.name != "manifest.json"
+    }
+
+
+def same_dataset(a: Path, b: Path) -> None:
+    """Equal files but for the timing columns (and the manifest's execution settings)."""
+    fa, fb = files(a), files(b)
+    assert sorted(fa) == sorted(fb)
+    for rel, pa_ in fa.items():
+        if rel.endswith(".parquet"):
+            ta, tb = pq.read_table(pa_), pq.read_table(fb[rel])
+            drop = [c for c in ta.column_names if c in TIMINGS]
+            assert ta.drop_columns(drop).equals(tb.drop_columns(drop)), rel
+        else:
+            assert pa_.read_bytes() == fb[rel].read_bytes(), rel
+    ma, mb = Manifest.load(a), Manifest.load(b)
+    assert ma.config_hash == mb.config_hash
+    assert {k: u.status for k, u in ma.units.items()} == {k: u.status for k, u in mb.units.items()}
+
+
+# ------------------------------------------------------------------------------------- planning
+
+
+def test_units_and_tasks(tmp_path: Path) -> None:
+    cfg = config()
+    jobs = jobs_of(cfg, catalog(tmp_path))
+    assert [(j.network_idx, j.network.id) for j in jobs] == [(0, "t/feeder"), (1, "t/reg")]
+    units = plan_units(cfg, jobs)
+    assert len(units) == 2 * 2 * 3  # networks x variants x chunks (2 + 2 + 1 scenarios)
+    assert [(u.chunk, u.first, u.stop) for u in units[:3]] == [(0, 0, 2), (1, 2, 4), (2, 4, 5)]
+    tasks = plan_tasks(units, jobs, 2)
+    assert [len(t.units) for t in tasks] == [2, 1] * 4  # never across variants
+    assert all(len({(u.network_idx, u.variant_idx) for u in t.units}) == 1 for t in tasks)
+
+
+# ----------------------------------------------------------------------------------- generation
+
+
+def test_a_dataset(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    manifest = generate(config(), out, catalog=catalog(tmp_path), root=tmp_path)
+    assert {u.status for u in manifest.units.values()} == {"done"}
+    meta = pq.read_table(out / "scenarios" / "scenario_meta")
+    ids = meta.column("scenario_id").to_pylist()
+    assert len(ids) == len(set(ids)) == 2 * 2 * 5  # networks x variants x scenarios
+    assert not (out / "states" / "states").exists()  # parts merged at finalisation
+    states = pq.read_table(out / "states" / "states.parquet")
+    with_state = [s for s in meta.column("state_id").to_pylist() if s is not None]
+    assert sum(states.column("n_scenarios").to_pylist()) == len(with_state)
+    assert len(set(states.column("state_id").to_pylist())) == states.num_rows
+    # the origin is per scenario: scenarios that share a state can reach it by different routes
+    assert "origin" not in states.column_names
+    rows = meta.select(["network_id", "state_id", "origin"]).to_pylist()
+    assert all((r["state_id"] is None) == (r["origin"] is None) for r in rows)
+    reg = {r["origin"] for r in rows if r["network_id"] == "t/reg" and r["origin"]}
+    feeder = {r["origin"] for r in rows if r["network_id"] == "t/feeder" and r["origin"]}
+    assert "static_settle+jitter" in reg
+    assert feeder == {"static_settle"}  # no regulator to jitter
+    assert (out / "variants" / "semantic" / "t" / "reg" / "v0001.json").exists()
+    nodes = pq.read_table(out / "variants" / "nodes")
+    buses, backbone = nodes.column("bus").to_pylist(), nodes.column("backbone_bus").to_pylist()
+    owner = dict(zip(buses, backbone, strict=True))
+    assert owner["b4"] == "b2"  # VARIANT_FEEDER's lateral
+    assert owner["x"] == "a"  # REGULATED's lateral
+    assert not (out / "views").exists()  # the truth only
+    assert not (out / "scenarios" / "element_results").exists()  # Yprim · V (labels default)
+    exports = export_posseq(out, tmp_path / "export", processes=2)
+    assert [r.network_id for r in exports] == ["t/feeder", "t/reg"]
+    for r in exports:
+        raw = r.raw_dir
+        assert r.scenarios == 2 * 5
+        assert r.statuses == {"converged": 10}
+        assert (raw / "n_scenarios.txt").read_text(encoding="utf-8") == "10"
+        assert pq.read_table(raw.parent / "posseq_scenarios.parquet").num_rows == 10
+        assert pq.read_table(raw.parent / "posseq_mapping.parquet").num_rows > 0
+        assert not (raw.parent / ".posseq-work").exists()
+        tables = {}
+        for kind, name in datakit.FILES.items():
+            written = pq.read_table(raw / name / "scenario_partition=0")
+            assert written.column_names == ["scenario", *schema.DATAKIT_TABLES[kind].names]
+            scenario = written.column("scenario").to_numpy()
+            assert scenario.min() == 0  # graphkit's assertion: 0 .. n - 1
+            assert scenario.max() == len(np.unique(scenario)) - 1
+            tables[kind] = written
+        balance = power_balance(tables["bus"], tables["branch"])
+        assert balance.max() < 1e-6  # MW: datakit's power balance on the exported tables
+    assert json.loads((out / "catalog" / "passports" / "t" / "reg.json").read_text())
+    card = (out / "README.md").read_text(encoding="utf-8")
+    assert card.startswith("# d\n")
+
+
+def test_the_same_dataset_with_processes_and_contexts(tmp_path: Path) -> None:
+    """The same dataset with (1 process, 1 context) and (4 processes, 2 contexts)."""
+    cat = catalog(tmp_path)
+    generate(config(), tmp_path / "a", catalog=cat, root=tmp_path)
+    parallel = config(num_processes=4, contexts_per_process=2)
+    generate(parallel, tmp_path / "b", catalog=cat, root=tmp_path)
+    same_dataset(tmp_path / "a", tmp_path / "b")
+
+
+def test_an_interrupted_run_resumes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No duplicates, and the dataset of an uninterrupted run."""
+    cat = catalog(tmp_path)
+    generate(config(), tmp_path / "full", catalog=cat, root=tmp_path)
+    real = executor._run_unit
+    calls: list[str] = []
+
+    def crashing(*args: Any) -> Any:
+        if len(calls) == 5:
+            raise KeyboardInterrupt
+        calls.append(args[2].key)
+        return real(*args)
+
+    monkeypatch.setattr(executor, "_run_unit", crashing)
+    out = tmp_path / "resumed"
+    with pytest.raises(KeyboardInterrupt):
+        generate(config(), out, catalog=cat, root=tmp_path)
+    done = {k for k, u in Manifest.load(out).units.items() if u.status == "done"}
+    assert done == set(calls)
+    monkeypatch.undo()
+    rerun: list[str] = []
+
+    def counting(*args: Any) -> Any:
+        rerun.append(args[2].key)
+        return real(*args)
+
+    monkeypatch.setattr(executor, "_run_unit", counting)
+    generate(config(), out, catalog=cat, root=tmp_path)
+    assert set(rerun).isdisjoint(done)  # done units are not run again
+    same_dataset(tmp_path / "full", out)
+
+
+def test_an_interrupted_pool_stops_and_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C with several processes: the queued tasks are cancelled, not run unrecorded."""
+    cat = catalog(tmp_path)
+    cfg = config(num_processes=2, chunk_size=1)  # 20 units, one task each
+    real = executor._record
+
+    def interrupted(*args: Any) -> None:
+        real(*args)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(executor, "_record", interrupted)
+    out = tmp_path / "resumed"
+    with pytest.raises(KeyboardInterrupt):
+        generate(cfg, out, catalog=cat, root=tmp_path)
+    ran = list((out / "scenarios" / "scenario_meta").glob("part-*.parquet"))
+    assert 1 <= len(ran) < 20
+    monkeypatch.undo()
+    generate(cfg, out, catalog=cat, root=tmp_path)
+    generate(cfg, tmp_path / "full", catalog=cat, root=tmp_path)
+    same_dataset(tmp_path / "full", out)
+
+
+def test_another_config_needs_overwrite(tmp_path: Path) -> None:
+    cat = catalog(tmp_path)
+    out = tmp_path / "out"
+    generate(config(), out, catalog=cat, root=tmp_path)
+    with pytest.raises(GenerationError, match="another config"):
+        generate(config(seed=12), out, catalog=cat, root=tmp_path)
+    manifest = generate(config(seed=12, overwrite=True), out, catalog=cat, root=tmp_path)
+    assert manifest.config["settings"]["seed"] == 12
+    stray = tmp_path / "stray"
+    stray.mkdir()
+    (stray / "notes.txt").write_text("mine")
+    with pytest.raises(GenerationError, match="not a dataset"):
+        generate(config(), stray, catalog=cat, root=tmp_path)
+    assert (stray / "notes.txt").read_text() == "mine"
+
+
+def test_failed_units_are_recorded_without_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = executor._unit_tables
+
+    def failing(slot: Any, task: Any, unit: Any, cfg: Any, digest: str) -> Any:
+        if task.job.network.id == "t/reg":
+            raise RuntimeError("boom")
+        return real(slot, task, unit, cfg, digest)
+
+    cat, out = catalog(tmp_path), tmp_path / "out"
+    generate(config(), out, catalog=cat, root=tmp_path)
+    # t/reg's files are on disk but its units unrecorded: an attempt interrupted before the manifest
+    crashed = Manifest.load(out)
+    for u in crashed.units.values():
+        if u.network_id == "t/reg":
+            crashed.finish(u, "pending")
+    monkeypatch.setattr(executor, "_unit_tables", failing)
+    manifest = generate(config(), out, catalog=cat, root=tmp_path)
+    failed = [u for u in manifest.units.values() if u.status == "failed"]
+    assert {u.network_id for u in failed} == {"t/reg"}
+    assert all("RuntimeError: boom" in (u.message or "") for u in failed)
+    assert not list(out.rglob("part-00001-*"))  # t/reg is network 1: no unit file of any attempt
+    assert not list((out / "variants" / "semantic" / "t").glob("reg/*"))
+    assert (out / "README.md").exists()
+    with pytest.raises(ValueError, match=r"incomplete.*t/reg"):
+        export_posseq(out, tmp_path / "export")
+    [result] = export_posseq(out, tmp_path / "export", ["t/feeder"])  # complete: exported
+    assert result.statuses == {"converged": 10}
+
+
+def test_a_network_without_a_view_exports_its_errors(tmp_path: Path) -> None:
+    """A single-phase network has no three-phase backbone: it generates, its nodes have no
+    ``backbone_bus``, and the export records the error of every scenario's view."""
+    cat = catalog(tmp_path)
+    write_circuit(
+        tmp_path / "src" / "one",
+        {
+            "master.dss": "Clear\nNew Circuit.one basekv=12.47 pu=1.0 phases=3 bus1=src\n"
+            "New Line.l1 bus1=src.1 bus2=a.1 phases=1 r1=0.3 x1=0.6 r0=0.3 x0=0.6 c1=0 c0=0\n"
+            "New Load.ld bus1=a.1 phases=1 kV=7.2 kW=200 kvar=50 model=1\n"
+            "Set VoltageBases=[12.47]\nCalcVoltageBases\n"
+        },
+    )
+    cat = Catalog(
+        sources=cat.sources,
+        networks={"t/one": Network(id="t/one", source="src", master="one/master.dss")},
+    )
+    out = tmp_path / "out"
+    manifest = generate(config(), out, catalog=cat, root=tmp_path)
+    assert {u.status for u in manifest.units.values()} == {"done"}
+    assert set(pq.read_table(out / "variants" / "nodes").column("backbone_bus").to_pylist()) == {
+        None
+    }
+    stale = tmp_path / "export" / "t" / "one" / "raw"
+    stale.mkdir(parents=True)  # an earlier export's tables
+    [result] = export_posseq(out, tmp_path / "export")
+    assert (result.scenarios, result.statuses) == (0, {"error": 10})
+    assert not stale.exists()
+    status = pq.read_table(tmp_path / "export" / "t" / "one" / "posseq_scenarios.parquet")
+    assert all("PosSeqError" in m for m in status.column("view_message").to_pylist())

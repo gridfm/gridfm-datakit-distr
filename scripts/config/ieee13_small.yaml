@@ -1,0 +1,17 @@
+# A small power-flow dataset on IEEE 13, for tests and the quick start (a few seconds).
+# Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: ieee13_small
+networks:
+  include: [ieee13]
+variants:
+  n_variants: 2
+  admittance:
+    line_length_scale: {distribution: uniform, low: 0.95, high: 1.05}
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.3}
+scenarios:
+  n_scenarios_per_variant: 20
+settings:
+  seed: 1
+  chunk_size: 10

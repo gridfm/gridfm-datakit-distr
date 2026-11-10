@@ -1,0 +1,110 @@
+"""Seed tree.
+
+Every random draw comes from a :class:`numpy.random.SeedSequence` fixed by its position in the
+tree, never by the order in which work is done:
+
+    variant (i, k)           SeedSequence(seed, spawn_key=(i, k))      root.spawn[i].spawn[k]
+    scenario (i, k, s)       SeedSequence(seed, spawn_key=(i, k, s))   variant.spawn[s]
+    variant stream p, try a  SeedSequence(seed, spawn_key=(i, k, 2**31 + p, a))
+    scenario stream p        SeedSequence(seed, spawn_key=(i, k, s, p))
+
+``i`` is the network's index in the dataset (networks ordered by id), ``k`` the variant index,
+``s`` the scenario index. Each quantity draws from its own stream (:class:`VariantStream`,
+:class:`ScenarioStream`), so enabling or resizing one quantity never shifts the draws of another;
+a variant's streams sit above the scenario indices (``s < 2**31``) and never share a key with a
+scenario. The ``seed`` columns (outputs.md §4, §5) are 64-bit fingerprints of a node's sequence; the
+draws come from the sequence itself (128-bit pool).
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum
+
+import numpy as np
+
+from gridfm_datakit_distr.model.ids import (
+    MAX_NETWORK_INDEX,
+    MAX_SCENARIO_INDEX,
+    MAX_VARIANT_INDEX,
+    SCENARIO_BITS,
+)
+
+_VARIANT_STREAM_BASE = 1 << SCENARIO_BITS
+
+
+class VariantStream(IntEnum):
+    """Random quantities drawn once per variant. Codes are provenance: append, never renumber."""
+
+    LINE_LENGTH = 0
+    NEUTRAL_IMPEDANCE = 1
+    GROUNDING_RESISTANCE = 2
+    PHASE_REALLOCATION = 3
+    RECONFIGURATION = 4
+    DER_PLACEMENT = 5
+    DER_SIZE = 6
+    DER_POWER_FACTOR = 7
+
+
+class ScenarioStream(IntEnum):
+    """Random quantities drawn once per scenario. Codes are provenance: append, never renumber."""
+
+    PROFILE_TIME = 0
+    LOAD_SCALE = 1
+    LOAD_NOISE = 2
+    POWER_FACTOR = 3
+    PV_OUTPUT = 4
+    SOURCE_VOLTAGE = 5
+    TAP_JITTER = 6
+    CUSTOMER_TIMES = 7
+    """Per-customer profile times (``same_timestamp: false``); PV keeps ``PROFILE_TIME``."""
+
+
+def _check(seed: int, i: int, k: int, s: int | None = None) -> None:
+    if seed < 0:
+        raise ValueError(f"seed must be >= 0, got {seed}")
+    bounds = [("network index", i, MAX_NETWORK_INDEX), ("variant index", k, MAX_VARIANT_INDEX)]
+    if s is not None:
+        bounds.append(("scenario index", s, MAX_SCENARIO_INDEX))
+    for name, value, top in bounds:
+        if not 0 <= value <= top:
+            raise ValueError(f"{name} must be in [0, {top}], got {value}")
+
+
+def variant_sequence(seed: int, i: int, k: int) -> np.random.SeedSequence:
+    """The sequence of variant ``k`` of network ``i``."""
+    _check(seed, i, k)
+    return np.random.SeedSequence(seed, spawn_key=(i, k))
+
+
+def scenario_sequence(seed: int, i: int, k: int, s: int) -> np.random.SeedSequence:
+    """The sequence of scenario ``s`` of variant ``k`` of network ``i``."""
+    _check(seed, i, k, s)
+    return np.random.SeedSequence(seed, spawn_key=(i, k, s))
+
+
+def variant_rng(
+    seed: int, i: int, k: int, stream: VariantStream, attempt: int = 0
+) -> np.random.Generator:
+    """Generator of one per-variant quantity; ``attempt`` numbers the resamplings of a variant
+    that failed its checks."""
+    _check(seed, i, k)
+    if attempt < 0:
+        raise ValueError(f"attempt must be >= 0, got {attempt}")
+    key = (i, k, _VARIANT_STREAM_BASE + int(stream), attempt)
+    return np.random.default_rng(np.random.SeedSequence(seed, spawn_key=key))
+
+
+def scenario_rng(seed: int, i: int, k: int, s: int, stream: ScenarioStream) -> np.random.Generator:
+    """Generator of one per-scenario quantity."""
+    _check(seed, i, k, s)
+    return np.random.default_rng(np.random.SeedSequence(seed, spawn_key=(i, k, s, int(stream))))
+
+
+def variant_seed(seed: int, i: int, k: int) -> int:
+    """The ``seed`` column of a variant: 64-bit fingerprint of its sequence."""
+    return int(variant_sequence(seed, i, k).generate_state(1, np.uint64)[0])
+
+
+def scenario_seed(seed: int, i: int, k: int, s: int) -> int:
+    """The ``seed`` column of a scenario: 64-bit fingerprint of its sequence."""
+    return int(scenario_sequence(seed, i, k, s).generate_state(1, np.uint64)[0])

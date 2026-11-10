@@ -1,0 +1,21 @@
+# A power-flow dataset on one four-wire LV feeder of the ENWL networks (CSIRO), with rooftop PV:
+# the tutorial's third example (README.md). Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: csiro_n01_f1
+networks:
+  include: [csiro_enwl/n01_f1]
+  neutral_representation: explicit    # four-wire model with the neutral conductor
+variants:
+  n_variants: 5
+  admittance:
+    grounding_resistance_ohm: {distribution: choice, values: [1.0, 5.0, 10.0]}
+  phase_reallocation:
+    enabled: true
+    fraction: 0.2
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.6}
+scenarios:
+  n_scenarios_per_variant: 200
+settings:
+  seed: 5
+  chunk_size: 200

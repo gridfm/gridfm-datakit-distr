@@ -1,0 +1,147 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gridfm-datakit-distr"
+dynamic = ["version"]
+description = "Power-flow and OPF datasets for three-phase unbalanced distribution networks."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10,<3.13"
+authors = [{ name = "Carmine Delle Femine" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.26",
+    "opendssdirect-py>=0.9.4,<0.10",
+    "pyarrow>=15",
+    "pydantic>=2.5",
+    "pyyaml>=6",
+    "scipy>=1.11",
+    "typer>=0.12",
+]
+
+[project.scripts]
+gridfm_datakit_distr = "gridfm_datakit_distr.cli:app"
+
+[project.optional-dependencies]
+plots = [
+    "matplotlib>=3.8",
+]
+# The official Croissant validator. Not in the dev group: it pulls pandas-stubs, under which
+# pyarrow-stubs no longer accept numpy arrays in pa.table (95 false mypy errors).
+croissant = [
+    "mlcroissant>=1.1",
+]
+# Documentation site (mkdocs.yml): `uv run --extra docs mkdocs serve`.
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+]
+julia = [
+    # PythonCall >= 0.9.37 needs CondaPkg >= 0.2.38, which needs JSON.jl 1.x, while
+    # PowerModelsDistribution 0.16.0 allows JSON.jl 0.18-0.21 only.
+    "juliacall>=0.9.29,<0.9.37",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.100",
+    "matplotlib>=3.8",
+    "mypy>=1.11",
+    "pre-commit>=3.7",
+    "pyarrow-stubs>=20.0.0.20260819",
+    "pytest>=8.0",
+    "pytest-xdist>=3.5",
+    "ruff>=0.6",
+    "scipy-stubs>=1.15.3",
+    "types-pyyaml>=6.0",
+]
+
+[tool.hatch.version]
+path = "gridfm_datakit_distr/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gridfm_datakit_distr"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [".", "tests", "integrationtests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+    "C4",  # comprehensions
+    "NPY", # numpy-specific
+    "PT",  # pytest style
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gridfm_datakit_distr"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.10"
+files = ["gridfm_datakit_distr"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# `--strict` for the data-contract packages.
+# `strict` itself is a global-only option, so its flags are listed one by one.
+[[tool.mypy.overrides]]
+module = [
+    "gridfm_datakit_distr.model.*",
+    "gridfm_datakit_distr.io.*",
+    "gridfm_datakit_distr.validate.*",
+    "gridfm_datakit_distr.config.*",
+]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
+# Third-party packages without type information.
+[[tool.mypy.overrides]]
+module = ["opendssdirect.*", "juliacall.*", "mlcroissant.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests", "integrationtests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+filterwarnings = ["error"]
+markers = [
+    "slow: takes more than 10 s",
+    "julia: needs Julia/PMD; skipped unless DISTR_RUN_JULIA=1",
+    "network_data: needs fetched networks; skipped if the cache is missing",
+    "perf: benchmarks; run on demand with -m perf",
+    "conformance: conformance suite over the cached catalog networks",
+]

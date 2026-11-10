@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run pytest -m "not slow and not julia and not network_data and not perf"
+
+  croissant:
+    # the official validator (mlcroissant) lives in its own environment: it pulls pandas-stubs,
+    # which breaks the type checking of the project (pyproject.toml, extra 'croissant')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --extra croissant
+      - run: uv run --extra croissant pytest tests/test_croissant.py
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --extra docs
+      - run: uv run --extra docs mkdocs build --strict

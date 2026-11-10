@@ -1,0 +1,50 @@
+# A commented starting point; every key and its default is in docs/manual/config.md.
+dataset_name: my_dataset # directory under settings.data_dir
+
+networks:
+  include: [ieee13] # catalog ids or glob patterns, e.g. csiro_enwl/n01_*
+  neutral_representation: explicit # explicit | kron | as_is
+
+variants:
+  n_variants: 4 # perturbed copies of each network
+  admittance:
+    line_length_scale: {distribution: uniform, low: 0.9, high: 1.1} # one factor per line
+    neutral_impedance_scale: 1.0 # factor on the neutral impedances of four-wire lines
+    grounding_resistance_ohm: null # null keeps the source's earthing resistances
+  phase_reallocation:
+    enabled: true
+    fraction: 0.2 # share of single-phase customers moved to another phase
+
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.4} # share of customers with PV, per variant
+    kwp: {distribution: uniform, low: 2.0, high: 6.0} # peak power of each system (kW)
+    power_factor: 1.0
+
+scenarios:
+  n_scenarios_per_variant: 1000
+  source_voltage_pu: {distribution: uniform, low: 0.98, high: 1.05}
+  profiles:
+    provider: synthetic # synthetic | network_loadshapes | edp_smart_meter
+    synthetic:
+      global_scale: {distribution: uniform, low: 0.2, high: 1.2} # factor on every load, per scenario
+      local_sigma: 0.3 # lognormal noise on each customer's load
+  pv_profile:
+    cloudiness: {distribution: uniform, low: 0.0, high: 1.0} # one cloud cover per scenario
+
+controls:
+  mode: static_settle # settle regulators and capacitors, jitter the taps, settle again, freeze
+  tap_jitter_steps: 2
+
+labels:
+  element_currents: false # true also stores every element's current (otherwise Yprim · V)
+
+views:
+  kron: false # true also re-solves each scenario without the neutral (Kron reduction)
+
+settings:
+  seed: 42 # same config and seed: same dataset, bit for bit
+  data_dir: ./data
+  num_processes: null # null: one per core
+  chunk_size: 500 # scenarios per output part
+  float_precision: mixed # mixed: float64 voltages, float32 currents and setpoints

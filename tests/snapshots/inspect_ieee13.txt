@@ -1,0 +1,15 @@
+ieee13 (epri_ieee; licence: Feeder data: IEEE PES test feeders, no formal licence. OpenDSS scripts: BSD-3-Clause (Copyright EPRI and DSS-Extensions contributors; License.txt of the repository).)
+master: 13Bus/IEEE13Nodeckt.dss
+recipe: 0 extra commands, base loads as_is
+buses 16, nodes 41, elements 35 (+0 disabled)
+elements: capacitor 2, line 11, load 15, switch 1, transformer 5, vsource 1
+neutral: kron (zones: 2 kron, 2 three_wire); grounded neutrals 0, floating islands 0
+split phase: no
+voltage levels (kV LL): 115, 4.16, 4.157, 0.48
+s_base: 5000 kVA (Transformer.sub rating)
+total load: 3466 kW, 2102 kvar (15 loads)
+normalisation:
+  loads: constant_power, vminpu 0.6, vmaxpu 1.5 (15 loads; before: model 1: 11, model 2: 2, model 5: 2)
+  voltage bases: 0 buses re-based; max deviation 7.4e-04 as loaded, 7.4e-04 after
+base case (taps as compiled): converged in 11 iterations (Tolerance 1e-10); setpoints max deviation 7e-11, 0 off; phase voltages 0.9597-1.0560 pu
+checks: all pass

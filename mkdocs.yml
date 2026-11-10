@@ -1,0 +1,25 @@
+site_name: gridfm-datakit-distr
+site_description: Machine-learning datasets of power flows in three-phase unbalanced distribution networks
+repo_url: https://github.com/cardef/gridfm-datakit-distr
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Manual:
+      - Getting started: manual/getting_started.md
+      - Networks: manual/networks.md
+      - Variants: manual/variants.md
+      - Scenarios: manual/scenarios.md
+      - Outputs: manual/outputs.md
+      - Configuration reference: manual/config.md

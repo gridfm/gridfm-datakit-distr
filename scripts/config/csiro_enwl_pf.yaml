@@ -1,0 +1,72 @@
+# Power-flow dataset on two ENWL four-wire LV feeders (CSIRO) and IEEE 13, with most keys set explicitly.
+# Reference of every key: docs/manual/config.md.
+dataset_name: enwl_csiro_pf_v01
+networks:
+  include: ["csiro_enwl/n01_f1", "csiro_enwl/n01_f2", "ieee13"]   # ids or glob patterns
+  neutral_representation: explicit
+  voltage_limits:
+    preset: null
+    vmin_pu: 0.94
+    vmax_pu: 1.10
+normalisation:
+  loads:
+    model: constant_power
+    vminpu: 0.6
+    vmaxpu: 1.5
+  s_base_va: auto
+variants:
+  n_variants: 10
+  admittance:
+    line_length_scale: {distribution: uniform, low: 0.9, high: 1.1}
+    neutral_impedance_scale: 1.0
+    grounding_resistance_ohm: {distribution: choice, values: [1.0, 5.0, 20.0]}
+  phase_reallocation:
+    enabled: true
+    fraction: 0.2
+  reconfiguration:
+    enabled: false
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.6}
+    kwp: {distribution: uniform, low: 2.0, high: 6.0}
+    power_factor: 1.0
+scenarios:
+  n_scenarios_per_variant: 1000
+  profiles:
+    provider: synthetic
+    same_timestamp: true
+    synthetic:
+      global_scale: {distribution: uniform, low: 0.2, high: 1.2}
+      local_sigma: 0.3
+      power_factor: {distribution: uniform, low: 0.9, high: 0.99}
+  pv_profile:
+    provider: synthetic_clear_sky
+    cloudiness: {distribution: uniform, low: 0.0, high: 1.0}
+  source_voltage_pu: {distribution: uniform, low: 0.98, high: 1.05}
+controls:
+  mode: static_settle
+  tap_jitter_steps: 2
+labels:
+  pf: true
+  opf:
+    enabled: false        # next version
+    objectives: [min_import, der_cost]
+    formulation: auto
+    max_cpu_time_s: 60
+views:
+  kron: true  # the positive-sequence equivalent: export-posseq after generation
+baselines:
+  lindist_pf: false       # next version
+  lindist_opf: false      # next version
+measurements:
+  enabled: false          # next version
+settings:
+  data_dir: ./data
+  seed: 42
+  num_processes: 4
+  contexts_per_process: 1
+  chunk_size: 500
+  float_precision: mixed
+  residual_sample_rate: 0.01
+  overwrite: false
+  validation_tolerance: 1.0e-10
