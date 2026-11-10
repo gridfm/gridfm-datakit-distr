@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from gridfm_datakit_distr.engine.context import DssContext, complex_from_interleaved
 
 TOLERANCE_MARGIN = 100.0
@@ -67,29 +70,35 @@ def setpoint_report(ctx: DssContext, *, rel_tol: float = 1e-6) -> SetpointReport
     """Check that every enabled load and generator of the solved circuit meets its setpoint."""
     _check_preconditions(ctx, rel_tol)
     api = ctx.api
-    setpoints: list[tuple[str, complex]] = []  # (full name, consumed VA)
+    n_visited = 0
+    names: list[str] = []
+    s_set: list[complex] = []  # consumed VA
+    powers: list[NDArray[np.float64]] = []  # interleaved P, Q (kW, kvar) per conductor
     with ctx.engine_call("Loads/Generators"):
-        i = api.Loads.First()
-        while i > 0:
-            s = complex(api.Loads.kW(), api.Loads.kvar()) * 1e3
-            setpoints.append((f"Load.{api.Loads.Name()}", s))
-            i = api.Loads.Next()
-        i = api.Generators.First()
-        while i > 0:
-            s = -complex(api.Generators.kW(), api.Generators.kvar()) * 1e3
-            setpoints.append((f"Generator.{api.Generators.Name()}", s))
-            i = api.Generators.Next()
-    off: list[str] = []
-    worst, max_rel = "", 0.0
-    for name, s_set in setpoints:
-        ctx.activate_element(name)
-        with ctx.engine_call(f"CktElement.Powers {name}"):
-            if not api.CktElement.Enabled():
-                continue
-            s = complex(complex_from_interleaved(api.CktElement.Powers()).sum()) * 1e3
-        rel = abs(s - s_set) / max(abs(s_set), 1.0)
-        if not rel <= rel_tol:  # NaN is off
-            off.append(name)
-        if rel > max_rel or not worst:
-            worst, max_rel = name, rel
-    return SetpointReport(n_checked=len(setpoints), off=tuple(off), max_rel=max_rel, worst=worst)
+        for cls, prefix, generator in (
+            (api.Loads, "Load", False),
+            (api.Generators, "Generator", True),
+        ):
+            i = cls.First()  # First and Next make the element the active circuit element
+            while i > 0:
+                n_visited += 1
+                if api.CktElement.Enabled():
+                    names.append(f"{prefix}.{cls.Name()}")
+                    s = complex(cls.kW(), cls.kvar())
+                    s_set.append((-s if generator else s) * 1e3)
+                    powers.append(np.asarray(api.CktElement.Powers(), dtype=np.float64))
+                i = cls.Next()
+    if not names:
+        return SetpointReport(n_checked=n_visited, off=(), max_rel=0.0, worst="")
+    delivered = np.empty(len(powers), dtype=np.complex128)
+    sizes = np.array([p.size for p in powers])
+    for size in np.unique(sizes):  # rows of one length, each summed as numpy sums one element
+        rows = np.flatnonzero(sizes == size)
+        block = complex_from_interleaved(np.stack([powers[k] for k in rows]).ravel())
+        delivered[rows] = block.reshape(rows.size, -1).sum(axis=1) * 1e3
+    target = np.array(s_set)
+    d = delivered - target  # hypot as Python's abs(complex); np.abs differs in the last bit
+    rel = np.hypot(d.real, d.imag) / np.maximum(np.hypot(target.real, target.imag), 1.0)
+    off = tuple(names[k] for k in np.flatnonzero(~(rel <= rel_tol)))  # NaN is off
+    k = int(np.argmax(np.where(np.isnan(rel), np.inf, rel)))  # NaN is the worst
+    return SetpointReport(n_checked=n_visited, off=off, max_rel=float(rel[k]), worst=names[k])

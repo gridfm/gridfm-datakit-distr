@@ -20,7 +20,7 @@ runs it.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -38,6 +38,7 @@ from gridfm_datakit_distr.networks.prepare import PrepareOptions, prepare_networ
 from gridfm_datakit_distr.scenarios.controls import (
     StateRegistry,
     apply_state,
+    has_controls,
     model_at_state,
     read_state,
     settle,
@@ -129,6 +130,15 @@ class VariantRunner:
         n = len(self.customers)
         self.der_penetration = len(units) / n if n else 0.0
         self.initial_state = read_state(self.ctx, self.variant_id, "as_is")
+        self._settles = has_controls(self.ctx)
+        """Without a control element the label solve is the power flow: no settling solves."""
+        if not self._settles:
+            self.ctx.command("Set ControlMode=OFF")
+        loads = {n.lower(): j for j, n in enumerate(self.ctx.api.Loads.AllNames(), start=1)}
+        self._load_idx = [loads[c.element.split(".", 1)[1].lower()] for c in self.customers]
+        gens = {n.lower(): j for j, n in enumerate(self.ctx.api.Generators.AllNames(), start=1)}
+        self._pv_idx = [gens[u.generator.split(".", 1)[1].lower()] for u in units]
+        """Engine indices (1-based) of the customers' loads and the PV units' generators."""
         self.registry = StateRegistry()
         self.plan = build_plan(self.model)
         """Rows of the element results (element, terminal, position)."""
@@ -183,13 +193,13 @@ class VariantRunner:
 
     def _set(self, draws: _Draws) -> None:
         api = self.ctx.api
-        for c, p, q in zip(self.customers, draws.p_w, draws.q_var, strict=True):
-            api.Loads.Name(c.element.split(".", 1)[1])
+        for j, p, q in zip(self._load_idx, draws.p_w, draws.q_var, strict=True):
+            api.Loads.Idx(j)
             api.Loads.kW(float(p) / 1e3)
             api.Loads.kvar(float(q) / 1e3)
-        if draws.pv is not None and self.pv is not None:
-            for u, p, q in zip(self.pv.units, draws.pv.p_w, draws.pv.q_var, strict=True):
-                api.Generators.Name(u.generator.split(".", 1)[1])
+        if draws.pv is not None:
+            for j, p, q in zip(self._pv_idx, draws.pv.p_w, draws.pv.q_var, strict=True):
+                api.Generators.Idx(j)
                 api.Generators.kW(float(p) / 1e3)
                 api.Generators.kvar(float(q) / 1e3)
         api.Vsources.Name(self._source)
@@ -238,6 +248,9 @@ class VariantRunner:
 
     def _controls(self, s: int) -> tuple[NetworkState, SolveStatus | None]:
         controls, seed = self.config.controls, self.config.settings.seed
+        if not self._settles:
+            origin: Origin = "as_is" if controls.mode == "as_is" else "static_settle"
+            return replace(self.initial_state, origin=origin), None
         apply_state(self.ctx, self.initial_state)  # every scenario settles from the same state
         self.ctx.command("Set Mode=Snap")
         rng = scenario_rng(seed, self.i, self.k, s, ScenarioStream.TAP_JITTER)

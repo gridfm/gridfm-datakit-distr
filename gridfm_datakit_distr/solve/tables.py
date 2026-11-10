@@ -164,7 +164,6 @@ def chunk_tables(
     plan = runner.plan
     for o in converged:
         assert o.v is not None
-        assert o.i_pd is not None
         node_parts.append(
             pa.table(
                 {
@@ -175,18 +174,22 @@ def chunk_tables(
                 }
             )
         )
-        element_parts.append(
-            pa.table(
-                {
-                    "scenario_id": np.full(plan.element_idx.size, o.scenario_id, dtype=np.int64),
-                    "element_idx": plan.element_idx,
-                    "terminal": plan.terminal,
-                    "position": plan.position,
-                    "i_re": o.i_pd.real,
-                    "i_im": o.i_pd.imag,
-                }
+        if element_currents:
+            assert o.i_pd is not None
+            element_parts.append(
+                pa.table(
+                    {
+                        "scenario_id": np.full(
+                            plan.element_idx.size, o.scenario_id, dtype=np.int64
+                        ),
+                        "element_idx": plan.element_idx,
+                        "terminal": plan.terminal,
+                        "position": plan.position,
+                        "i_re": o.i_pd.real,
+                        "i_im": o.i_pd.imag,
+                    }
+                )
             )
-        )
     tables["scenarios/node_results"] = _concat(node_parts, schema.node_results(precision))
     if element_currents:
         target = schema.element_results(precision)

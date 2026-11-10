@@ -47,6 +47,17 @@ def regulated_windings(ctx: DssContext) -> list[tuple[str, int, float, float, fl
     return out
 
 
+def has_controls(ctx: DssContext) -> bool:
+    """Whether the circuit has an element of a control class (as the engine classifies them):
+    without one, ``ControlMode=STATIC`` changes nothing."""
+    api = ctx.api
+    for name in api.Basic.Classes():
+        api.Circuit.SetActiveClass(name)
+        if api.ActiveClass.ActiveClassParent() == "TControlClass" and api.ActiveClass.Count():
+            return True
+    return False
+
+
 def _controlled_capacitors(ctx: DssContext) -> list[str]:
     api, names = ctx.api, set()
     i = api.CapControls.First()
@@ -108,11 +119,13 @@ def settle(
     if jitter_steps and status.converged:
         if rng is None:
             raise ValueError("tap jitter needs the scenario's TAP_JITTER generator")
-        apply_state(ctx, _jitter(ctx, state, jitter_steps, rng))
-        status = ctx.solve()  # the controls settle again from the jittered taps
-        again = read_state(ctx, variant_id, "static_settle+jitter")
-        if again.state_id != state.state_id:
-            state = again
+        jittered = _jitter(ctx, state, jitter_steps, rng)
+        if jittered != state:  # an unmoved state is one the controls already hold
+            apply_state(ctx, jittered)
+            status = ctx.solve()  # the controls settle again from the jittered taps
+            again = read_state(ctx, variant_id, "static_settle+jitter")
+            if again.state_id != state.state_id:
+                state = again
     ctx.command("Set ControlMode=OFF")
     apply_state(ctx, state)
     return state, status

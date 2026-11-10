@@ -4,11 +4,12 @@ Rows per scenario are counted on each prepared network (nodes, extraction rows, 
 Kron view's nodes). Bytes per row and seconds per scenario are measurements (zstd parts written
 by the executor, 6-core workstation):
 
-- time per scenario ``≈ 3.8 ms + 0.03 µs · nodes + 48 µs · customers`` without views
-  (fitted on IEEE 13, CSIRO n21_f3, EDP rural; EDP industrial 14 % below, CSIRO n01_f1 12 %
-  above). The customers dominate: each one's setpoints are set and checked through the engine's
-  API. Networks with regulator or capacitor controls settle every scenario, and IEEE 8500 takes
-  7.7 times the estimate. The Kron view, when on, adds its own solve (not in the estimate);
+- time per scenario ``≈ 3.7 ms + 0.03 µs · nodes + 22 µs · customers`` without views
+  (fitted on CSIRO n21_f3 and EDP rural, which have no controls, with the per-node term of an
+  earlier fit; EDP industrial 17 % below, CSIRO n01_f1 3 % above). The customers dominate: each
+  one's setpoints are set and checked through the engine's API. Networks with regulator or
+  capacitor controls settle every scenario: IEEE 13 takes 1.2 times the estimate, IEEE 8500 22
+  times. The Kron view, when on, adds its own solve (not in the estimate);
 - bytes per row as below (mixed and full precision; the views are float64 in both), plus a fixed
   part per variant (its model tables and semantic layer, ~450 bytes per node).
 
@@ -27,9 +28,9 @@ from gridfm_datakit_distr.networks.prepare import PreparedNetwork
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 from gridfm_datakit_distr.solve.extraction import build_plan
 
-SECONDS = (3.8e-3, 0.03e-6, 48e-6)
+SECONDS = (3.7e-3, 0.03e-6, 22.4e-6)
 """Seconds per scenario: constant, per node, per customer (measured without views)."""
-CONTROLS_FACTOR = 7.7
+CONTROLS_FACTOR = 22.0
 """Measured on IEEE 8500 (12 regulators, 9 capacitor controls) against the estimate."""
 BYTES = {
     "mixed": {"meta": 50.0, "node": 11.7, "element": 6.0, "load": 11.0, "der": 7.0},

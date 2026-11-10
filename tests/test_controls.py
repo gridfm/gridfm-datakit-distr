@@ -15,13 +15,14 @@ from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_netwo
 from gridfm_datakit_distr.scenarios.controls import (
     StateRegistry,
     apply_state,
+    has_controls,
     model_at_state,
     read_state,
     regulated_windings,
     settle,
 )
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
-from tests.circuits import CONTROLLED, write_circuit
+from tests.circuits import CONTROLLED, VARIANT_FEEDER, write_circuit
 
 VID = "t/ctrl/v0000"
 
@@ -86,6 +87,16 @@ def test_static_settling_moves_the_taps_under_heavy_load(prepared: PreparedNetwo
     prepared.ctx.command("Edit Load.ld kW=100 kvar=30")
     assert prepared.ctx.solve().converged
     assert read_state(prepared.ctx, VID, "as_is").state_id == state.state_id
+
+
+def test_only_a_circuit_with_a_control_element_has_controls(
+    prepared: PreparedNetwork, tmp_path: Path
+) -> None:
+    assert has_controls(prepared.ctx)
+    write_circuit(tmp_path / "plain", VARIANT_FEEDER)
+    network = Network(id="t/plain", source="plain", master="master.dss")
+    plain = prepare_network(network, root=tmp_path)
+    assert not has_controls(plain.ctx)
 
 
 def test_as_is_keeps_the_compiled_taps(prepared: PreparedNetwork) -> None:

@@ -85,6 +85,21 @@ def test_results_do_not_depend_on_the_order(tmp_path: Path) -> None:
         assert np.array_equal(a[s].v, b[s].v)  # bitwise
 
 
+def test_without_controls_the_label_solve_alone_gives_the_same_results(tmp_path: Path) -> None:
+    cfg = config(der={"pv": {"penetration": 1.0}})  # PV generators are set too
+    fast = runner(tmp_path / "a", VARIANT_FEEDER, cfg)
+    full = runner(tmp_path / "b", VARIANT_FEEDER, cfg)
+    assert not fast._settles
+    assert fast.pv is not None
+    full._settles = True  # settle anyway: STATIC solves before the label solve
+    for s in range(4):
+        a, b = fast.run(s), full.run(s)
+        assert (a.pf_status, a.state_id, a.origin) == (b.pf_status, b.state_id, b.origin)
+        assert a.v is not None
+        assert b.v is not None
+        assert np.array_equal(a.v, b.v)  # bitwise
+
+
 def test_a_non_convergent_scenario_is_recorded_without_results(tmp_path: Path) -> None:
     heavy = config(scenarios={"profiles": {"synthetic": {"global_scale": 300.0}}})  # 60 MW
     r = runner(tmp_path / "a", CONTROLLED, heavy)
