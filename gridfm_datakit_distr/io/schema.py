@@ -12,7 +12,7 @@ import pyarrow as pa
 
 from gridfm_datakit_distr.views import datakit_columns as datakit
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 
 def _required(name: str, type_: pa.DataType) -> pa.Field[Any]:
@@ -236,12 +236,54 @@ def der(precision: Precision) -> pa.Schema:
     )
 
 
+def opf_meta(precision: Precision) -> pa.Schema:
+    """``opf/opf_meta``: one row per scenario of a dataset with OPF labels."""
+    real = _real(precision)
+    return pa.schema(
+        [
+            _required("scenario_id", pa.int64()),
+            _required("opf_status", pa.string()),
+            _nullable("opf_message", pa.string()),
+            _required("opf_class", pa.string()),
+            _required("cost_preset", pa.string()),
+            _required("source_c1", pa.float64()),
+            _required("source_c2", pa.float64()),
+            _nullable("objective", pa.float64()),
+            _nullable("iterations", pa.int32()),
+            _nullable("t_solve_s", real),
+            _nullable("curtailment_w", real),
+            _nullable("verified", pa.bool_()),
+            _nullable("verify_reason", pa.string()),
+            _nullable("verify_max_dv_pu", pa.float64()),
+            _nullable("verify_max_bound_excess_pu", pa.float64()),
+        ]
+    )
+
+
+def opf_der(precision: Precision) -> pa.Schema:
+    """``opf/opf_der``: the dispatch of each PV unit, for the solved scenarios."""
+    real = _real(precision)
+    return pa.schema(
+        [
+            _required("scenario_id", pa.int64()),
+            _required("element_idx", pa.int32()),
+            _required("p_w", real),
+            _required("q_var", real),
+            _required("c1", pa.float64()),
+            _required("c2", pa.float64()),
+        ]
+    )
+
+
 SCENARIO_TABLES = {
     "scenarios/scenario_meta": scenario_meta,
     "scenarios/node_results": node_results,
     "scenarios/element_results": element_results,
     "scenarios/loads": loads,
     "scenarios/der": der,
+    "opf/opf_meta": opf_meta,
+    "opf/opf_der": opf_der,
+    "opf/opf_node_results": node_results,
 }
 """Scenario-level tables (one part per chunk) -> schema for a precision."""
 
@@ -384,38 +426,8 @@ POSSEQ_TABLES = {
     "views/posseq/mapping": POSSEQ_MAPPING,
 }
 
-# ---------------------------------------------- next version (outputs.md §8-§10), unused
+# ---------------------------------------------- next version (outputs.md §9-§10), unused
 
-OPF_META = pa.schema(
-    [
-        _required("scenario_id", pa.int64()),
-        _required("objective", pa.string()),
-        _required("cost_params", pa.string()),
-        _required("formulation", pa.string()),
-        _required("status", pa.string()),
-        _nullable("objective_value", pa.float64()),
-        _required("t_solve_s", pa.float32()),
-        _required("iterations", pa.int32()),
-        _required("verify_status", pa.string()),
-        _nullable("verify_max_dv_pu", pa.float32()),
-    ]
-)
-OPF_DER = pa.schema(
-    [
-        _required("scenario_id", pa.int64()),
-        _required("element_idx", pa.int32()),
-        _required("p_w", pa.float32()),
-        _required("q_var", pa.float32()),
-    ]
-)
-OPF_NODE_RESULTS = pa.schema(
-    [
-        _required("scenario_id", pa.int64()),
-        _required("node_idx", pa.int32()),
-        _required("v_re", pa.float64()),
-        _required("v_im", pa.float64()),
-    ]
-)
 LINDIST_PF = pa.schema(
     [
         _required("scenario_id", pa.int64()),
@@ -448,12 +460,7 @@ TABLES: dict[str, pa.Schema] = {
     "views/kron/ybus": YBUS_STATE,
     "views/kron/node_results": KRON_NODE_RESULTS,
     "states/ybus": YBUS_STATE,
-    "opf/opf_meta": OPF_META,
-    "opf/opf_der": OPF_DER,
-    "opf/opf_node_results": OPF_NODE_RESULTS,
     "baselines/lindist_pf": LINDIST_PF,
-    "baselines/lindist_opf_meta": OPF_META,
-    "baselines/lindist_opf_der": OPF_DER,
     "measurements/measurement_configs": MEASUREMENT_CONFIGS,
     "variants/variants": VARIANTS,
     "variants/nodes": NODES,

@@ -174,14 +174,13 @@ What is solved for each scenario.
 
 ## `labels.opf`
 
-OPF labels (next version).
+OPF labels: the minimum-cost OPF of each scenario (docs/manual/opf.md).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `labels.opf.enabled` | boolean | `false` | Generate OPF labels. |
-| `labels.opf.objectives` | list of `min_import`, `der_cost`, at least 1 item | `[min_import, der_cost]` | OPF objectives. |
-| `labels.opf.formulation` | one of `auto`, `IVRENPowerModel`, `IVRUPowerModel` | `auto` | `auto`: `IVRENPowerModel` with an explicit neutral, else `IVRUPowerModel`. |
-| `labels.opf.max_cpu_time_s` | number > 0 | `60.0` | Wall-clock limit of one OPF (s), enforced by the worker. |
+| `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario (needs the `opf` extra and constant-power loads). |
+| `labels.opf.costs` | one of `economic` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import). |
+| `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit of one OPF solve (s), Ipopt's `max_wall_time`. |
 
 ## `views`
 

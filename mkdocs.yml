@@ -22,5 +22,6 @@ nav:
       - Networks: manual/networks.md
       - Variants: manual/variants.md
       - Scenarios: manual/scenarios.md
+      - OPF labels: manual/opf.md
       - Outputs: manual/outputs.md
       - Configuration reference: manual/config.md

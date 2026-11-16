@@ -45,9 +45,12 @@ def networks_table(
 
 
 def dataset_card(
-    manifest: Manifest, passports: Sequence[Mapping[str, Any]], statuses: Counter[str]
+    manifest: Manifest,
+    passports: Sequence[Mapping[str, Any]],
+    statuses: Counter[str],
+    opf_statuses: Counter[str] | None = None,
 ) -> str:
-    """The dataset's ``README.md``."""
+    """The dataset's ``README.md``; ``opf_statuses`` with OPF labels."""
     config = manifest.config
     name = config["dataset_name"]
     units = Counter(u.status for u in manifest.units.values())
@@ -77,6 +80,15 @@ def dataset_card(
         f"- Scenarios: {total} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(statuses.items()))
         + ").",
+        *(
+            [
+                "- OPF labels: "
+                + ", ".join(f"{k} {v}" for k, v in sorted(opf_statuses.items()))
+                + " (`opf/opf_meta`; OPF labels: `docs/manual/opf.md`)."
+            ]
+            if opf_statuses is not None
+            else []
+        ),
         f"- Work units: {sum(units.values())} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(units.items()))
         + ").",

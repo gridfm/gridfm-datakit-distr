@@ -124,7 +124,7 @@ def chunk_tables(
     }
 
     drawn = [o for o in outcomes if o.load_p_w.size]
-    tables["scenarios/loads"] = _concat(
+    tables["scenarios/loads"] = concat_cast(
         [
             pa.table(
                 {
@@ -139,7 +139,7 @@ def chunk_tables(
         ],
         schema.loads(precision),
     )
-    tables["scenarios/der"] = _concat(
+    tables["scenarios/der"] = concat_cast(
         [
             pa.table(
                 {
@@ -190,14 +190,14 @@ def chunk_tables(
                     }
                 )
             )
-    tables["scenarios/node_results"] = _concat(node_parts, schema.node_results(precision))
+    tables["scenarios/node_results"] = concat_cast(node_parts, schema.node_results(precision))
     if element_currents:
         target = schema.element_results(precision)
-        tables["scenarios/element_results"] = _concat(element_parts, target)
+        tables["scenarios/element_results"] = concat_cast(element_parts, target)
     return tables
 
 
-def _concat(parts: list[pa.Table], target: pa.Schema) -> pa.Table:
+def concat_cast(parts: list[pa.Table], target: pa.Schema) -> pa.Table:
     """Concatenate and cast to ``target`` (precision, nullability); an empty table if no part."""
     if not parts:
         return target.empty_table()

@@ -46,7 +46,8 @@ gridfm_datakit_distr fetch edp                   # RAR archives: needs unrar, 7z
 |---|---|---|
 | `plots` | `pip install "gridfm-datakit-distr[plots] @ …"` | `stats --plots` |
 | `croissant` | in its own environment | `croissant <dataset>`: validation with mlcroissant, whose type stubs break the project's type checking |
-| `julia` | `uv sync --extra julia`, then `uv run --extra julia gridfm_datakit_distr setup-julia` | PowerModelsDistribution for OPF and cross-checks (Julia 1.10, about 1 GB) |
+| `opf` | `pip install "gridfm-datakit-distr[opf] @ …"` or `uv sync --extra opf` | OPF labels (CasADi with its bundled Ipopt): [OPF labels](manual/opf.md) |
+| `julia` | `uv sync --extra julia`, then `uv run --extra julia gridfm_datakit_distr setup-julia` | PowerModelsDistribution, for cross-checks (Julia 1.10, about 1 GB) |
 | `docs` | `uv sync --extra docs` | this site: `uv run --extra docs mkdocs serve` |
 
 With the `julia` extra installed, always pass `--extra julia` to `uv run` and `uv sync`, or uv

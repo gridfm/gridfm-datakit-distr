@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
+
 
 def write_circuit(directory: Path, files: dict[str, str], master: str = "master.dss") -> Path:
     """Write ``files`` (relative path -> text) under ``directory``; return the master path."""
@@ -299,6 +301,31 @@ Set VoltageBases=[0.4]
 CalcVoltageBases
 """,
 }
+
+
+# The OPF feeder without its own generators: the variants place the PV units.
+OPF_LOADS = {
+    "master.dss": "\n".join(
+        line for line in OPF_FEEDER["master.dss"].splitlines() if "Generator" not in line
+    )
+    + "\n"
+}
+
+
+def opf_catalog(root: Path) -> Catalog:
+    """A catalog of two networks under ``root/src``: ``t/lv`` (:data:`OPF_LOADS`, inside the OPF's
+    scope) and ``t/mvlv`` (:data:`MV_LV_RNEUT`, with a transformer)."""
+    write_circuit(root / "src" / "lv", OPF_LOADS)
+    write_circuit(root / "src" / "mvlv", MV_LV_RNEUT)
+    source = ArchivesSource(
+        kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
+        citation="-", archives={},
+    )  # fmt: skip
+    networks = {
+        "t/lv": Network(id="t/lv", source="src", master="lv/master.dss"),
+        "t/mvlv": Network(id="t/mvlv", source="src", master="mvlv/master.dss"),
+    }
+    return Catalog(sources={"src": source}, networks=networks)
 
 
 # Load profiles: an actual-value shape with a Q curve (a), a scaled shape without one (b,

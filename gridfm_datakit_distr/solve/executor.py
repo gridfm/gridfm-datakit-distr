@@ -29,9 +29,10 @@ from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pyarrow as pa
@@ -58,6 +59,9 @@ from gridfm_datakit_distr.variants.generate import VariantResult, generate_varia
 from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
 from gridfm_datakit_distr.views.kron import KronView
 from gridfm_datakit_distr.views.posseq import PosSeqError, find_backbone
+
+if TYPE_CHECKING:  # CasADi and the OPF modules load only with OPF labels
+    from gridfm_datakit_distr.opf.labels import OPFLabeller, OPFRow
 
 
 class GenerationError(RuntimeError):
@@ -216,11 +220,16 @@ def _network_tables(
     does not load stops the run before any unit)."""
     options = prepare_options(config)
     passports = []
-    for job in jobs:
+    for j, job in enumerate(jobs):
         prepared = prepare_network(job.network, options, root)
         passport = build_passport(prepared, catalog)
         writer.write_json(f"catalog/passports/{job.network.id}.json", passport)
         passports.append(passport)
+        if config.labels.opf.enabled:  # the reason a network has no OPF labels, once
+            from gridfm_datakit_distr.opf.support import unsupported_reason
+
+            manifest.networks[j]["opf_not_supported"] = unsupported_reason(prepared.model)
+    manifest.save()
     writer.write_table(
         "catalog/networks", networks_table(passports, manifest.networks), schema.CATALOG_NETWORKS
     )
@@ -246,7 +255,11 @@ def finalise(
     statuses: Counter[str] = Counter()
     if meta is not None:
         statuses.update(str(s) for s in meta.column("pf_status").to_pylist())
-    writer.write_text("README.md", dataset_card(manifest, passports, statuses))
+    opf = writer.read("opf/opf_meta", columns=["opf_status"])
+    opf_statuses = (
+        None if opf is None else Counter(str(s) for s in opf.column("opf_status").to_pylist())
+    )
+    writer.write_text("README.md", dataset_card(manifest, passports, statuses, opf_statuses))
     write_croissant(out)
 
 
@@ -263,6 +276,7 @@ class _Slot:
     """The variant's semantic layer (JSON), extracted before its first scenario."""
     runner: VariantRunner | None = None
     kron: KronView | None = None
+    opf: OPFLabeller | None = None
     backbone_owner: dict[str, str] = field(default_factory=dict)
     """The backbone bus of each bus (``variants/nodes.backbone_bus``)."""
 
@@ -341,7 +355,7 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
     key = (*base, config.model_dump_json(), str(k))
     if slot.key == key:
         return slot
-    slot.key, slot.runner, slot.kron, slot.semantic = None, None, None, None
+    slot.key, slot.runner, slot.kron, slot.semantic, slot.opf = None, None, None, None, None
     slot.backbone_owner = {}
     with _LOCK:
         targets = _TARGETS.get(base)
@@ -363,6 +377,10 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
         slot.runner = runner
         if config.views.kron:
             slot.kron = KronView(runner, network, variant, root=root)
+        if config.labels.opf.enabled:
+            from gridfm_datakit_distr.opf.labels import OPFLabeller
+
+            slot.opf = OPFLabeller(runner, config)
         slot.backbone_owner = _backbone_owner(runner.model)
     slot.key = key
     return slot
@@ -380,21 +398,27 @@ def _unit_tables(
     if slot.kron is not None:
         slot.kron.begin_unit()
     outcomes, kron_pairs = [], []
+    opf_rows: list[OPFRow] = []
     for s in range(unit.first, unit.stop):
         o = runner.run(s)
         outcomes.append(o)
-        if o.pf_status != "converged":
-            continue
-        if slot.kron is not None:
+        if slot.kron is not None and o.pf_status == "converged":
             state = runner.registry.states.get(o.state_id or "")
             kron_pairs.append((o, slot.kron.solve(o, state)))
+        if slot.opf is not None:  # the runner's context still holds the scenario
+            opf_rows.append(slot.opf.label(o))
     i, k = task.job.network_idx, task.variant_idx
     chunk_key, variant_key = part_key(i, k, unit.chunk), part_key(i, k)
     out: dict[str, tuple[str, pa.Table, pa.Schema]] = {}
+    engines = versions_of(runner)
+    if slot.opf is not None:
+        engines["casadi"] = version("casadi")
     found = chunk_tables(
         runner, outcomes, precision=precision, config_hash=digest,
-        versions=versions_of(runner), element_currents=config.labels.element_currents,
+        versions=engines, element_currents=config.labels.element_currents,
     )  # fmt: skip
+    if slot.opf is not None:
+        found.update(slot.opf.tables(opf_rows, precision))
     for name, table in found.items():
         out[name] = (chunk_key, table, schema.SCENARIO_TABLES[name](precision))
     for name, table in state_tables(runner.new_states()).items():

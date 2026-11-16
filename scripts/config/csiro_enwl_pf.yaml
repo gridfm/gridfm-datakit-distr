@@ -49,10 +49,7 @@ controls:
 labels:
   pf: true
   opf:
-    enabled: false        # next version
-    objectives: [min_import, der_cost]
-    formulation: auto
-    max_cpu_time_s: 60
+    enabled: false        # OPF labels: docs/manual/opf.md
 views:
   kron: true  # the positive-sequence equivalent: export-posseq after generation
 baselines:

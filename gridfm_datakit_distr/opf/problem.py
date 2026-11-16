@@ -39,7 +39,9 @@ from gridfm_datakit_distr.opf.support import unsupported_reason
 
 S_BASE_VA = 1e3
 """Power base of the NLP (VA). shortcut: the scale tested on LV feeders; revisit for MV networks."""
-IPOPT_OPTIONS: dict[str, Any] = {"tol": 1e-9, "max_iter": 3000, "max_cpu_time": 300.0}
+IPOPT_OPTIONS: dict[str, Any] = {"tol": 1e-9, "max_iter": 3000}
+"""With ``max_wall_time`` from :class:`OPFProblem` (a limit hit ends as
+``Maximum_WallTime_Exceeded``)."""
 SOLVED = "Solve_Succeeded"
 """The only Ipopt status that counts as solved."""
 
@@ -123,9 +125,15 @@ class OPFProblem:
     """The NLP of one network state, built once; each scenario is one :meth:`solve`."""
 
     def __init__(
-        self, model: ElectricalModel, source: Source, vpn_min_v: float, vpn_max_v: float
+        self,
+        model: ElectricalModel,
+        source: Source,
+        vpn_min_v: float,
+        vpn_max_v: float,
+        time_limit_s: float = 300.0,
     ) -> None:
-        """``vpn_min_v``, ``vpn_max_v``: bounds of the phase-to-neutral voltage magnitude (V)."""
+        """``vpn_min_v``, ``vpn_max_v``: bounds of the phase-to-neutral voltage magnitude (V);
+        ``time_limit_s``: wall-clock limit of one solve (s)."""
         self.vpn_min_v, self.vpn_max_v = vpn_min_v, vpn_max_v
         reason = unsupported_reason(model)
         if reason is not None:
@@ -193,6 +201,7 @@ class OPFProblem:
         opts: dict[str, Any] = {"print_time": False, "error_on_fail": False}
         opts |= {"ipopt.print_level": 0, "ipopt.sb": "yes"}
         opts |= {f"ipopt.{key}": value for key, value in IPOPT_OPTIONS.items()}
+        opts["ipopt.max_wall_time"] = time_limit_s
         self._solver = ca.nlpsol("opf", "ipopt", {"x": xm, "p": pm, "f": f_m, "g": g}, opts)
         self._vpn2 = ((vpn_min_v / self._v_base) ** 2, (vpn_max_v / self._v_base) ** 2)
 

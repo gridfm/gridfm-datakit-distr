@@ -369,30 +369,22 @@ class Controls(_Config):
     )
 
 
-Objective = Literal["min_import", "der_cost"]
-
-
-def _default_objectives() -> list[Objective]:
-    return ["min_import", "der_cost"]
-
-
 class OPFLabels(_Config):
-    """OPF labels (next version)."""
+    """OPF labels: the minimum-cost OPF of each scenario (docs/manual/opf.md)."""
 
-    enabled: bool = Field(default=False, description="Generate OPF labels.")
-    objectives: list[Objective] = Field(
-        default_factory=_default_objectives,
-        min_length=1,
-        description="OPF objectives.",
+    enabled: bool = Field(
+        default=False,
+        description="Solve and verify the OPF of every scenario (needs the `opf` extra and "
+        "constant-power loads).",
     )
-    formulation: Literal["auto", "IVRENPowerModel", "IVRUPowerModel"] = Field(
-        default="auto",
-        description="`auto`: `IVRENPowerModel` with an explicit neutral, else `IVRUPowerModel`.",
+    costs: Literal["economic"] = Field(
+        default="economic",
+        description="Cost preset. `economic`: source 1 per W, PV units 0 (minimum import).",
     )
-    max_cpu_time_s: float = Field(
-        default=60.0,
+    time_limit_s: float = Field(
+        default=300.0,
         gt=0,
-        description="Wall-clock limit of one OPF (s), enforced by the worker.",
+        description="Wall-clock limit of one OPF solve (s), Ipopt's `max_wall_time`.",
     )
 
 

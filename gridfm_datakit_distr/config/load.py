@@ -8,6 +8,7 @@ the network catalog or the capabilities of this version, and run once the struct
 from __future__ import annotations
 
 import fnmatch
+import importlib.util
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -151,8 +152,6 @@ def _not_in_this_version(config: GenerationConfig) -> list[Issue]:
                 "switch reconfiguration is not in v0.1",
             )
         )
-    if config.labels.opf.enabled:
-        issues.append(("labels.opf.enabled", f"OPF labels {m3}"))
     for name in ("lindist_pf", "lindist_opf"):
         if getattr(config.baselines, name):
             issues.append((f"baselines.{name}", f"LinDist3Flow baselines {m3}"))
@@ -168,7 +167,33 @@ def _not_in_this_version(config: GenerationConfig) -> list[Issue]:
     return issues
 
 
-_RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (_not_in_this_version,)
+def _opf_requirements(config: GenerationConfig) -> list[Issue]:
+    """OPF labels need CasADi (the ``opf`` extra) and constant-power loads (the problem's
+    load model)."""
+    if not config.labels.opf.enabled:
+        return []
+    issues: list[Issue] = []
+    if importlib.util.find_spec("casadi") is None:
+        issues.append(
+            (
+                "labels.opf.enabled",
+                "OPF labels need the 'opf' extra: pip install 'gridfm-datakit-distr[opf]'",
+            )
+        )
+    if config.normalisation.loads.model != "constant_power":
+        issues.append(
+            (
+                "labels.opf.enabled",
+                "OPF labels need normalisation.loads.model: constant_power (the OPF's load model)",
+            )
+        )
+    return issues
+
+
+_RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (
+    _not_in_this_version,
+    _opf_requirements,
+)
 
 
 # ------------------------------------------------------------------ error formatting

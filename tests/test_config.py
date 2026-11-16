@@ -7,6 +7,7 @@ do.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import re
 from pathlib import Path
 from typing import Any
@@ -312,7 +313,6 @@ def test_something_must_be_labelled() -> None:
     ("path", "value", "reason"),
     [
         ("variants.reconfiguration.enabled", True, "switch reconfiguration is not in v0.1"),
-        ("labels.opf.enabled", True, "OPF labels come with v1.0"),
         ("baselines.lindist_pf", True, "LinDist3Flow baselines come with v1.0"),
         ("baselines.lindist_opf", True, "LinDist3Flow baselines come with v1.0"),
         ("measurements.enabled", True, "measurement configurations come with v1.0"),
@@ -321,6 +321,31 @@ def test_something_must_be_labelled() -> None:
 )
 def test_features_not_in_this_version(path: str, value: Any, reason: str) -> None:
     one_issue(with_(path, value), path, reason)
+
+
+def test_opf_labels_are_accepted() -> None:
+    pytest.importorskip("casadi")
+    config = validate_config(with_("labels.opf.enabled", True))
+    assert (config.labels.opf.costs, config.labels.opf.time_limit_s) == ("economic", 300.0)
+
+
+def test_opf_labels_need_constant_power_loads() -> None:
+    pytest.importorskip("casadi")
+    data = with_("normalisation.loads.model", "as_is", with_("labels.opf.enabled", True))
+    one_issue(data, "labels.opf.enabled", "OPF labels need normalisation.loads.model")
+
+
+def test_opf_labels_need_the_opf_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda name, *a: None if name == "casadi" else real(name, *a)
+    )
+    one_issue(with_("labels.opf.enabled", True), "labels.opf.enabled", "OPF labels need the 'opf'")
+
+
+def test_only_the_economic_costs_exist() -> None:
+    found = issues(with_("labels.opf", {"enabled": True, "costs": "sampled"}))
+    assert found[0].startswith("labels.opf.costs: Input should be 'economic'"), found
 
 
 # ------------------------------------------------------------------- network selection

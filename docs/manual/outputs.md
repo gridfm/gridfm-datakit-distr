@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.1.0` · Status: frozen for v0.1. Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.2.0` · Status: 0.1.0 plus the OPF tables (§8). Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (a future multiphase GENCO in gridfm-graphkit, baselines, benchmark users).
 
@@ -72,7 +72,7 @@ This document is the contract between the generator and its consumers (a future 
       nodes/part-*.parquet           # per variant
       ybus.parquet                   # Kron-view admittance per state
       node_results/part-*.parquet
-  opf/                             # not generated yet
+  opf/                             # with labels.opf.enabled (§8)
     opf_meta/part-*.parquet
     opf_der/part-*.parquet
     opf_node_results/part-*.parquet
@@ -247,7 +247,7 @@ Network admittance matrix of the state, at node level (node indices of the varia
 | `residual_rel` | float32/64, nullable | power-balance residual of the stored solution, on the sampled scenarios only |
 | `t_solve_s`, `t_extract_s` | float32/64 | |
 | `generator_version`, `schema_version` | string | |
-| `engine_versions` | string (JSON) | OpenDSS engine (PMD, Ipopt and Julia once OPF labels exist) |
+| `engine_versions` | string (JSON) | OpenDSS engine; CasADi (with its bundled Ipopt) with OPF labels |
 | `config_hash` | string | |
 
 Rows exist for every attempted scenario; only scenarios with `pf_status = converged` have result rows. `loads` and `der` rows (setpoints) exist for every scenario whose draws were made.
@@ -359,37 +359,58 @@ The export reproduces the view that the generation computed up to draft.7 to the
 
 ---
 
-## 8. OPF (not generated yet)
+## 8. OPF
+
+Written with `labels.opf.enabled` (the problem, its scope and its statuses: [OPF labels](opf.md)). Each scenario's OPF is solved at the scenario's network state, loads and source voltage; the PV units are dispatched. Parts and keys as the scenario tables (§1, §6).
 
 ### `opf/opf_meta`
+
+One row per scenario of the dataset.
 
 | Column | Type | Description |
 |---|---|---|
 | `scenario_id` | int64 | |
-| `objective` | string | `min_import`, `der_cost` |
-| `cost_params` | string (JSON) | sampled DER/source costs |
-| `formulation` | string | e.g. `IVRENPowerModel` |
-| `status` | string | `LOCALLY_SOLVED`, `INFEASIBLE`, `ITERATION_LIMIT`, `TIME_LIMIT`, `ERROR` |
-| `objective_value` | float64 | |
-| `t_solve_s` | float32 | |
-| `iterations` | int32 | |
-| `verify_status` | string | `ok`, `voltage_mismatch`, `limit_violation`, `not_run` |
-| `verify_max_dv_pu` | float32 | max voltage deviation between OPF and the OpenDSS PF with OPF setpoints |
+| `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `error` |
+| `opf_message` | string, nullable | the reason with `not_supported`, the exception with `error` |
+| `opf_class` | string | `A`: the uncontrolled power flow keeps every phase-to-neutral voltage within the OPF's bounds; `B`: it does not; `C`: no power-flow label |
+| `cost_preset` | string | `economic` |
+| `source_c1`, `source_c2` | float64 | the source's cost coefficients, `c2 p² + c1 p` with `p` the power the source delivers (W): per W, per W² |
+| `objective` | float64, nullable | `Σ c2 p² + c1 p` over the source and the PV units at the returned point (W with `economic`); null without a solve |
+| `iterations` | int32, nullable | Ipopt iterations |
+| `t_solve_s` | float32/64, nullable | wall time of the Ipopt solve (s) |
+| `curtailment_w` | float32/64, nullable | `Σ (p_pf - p_opf)` over the PV units (W), against the power-flow dispatch (`scenarios/der.p_w`); round-off of the order of 1e-3 W either side |
+| `verified` | bool, nullable | the dispatch passes the OpenDSS verification; null unless `Solve_Succeeded` |
+| `verify_reason` | string, nullable | the failed checks: power flow not converged, set points, voltages, voltage bounds |
+| `verify_max_dv_pu` | float64, nullable | largest `\|V_opendss - V_opf\|` per unit of the node's line-to-neutral base; verified only up to 1e-6 |
+| `verify_max_bound_excess_pu` | float64, nullable | largest excess of a phase-to-neutral voltage over its bounds in the OpenDSS solution, per unit of the node's base; at most 1e-6 when verified |
 
 ### `opf/opf_der`
 
-`scenario_id`, `element_idx`, `p_w`, `q_var` (OPF setpoints).
+The dispatch of every PV unit, for the scenarios with `opf_status = Solve_Succeeded`.
+
+| Column | Type | Description |
+|---|---|---|
+| `scenario_id` | int64 | |
+| `element_idx` | int32 | the PV generator |
+| `p_w`, `q_var` | float32/64 | active and reactive power injected (W, var) |
+| `c1`, `c2` | float64 | the unit's cost coefficients (per W, per W²) |
 
 ### `opf/opf_node_results`
 
-`scenario_id`, `node_idx`, `v_re`, `v_im` (from PMD, mapped to our node indices).
+Node voltages of the OPF solution, for the scenarios with `opf_status = Solve_Succeeded`.
+
+| Column | Type | Description |
+|---|---|---|
+| `scenario_id` | int64 | |
+| `node_idx` | int32 | |
+| `v_re`, `v_im` | float64 | node voltage to ground (V) |
 
 ---
 
 ## 9. Baselines (not generated yet)
 
 - `baselines/lindist_pf`: `scenario_id`, `node_idx_kron`, `vm_pu` per node (LinDist3Flow gives magnitudes), `t_solve_s`, `status`.
-- `baselines/lindist_opf`: as `opf_meta` + `opf_der` with `formulation = LinDist3Flow`.
+- `baselines/lindist_opf`: defined with its ticket.
 
 The Kron and positive-sequence views (§7) are themselves the model-free baselines for PF.
 
