@@ -106,15 +106,15 @@ def test_reverse_flow_is_curtailed_to_the_transformer_rating(devices: Case) -> N
 
 
 def test_the_power_base_follows_the_loads() -> None:
-    assert power_base([800.0, 1200.0, 3000.0]) == 1e3
-    assert power_base([2e5, 5e5, 9e5]) == 1e6
+    assert power_base([800.0, 1200.0, 3000.0]) == 1e3  # 5 kVA in all
+    assert power_base([2e5, 5e5, 9e5]) == 1e5  # 1.6 MVA in all
     assert power_base([]) == 1e3
     assert power_base([10.0]) == 1e3  # never below 1 kVA
 
 
 def test_a_medium_voltage_feeder_solves_on_its_power_base(tmp_path: Path) -> None:
     case = build(tmp_path, LATERAL)  # 11 kV, loads of 104 and 538 kVA
-    assert case.problem._s_base == 1e6
+    assert case.problem._s_base == 1e4  # a tenth of 642 kVA, floored
     result = solve(case, [])
     assert result.status == SOLVED
     check = verify(case.prepared.ctx, case.prepared.model, case.problem, result)

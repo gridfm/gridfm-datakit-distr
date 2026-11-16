@@ -293,13 +293,15 @@ class OPFProblem:
 
 
 def power_base(load_va: ArrayLike) -> float:
-    """Power base (VA) of the NLP's scaling: the power of ten nearest the median load, at least
-    1 kVA (the scale of the LV feeders the formulation was first checked on)."""
-    sizes = np.abs(np.asarray(load_va, dtype=np.float64))
-    sizes = sizes[sizes > 0]
-    if not sizes.size:
+    """Power base (VA) of the NLP's scaling: the power of ten at or below a tenth of the total
+    nominal load, at least 1 kVA. Measured in T3.4: with the median load, MV networks of small
+    loads (IEEE 34: 10 kVA, EDP industrial: 1 kVA) ended class-A scenarios in restoration
+    failures; with the total load itself, IEEE 123 (4 MVA, base 10 MVA) solved dispatches that
+    OpenDSS did not reproduce within 1e-6 pu. A tenth of the total gives 100 kVA on both."""
+    total = float(np.sum(np.abs(np.asarray(load_va, dtype=np.float64))))
+    if total <= 0:
         return S_BASE_VA
-    return max(S_BASE_VA, 10.0 ** round(float(np.log10(np.median(sizes)))))
+    return max(S_BASE_VA, 10.0 ** np.floor(np.log10(total / 10.0)))
 
 
 def _devices(model: ElectricalModel, element_class: str) -> list[Element]:

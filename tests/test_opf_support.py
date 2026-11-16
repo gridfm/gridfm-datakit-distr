@@ -10,7 +10,14 @@ from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.opf.support import unsupported_reason
-from tests.circuits import ALL_CLASSES, FOUR_WIRE, MV_LV_RNEUT, OPF_FEEDER, write_circuit
+from tests.circuits import (
+    ALL_CLASSES,
+    FOUR_WIRE,
+    MV_LV_FLOATING,
+    MV_LV_RNEUT,
+    OPF_FEEDER,
+    write_circuit,
+)
 
 
 def model_of(tmp_path: Path, circuit: dict[str, str]) -> ElectricalModel:
@@ -45,3 +52,12 @@ def test_the_power_flow_path_does_not_import_casadi() -> None:
     )
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
+
+
+def test_a_network_without_a_ground_reference_is_not_covered(tmp_path: Path) -> None:
+    """Behind a transformer whose LV neutral is left open, nothing ties the LV zone to ground."""
+    reason = unsupported_reason(model_of(tmp_path, MV_LV_FLOATING))
+    assert reason is not None
+    assert reason.startswith("buses without a ground reference (voltages to ground undetermined)")
+    assert "lv" in reason
+    assert "mv2" not in reason  # the MV zone holds the source

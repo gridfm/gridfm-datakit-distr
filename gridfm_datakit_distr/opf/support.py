@@ -56,9 +56,46 @@ def unsupported_reason(model: ElectricalModel) -> str | None:
     sources = sum(e.enabled and e.element_class == "vsource" for e in model.elements)
     if sources != 1:
         reasons.setdefault(f"{sources} voltage sources, the OPF needs exactly one", [])
+    floating = floating_buses(model)
+    if floating:
+        why = "buses without a ground reference (voltages to ground undetermined)"
+        reasons[why] = floating
     if not reasons:
         return None
     return "; ".join(_listed(why, names) for why, names in reasons.items())
+
+
+def floating_buses(model: ElectricalModel) -> list[str]:
+    """Buses of the galvanic zones that nothing ties to ground, sorted.
+
+    A zone gathers the nodes of every line, switch, reactor and capacitor, and of each terminal
+    of a transformer (windings are coupled magnetically, not galvanically). It is grounded when it
+    holds a source node, a grounded neutral, or an element position tied to node 0. In a floating
+    zone (behind a delta-delta transformer, IEEE 37) only OpenDSS's anti-float admittances, about
+    1e-6 of the series ones, set the common-mode voltage: a solve at ``tol = 1e-9`` cannot
+    reproduce the voltages to ground within the verification's 1e-6 pu (T3.4).
+    """
+    parent = list(range(model.n_nodes))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    grounded = {n.idx for n in model.nodes if n.is_grounded or n.is_source}
+    for e in model.elements:
+        if not (e.enabled and e.is_pd):
+            continue
+        groups = e.terminals if e.element_class == "transformer" else [e.local_nodes()]
+        for group in groups:
+            nodes = [n for n in group if n != GROUND]
+            if len(nodes) < len(group):
+                grounded.update(nodes)
+            for n in nodes[1:]:
+                parent[find(n)] = find(nodes[0])
+    roots = {find(i) for i in grounded}
+    return sorted({n.bus for n in model.nodes if find(n.idx) not in roots})
 
 
 def _listed(why: str, names: list[str]) -> str:
