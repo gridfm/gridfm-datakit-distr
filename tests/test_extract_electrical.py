@@ -97,7 +97,60 @@ def test_controls_switches_and_disabled_elements(tmp_path: Path) -> None:
     assert not element(model, "Line.l1").is_tap_dependent
     assert element(model, "Line.sw").element_class == "switch"
     assert element(model, "Transformer.reg").rating_va == pytest.approx(1000e3)
-    assert element(model, "Line.l1").rating_a == pytest.approx(400.0)  # OpenDSS default NormAmps
+    assert element(model, "Line.l1").rating_a is None  # no ampacity declared: not 400 A
+
+
+# Lines whose ampacity is declared (on the line, its linecode or its wires) or not.
+RATED = {
+    "master.dss": """\
+Clear
+New Circuit.rated basekv=0.4 pu=1.0 phases=3 bus1=src angle=0
+New Linecode.plain nphases=3 r1=0.1 x1=0.1 r0=0.3 x0=0.3 c1=0 c0=0 units=km
+New Linecode.rated nphases=3 r1=0.1 x1=0.1 r0=0.3 x0=0.3 c1=0 c0=0 units=km normamps=250
+New Linecode.rated400 nphases=3 r1=0.1 x1=0.1 r0=0.3 x0=0.3 c1=0 c0=0 units=km normamps=400
+New Wiredata.plain GMR=0.0244 DIAM=0.721 RAC=0.306 Runits=mi radunits=in gmrunits=ft
+New Wiredata.rated GMR=0.0244 DIAM=0.721 RAC=0.306 NormAmps=530 Runits=mi radunits=in gmrunits=ft
+New Linegeometry.plain nconds=3 nphases=3
+~ cond=1 wire=plain x=-1 h=10 units=m cond=2 wire=plain x=0 h=10 units=m
+~ cond=3 wire=plain x=1 h=10 units=m
+New Linegeometry.rated nconds=3 nphases=3
+~ cond=1 wire=rated x=-1 h=10 units=m cond=2 wire=rated x=0 h=10 units=m
+~ cond=3 wire=rated x=1 h=10 units=m
+New Line.code_default bus1=src bus2=a linecode=plain length=0.1
+New Line.code_rated bus1=src bus2=b linecode=rated length=0.1
+New Line.code_rated400 bus1=src bus2=c linecode=rated400 length=0.1
+New Line.line_400 bus1=src bus2=d linecode=plain length=0.1 normamps=400
+New Line.overwritten bus1=src bus2=e normamps=300 linecode=plain length=0.1
+New Line.direct bus1=src bus2=f r1=0.1 x1=0.1 r0=0.3 x0=0.3 c1=0 c0=0 length=0.1
+New Line.direct_400 bus1=src bus2=g r1=0.1 x1=0.1 r0=0.3 x0=0.3 c1=0 c0=0 length=0.1 normamps=400
+New Line.geo_default bus1=src bus2=h geometry=plain length=0.1 units=km
+New Line.geo_rated bus1=src bus2=i geometry=rated length=0.1 units=km
+New Line.sw bus1=src bus2=j switch=yes
+New Load.ld bus1=a phases=3 kV=0.4 kW=10 kvar=2 model=1
+Set VoltageBases=[0.4]
+CalcVoltageBases
+""",
+}
+
+
+@pytest.mark.parametrize(
+    ("line", "rating"),
+    [
+        ("code_default", None),
+        ("code_rated", 250.0),
+        ("code_rated400", 400.0),
+        ("line_400", 400.0),
+        ("overwritten", None),  # the linecode assigned after it resets the line's value
+        ("direct", None),
+        ("direct_400", 400.0),
+        ("geo_default", None),
+        ("geo_rated", 530.0),
+        ("sw", None),
+    ],
+)
+def test_rating_a_is_null_unless_declared(tmp_path: Path, line: str, rating: float | None) -> None:
+    model = extract(tmp_path, RATED)
+    assert element(model, f"Line.{line}").rating_a == rating
 
 
 def test_unsupported_enabled_element_raises(tmp_path: Path) -> None:

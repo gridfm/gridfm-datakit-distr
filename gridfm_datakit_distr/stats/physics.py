@@ -127,9 +127,9 @@ class NetworkStats:
     network_id: str
     scenarios: int = 0
     histograms: dict[str, Histogram] = field(default_factory=dict)
-    violations: dict[str, int] = field(
-        default_factory=lambda: {"voltage": 0, "thermal": 0, "neutral": 0}
-    )
+    violations: dict[str, int] = field(default_factory=lambda: {"voltage": 0})
+    """Scenarios with a violation; ``thermal`` and ``neutral`` only where something is rated
+    (a line ampacity declared by the source, a transformer's kVA)."""
 
     def histogram(self, name: str) -> Histogram:
         if name not in self.histograms:
@@ -330,19 +330,27 @@ def _add_chunk(
         v2 = vabc[..., 0] + ALPHA**2 * vabc[..., 1] + ALPHA * vabc[..., 2]
         s.histogram("vuf").add(np.abs(v2) / np.abs(v1))
     thermal = np.zeros(n_scen, dtype=bool)
+    rated = False
     states = np.array([str(state_of[int(sid)]) for sid in sids])
     for state in np.unique(states).tolist():
         mine = np.flatnonzero(states == state)
         plan, layout = _plan(m, state)
         i_local = np.asarray((plan.yblk @ (plan.select @ v[mine].T)).T)  # Yprim · V, (scen, rows)
-        thermal[mine] |= _loadings(s, layout, v[mine], i_local)
-    s.violations["thermal"] += int(thermal.sum())
+        found = _loadings(s, layout, v[mine], i_local)
+        if found is not None:
+            thermal[mine] |= found
+            rated = True
+    if rated:
+        s.violations["thermal"] = s.violations.get("thermal", 0) + int(thermal.sum())
 
 
 def _loadings(
     s: NetworkStats, layout: _Rows, v: NDArray[np.complex128], i_local: NDArray[np.complex128]
-) -> NDArray[np.bool_]:
-    """Add the line, neutral and transformer loadings; returns the thermal violation per row."""
+) -> NDArray[np.bool_] | None:
+    """Add the line, neutral and transformer loadings; returns the thermal violation per row,
+    None when no line or transformer is rated."""
+    if not (layout.line_phase[0].size or layout.xf[0].size):
+        return None
     thermal = np.zeros(v.shape[0], dtype=bool)
     i_abs = np.abs(i_local)
     rows, line, amps = layout.line_phase
@@ -354,7 +362,9 @@ def _loadings(
     if rows.size:
         loading = _reduce(i_abs[:, rows] / amps, line, np.maximum)
         s.histogram("neutral_loading").add(loading)
-        s.violations["neutral"] += int((loading > 1).any(axis=1).sum())
+        s.violations["neutral"] = s.violations.get("neutral", 0) + int(
+            (loading > 1).any(axis=1).sum()
+        )
     rows, node, xf, rating = layout.xf
     if rows.size:
         v_xf = np.where(node >= 0, v[:, np.maximum(node, 0)], 0)

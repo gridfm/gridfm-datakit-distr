@@ -6,6 +6,7 @@ confirmed by experiment.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, replace
 
@@ -144,11 +145,46 @@ def _controlled(ctx: DssContext) -> set[str]:
     return names
 
 
-def _ratings(ctx: DssContext, raw: _Raw, element_class: str) -> tuple[float | None, float | None]:
+def _rated_linecodes(ctx: DssContext) -> set[str]:
+    """LineCodes (lower case) declaring ``NormAmps`` (the JSON lists set properties only)."""
+    api = ctx.api
+    with ctx.engine_call("LineCode ToJSON"):
+        api.Circuit.SetActiveClass("LineCode")
+        codes = json.loads(api.ActiveClass.ToJSON())
+    return {str(c["Name"]).lower() for c in codes if "NormAmps" in c}
+
+
+def _declared_amps(ctx: DssContext, name: str, rated_codes: set[str]) -> float | None:
+    """The ampacity (A) of a line or switch where the source declares one, else None.
+
+    ``NormalAmps()`` is 400 A when nothing is declared, so the provenance is read from the JSON
+    of the line, which lists the properties that were set, in order (notes/opendss_api.md X3b):
+    with a LineCode, the linecode declares it or the line sets it after the linecode (it then
+    follows ``EmergAmps``, which a copy from the linecode precedes); with a Geometry or Spacing,
+    the engine gives 0 when no wire declares one; otherwise the line itself sets ``NormAmps``.
+    """
+    api = ctx.api
+    ctx.activate_element(name)
+    with ctx.engine_call(f"ToJSON {name}"):
+        keys = list(json.loads(api.Element.ToJSON()))
+        amps = float(api.CktElement.NormalAmps())
+        code = str(api.Lines.LineCode()).lower() if "LineCode" in keys else ""
+    if "LineCode" in keys:
+        late = {"NormAmps", "EmergAmps"} <= set(keys) and (
+            keys.index("NormAmps") > keys.index("EmergAmps")
+        )
+        return amps if code in rated_codes or late else None
+    if "Geometry" in keys or "Spacing" in keys:
+        return amps if amps > 0 else None
+    return amps if "NormAmps" in keys else None
+
+
+def _ratings(
+    ctx: DssContext, raw: _Raw, element_class: str, rated_codes: set[str]
+) -> tuple[float | None, float | None]:
     api = ctx.api
     if element_class in ("line", "switch"):
-        ctx.activate_element(raw.name)
-        return float(api.CktElement.NormalAmps()), None
+        return _declared_amps(ctx, raw.name, rated_codes), None
     if element_class == "transformer":
         api.Transformers.Name(raw.name.split(".", 1)[1])
         api.Transformers.Wdg(1)
@@ -192,6 +228,7 @@ def extract_electrical(ctx: DssContext, network_id: str, variant_id: str) -> Ele
         raise ExtractionError(f"PD classification differs from the engine's PD lists: {diff[:10]}")
 
     controlled = _controlled(ctx)
+    rated_codes = _rated_linecodes(ctx)
     elements: list[Element] = []
     source_nodes: set[int] = set()
     for idx, raw in enumerate(kept):
@@ -203,7 +240,9 @@ def extract_electrical(ctx: DssContext, network_id: str, variant_id: str) -> Ele
                 element_class = "switch"
         terminals = _terminals(raw, index)
         yprim = ctx.element_yprim(raw.name) if is_pd else None
-        rating_a, rating_va = _ratings(ctx, raw, element_class) if is_pd else (None, None)
+        rating_a, rating_va = (
+            _ratings(ctx, raw, element_class, rated_codes) if is_pd else (None, None)
+        )
         elements.append(
             Element(
                 idx=idx,

@@ -12,6 +12,7 @@ import pytest
 from gridfm_datakit_distr.solve.executor import generate
 from gridfm_datakit_distr.stats.physics import ALPHA, Histogram, physics, report_text, write_report
 from gridfm_datakit_distr.stats.plots import write_plots
+from tests.circuits import VARIANT_FEEDER
 from tests.test_executor import catalog, config
 
 
@@ -95,11 +96,17 @@ def test_loadings_from_recomputed_currents(tmp_path: Path) -> None:
     data = data.model_copy(
         update={"labels": data.labels.model_copy(update={"element_currents": True})}
     )
-    generate(data, stored, catalog=catalog(tmp_path), root=tmp_path)
+    networks = catalog(tmp_path)
+    # the feeder's four-wire linecode declares an ampacity; the regulated network declares none
+    master = tmp_path / "src" / "feeder" / "master.dss"
+    lc4 = "New Linecode.lc4 nphases=4 units=km"
+    master.write_text(VARIANT_FEEDER["master.dss"].replace(lc4, f"{lc4} normamps=200"))
+    generate(data, stored, catalog=networks, root=tmp_path)
     currents = pq.read_table(stored / "scenarios" / "element_results")
     stats = physics(stored, 0.94, 1.10)
-    for network, s in stats.items():
-        assert s.histograms["line_loading"].n > 0, network
+    assert stats["t/feeder"].histograms["line_loading"].n > 0
+    assert stats["t/feeder"].histograms["neutral_loading"].n > 0
+    assert "line_loading" not in stats["t/reg"].histograms  # no load against a default ampacity
     # the recomputed currents equal the stored ones (float32 in mixed precision)
     from gridfm_datakit_distr.stats import physics as module
 
@@ -129,7 +136,8 @@ def test_violations_and_report(dataset: Path) -> None:
     assert data["voltage_limits_pu"] == [0.94, 1.10]
     feeder = data["networks"]["t/feeder"]
     assert {"vuf", "neutral_v", "vm_a"} <= set(feeder["distributions"])
-    assert set(feeder["violation_rates"]) == {"voltage", "thermal", "neutral"}
+    # no line declares an ampacity: no neutral rate; the transformer's kVA gives a thermal one
+    assert set(feeder["violation_rates"]) == {"voltage", "thermal"}
     assert "t/reg:" in report_text(stats)
     figures = {p.name for p in write_plots(dataset, stats)}
     assert {"voltage.png", "vuf.png", "neutral_voltage.png"} <= figures

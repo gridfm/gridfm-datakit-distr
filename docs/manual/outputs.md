@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.2.0` · Status: 0.1.0 plus the OPF tables (§8). Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.3.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (a future multiphase GENCO in gridfm-graphkit, baselines, benchmark users).
 
@@ -155,7 +155,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `n_terminals`, `n_conductors` | int8 | |
 | `enabled` | bool | |
 | `is_tap_dependent` | bool | Yprim depends on the network state (transformers with tap control, switched capacitors) |
-| `rating_a` | float32, nullable | normal ampacity per conductor (lines, switches) |
+| `rating_a` | float32, nullable | normal ampacity per conductor (lines, switches), as the source declares it (on the line, its linecode or its wires); null where the source declares none (OpenDSS would assume 400 A) |
 | `rating_va` | float32, nullable | apparent-power rating (transformers) |
 
 ### `variants/element_terminals/part-*.parquet`
