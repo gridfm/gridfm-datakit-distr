@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.11"
           enable-cache: true
-      - run: uv sync --locked
+      - run: uv sync --locked --extra opf
       - name: RAR5 extractor for the EDP archives
         run: sudo apt-get update && sudo apt-get install -y 7zip
       - uses: actions/cache@v4
@@ -32,12 +32,12 @@ jobs:
           path: .network-cache
           key: networks-${{ hashFiles('gridfm_datakit_distr/networks/catalog.yaml', 'gridfm_datakit_distr/networks/manifests/*.sha256') }}
       - name: Fetch networks (verified; a no-op when cached)
-        run: uv run gridfm_datakit_distr fetch epri_ieee csiro_enwl edp
+        run: uv run --extra opf gridfm_datakit_distr fetch epri_ieee csiro_enwl edp
       - name: Conformance tests
-        run: uv run pytest -m "network_data and not slow and not julia and not perf"
+        run: uv run --extra opf pytest -m "network_data and not slow and not julia and not perf"
       - name: Conformance suite against the golden files (C1-C7) on the reference set
         run: >-
-          uv run gridfm_datakit_distr validate $(cat integrationtests/golden/networks.txt)
+          uv run --extra opf gridfm_datakit_distr validate $(cat integrationtests/golden/networks.txt)
           --golden integrationtests/golden --out validation
       - uses: actions/upload-artifact@v4
         if: always()

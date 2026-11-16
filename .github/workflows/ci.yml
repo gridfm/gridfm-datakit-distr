@@ -33,8 +33,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - run: uv sync --locked
-      - run: uv run pytest -m "not slow and not julia and not network_data and not perf"
+      - run: uv sync --locked --extra opf
+      - run: uv run --extra opf pytest -m "not slow and not julia and not network_data and not perf"
 
   croissant:
     # the official validator (mlcroissant) lives in its own environment: it pulls pandas-stubs,

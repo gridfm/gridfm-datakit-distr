@@ -276,6 +276,31 @@ CalcVoltageBases
 }
 
 
+# 0.4 kV four-wire feeder in the scope of the OPF: lines, a neutral-grounding reactor at the
+# source, single-phase phase-to-neutral loads and two PV units (``Generator.pv_<load>``) at the
+# far end, 400 m from the source. At 30 kW each the PV raises the far end above 253 V.
+OPF_FEEDER = {
+    "master.dss": """\
+Clear
+New Circuit.opf basekv=0.4 pu=1.0 phases=3 bus1=src.1.2.3 angle=0 MVAsc3=100 MVAsc1=100
+New Reactor.grounding phases=1 bus1=src.4 bus2=src.0 R=0 X=0.01
+New Linecode.lc4 nphases=4 units=km
+~ rmatrix=(0.5 | 0.1 0.5 | 0.1 0.1 0.5 | 0.1 0.1 0.1 0.6)
+~ xmatrix=(0.3 | 0.1 0.3 | 0.1 0.1 0.3 | 0.1 0.1 0.1 0.35)
+~ cmatrix=(0 | 0 0 | 0 0 0 | 0 0 0 0)
+New Line.l1 bus1=src.1.2.3.4 bus2=b1.1.2.3.4 phases=4 linecode=lc4 length=0.2 units=km
+New Line.l2 bus1=b1.1.2.3.4 bus2=b2.1.2.3.4 phases=4 linecode=lc4 length=0.2 units=km
+New Load.h1 bus1=b1.1.4 phases=1 kV=0.23 kW=2 kvar=0.5 model=1
+New Load.h2 bus1=b2.2.4 phases=1 kV=0.23 kW=2 kvar=0.5 model=1
+New Load.h3 bus1=b2.3.4 phases=1 kV=0.23 kW=1 kvar=0.2 model=1
+New Generator.pv_h2 bus1=b2.2.4 phases=1 kV=0.23 kW=2 kvar=0 model=1 vminpu=0.6 vmaxpu=1.5
+New Generator.pv_h3 bus1=b2.3.4 phases=1 kV=0.23 kW=2 kvar=0 model=1 vminpu=0.6 vmaxpu=1.5
+Set VoltageBases=[0.4]
+CalcVoltageBases
+""",
+}
+
+
 # Load profiles: an actual-value shape with a Q curve (a), a scaled shape without one (b,
 # yearly), a one-point shape (c), a load without shape (d); multi-point shapes of 6 and 8 hours.
 PROFILED = {

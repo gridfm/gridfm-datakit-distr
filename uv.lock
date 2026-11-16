@@ -131,6 +131,35 @@ wheels = [
 ]
 
 [[package]]
+name = "casadi"
+version = "3.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/d0/f314fa0cad00aec881a645d3cef25da776112cd0d6d9377b3e054728f167/casadi-3.8.2.tar.gz", hash = "sha256:d49d3a0cb27fe4787cee7e1e14b22de5fb5afd70189d829f194baf8cc2a344c7", size = 8166798 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/3b/98ad64b4cd860bf361fce46f00cf120a84870a0be14dc0b556fede444609/casadi-3.8.2-cp310-none-macosx_11_0_arm64.whl", hash = "sha256:2aa348aa5c081afda4eb821a882d25fcb279c10683ed48847e6e8857fec99c4c", size = 55252504 },
+    { url = "https://files.pythonhosted.org/packages/b4/6b/151e8300f4e31b908e1158e927e8fa2de4eb51f9efc8875668fda8166491/casadi-3.8.2-cp310-none-macosx_11_0_x86_64.macosx_11_0_intel.whl", hash = "sha256:602bf80245278130d7aaf26b3aa8ae0f28455dbe8729ee4f000eaff4bae34ad4", size = 55319920 },
+    { url = "https://files.pythonhosted.org/packages/45/10/5b495dacf936d451811b05b868b72a1882d83bced4ad84a21b6748ef02c0/casadi-3.8.2-cp310-none-manylinux2014_aarch64.whl", hash = "sha256:e2781d665f7babd4cdedead78c2b1a5bd209d47b414c46568f68af27393e6224", size = 55735732 },
+    { url = "https://files.pythonhosted.org/packages/f7/38/eb6beadf621267248aba0a6ac13d98dd23c93a175ad84ed1f7764c9a54d6/casadi-3.8.2-cp310-none-manylinux2014_i686.whl", hash = "sha256:777844602f1ab3eafd6ae966008525345d7c283ad8825c7d55df097f67bc185f", size = 87450240 },
+    { url = "https://files.pythonhosted.org/packages/a1/98/b53ca78be964b3905c9d0a499c7a3e7a5d60effcf262404e4b3bf69ed8b2/casadi-3.8.2-cp310-none-manylinux2014_x86_64.whl", hash = "sha256:cdb6db23881f505a0d67e4743896854bf6f66a2c44e98f0e347153ee5b0367bc", size = 92350624 },
+    { url = "https://files.pythonhosted.org/packages/b8/52/d9fc886917e4f6830485a707e3b33317fc6b0532e3510ec02e77f48a319f/casadi-3.8.2-cp310-none-manylinux_2_28_aarch64.whl", hash = "sha256:27d32e7ec82c4ad39ccfe35c743607484a126056169890dfef80df6f18b9799a", size = 58386381 },
+    { url = "https://files.pythonhosted.org/packages/b1/1f/d9e9159a15660dd238c59d09d60a14fafcd0ed0a23c3122fd4d1d530cb01/casadi-3.8.2-cp310-none-manylinux_2_28_x86_64.whl", hash = "sha256:8aec74819b3ec6ffa462433d84d78ce67b2b695984b5a965c4a1875fdf476788", size = 93193666 },
+    { url = "https://files.pythonhosted.org/packages/99/60/79c8452be54b111da51ef647c648460bb6d2351ccb093cc199092a8bdc7d/casadi-3.8.2-cp310-none-win_amd64.whl", hash = "sha256:db51f3bef7c9f5ca52835ee9fc6e41084b0e9c3ca08e4024ae85e4d7331bdc99", size = 60127890 },
+    { url = "https://files.pythonhosted.org/packages/df/e3/620f1c4159119fba62ddb49c5a214450ad9d4b5a3ef45959a0cb3768180e/casadi-3.8.2-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:7bd66af729e7984789142888607acfbdc1fe12f034a46b249faee3cffe759c1d", size = 55270219 },
+    { url = "https://files.pythonhosted.org/packages/e3/07/ccd0be6e2f5849e7943f71006006bbcba383460adc72e120c293a7c14c75/casadi-3.8.2-cp311-abi3-macosx_11_0_x86_64.macosx_11_0_intel.whl", hash = "sha256:cb55c3fd2a0bf3289f71e26e967448a0e5941d732a2d86d964533876767b56d5", size = 55145889 },
+    { url = "https://files.pythonhosted.org/packages/32/89/c39f5962a8ec9fad6362c589456fc9473cffe7dc88728cc8480548d83ef7/casadi-3.8.2-cp311-abi3-manylinux2014_aarch64.whl", hash = "sha256:9a3e1a496c538000790491bde6e01a8c419c90f7d52b65c89455f37eccef786c", size = 55751073 },
+    { url = "https://files.pythonhosted.org/packages/46/9b/435afe0e0448fa8d296a10c132e00c274868b299c9a489279e6a93a05e7a/casadi-3.8.2-cp311-abi3-manylinux2014_i686.whl", hash = "sha256:4eb2dfd02235d03e2ecb7804a5d7ee27773b163a19e2aaa11df62078a12e29e1", size = 87452528 },
+    { url = "https://files.pythonhosted.org/packages/4f/29/50f0e1e8c114813d25463f8753ff9f8a06a7c5358d9890e60950a1acc133/casadi-3.8.2-cp311-abi3-manylinux2014_x86_64.whl", hash = "sha256:e7565f06da49f5d097c57eba0f1f53b86242dd6c876c5aea5193f03364a02a14", size = 92352869 },
+    { url = "https://files.pythonhosted.org/packages/05/3e/0fc39562e254e2d6e68e471287ebed5d3982f863851bcad87cb18627a291/casadi-3.8.2-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:7fd78bd8285ad0e75c0fdb7d5c66407976dd5abceefaec03e7174cd504b48e0e", size = 58388768 },
+    { url = "https://files.pythonhosted.org/packages/38/40/43316b36a96786a53c36c52f38eaf88bd5cadb3ce445b931d14cabbcab26/casadi-3.8.2-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:118df1a9ae944a80989849ea5cfa76c20b28e95d6f568c9f989e8c16a66ab1db", size = 93196992 },
+    { url = "https://files.pythonhosted.org/packages/47/0a/6acf4ff5ee0039db2a5d69200937ce0500a5fafc94f5c220e8b20b1fd840/casadi-3.8.2-cp311-abi3-win_amd64.whl", hash = "sha256:337365cf40448d368d12cf0b6561604274f8d2a979ef7c0b672086d64188c221", size = 60107861 },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
@@ -698,6 +727,9 @@ docs = [
 julia = [
     { name = "juliacall" },
 ]
+opf = [
+    { name = "casadi" },
+]
 plots = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -724,6 +756,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "casadi", marker = "extra == 'opf'", specifier = ">=3.8" },
     { name = "juliacall", marker = "extra == 'julia'", specifier = ">=0.9.29,<0.9.37" },
     { name = "matplotlib", marker = "extra == 'plots'", specifier = ">=3.8" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
@@ -737,7 +770,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["croissant", "docs", "julia", "plots"]
+provides-extras = ["croissant", "docs", "julia", "opf", "plots"]
 
 [package.metadata.requires-dev]
 dev = [
