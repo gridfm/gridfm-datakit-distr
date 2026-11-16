@@ -16,6 +16,9 @@ LV feeders with an explicit neutral. It is the distribution counterpart of
 [gridfm-datakit](https://github.com/gridfm/gridfm-datakit) and is meant for multiphase neural
 solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
 
+> Developed by Carmine Delle Femine ([@cardef](https://github.com/cardef)) at
+> [Vicomtech](https://www.vicomtech.org). Copyright 2026 Vicomtech, released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
+
 ## Unique Features
 
 * **Three-phase truth per conductor**: OpenDSS (through [DSS-Extensions](https://dss-extensions.org/))
