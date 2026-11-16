@@ -258,6 +258,10 @@ def opf_meta(precision: Precision) -> pa.Schema:
             _nullable("verify_reason", pa.string()),
             _nullable("verify_max_dv_pu", pa.float64()),
             _nullable("verify_max_bound_excess_pu", pa.float64()),
+            _nullable("controls_hold", pa.bool_()),
+            _nullable("n_vmin_active", pa.int32()),
+            _nullable("n_vmax_active", pa.int32()),
+            _nullable("n_rating_active", pa.int32()),
         ]
     )
 

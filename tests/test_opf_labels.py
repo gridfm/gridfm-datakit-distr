@@ -233,3 +233,31 @@ def test_sampled_costs_differ_by_unit_and_scenario(sampled: Path) -> None:
     assert len(set(c1)) == len(c1)  # one draw per unit and scenario
     assert all(0.0 <= c < 1.0 for c in c1)
     assert {r["source_c1"] for r in read(sampled, "opf/opf_meta").to_pylist()} == {1.0}
+
+
+def test_active_limits_are_counted(dataset: Path) -> None:
+    opf = read(dataset, "opf/opf_meta").to_pylist()
+    solved = [r for r in opf if r["opf_status"] == SOLVED]
+    assert all(r["n_vmin_active"] is not None for r in solved)
+    curtailing = [r for r in solved if r["curtailment_w"] > 1.0]
+    assert curtailing
+    # PV curtailed for an overvoltage: an upper voltage bound (or a rating) binds
+    assert all(r["n_vmax_active"] + r["n_rating_active"] >= 1 for r in curtailing)
+    assert all(r["controls_hold"] is None for r in solved)  # no regulator in these networks
+
+
+def test_controls_hold_is_reported_on_a_regulated_network(tmp_path: Path) -> None:
+    from tests.test_executor import CONFIG as EXECUTOR_CONFIG
+    from tests.test_executor import catalog as executor_catalog
+
+    data = copy.deepcopy(EXECUTOR_CONFIG)
+    data["labels"] = {"opf": {"enabled": True}}
+    data["networks"] = {"include": ["t/reg"]}
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out, catalog=executor_catalog(tmp_path),
+             root=tmp_path)  # fmt: skip
+    opf = read(out, "opf/opf_meta").to_pylist()
+    solved = [r for r in opf if r["opf_status"] == SOLVED]
+    assert solved
+    assert all(r["verified"] for r in solved)
+    assert all(isinstance(r["controls_hold"], bool) for r in solved)

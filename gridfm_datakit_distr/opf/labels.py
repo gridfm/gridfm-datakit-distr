@@ -46,6 +46,9 @@ from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner
 from gridfm_datakit_distr.solve.tables import concat_cast
 
+ACTIVE_REL = 1e-6
+"""A limit is counted active when the solution is within this relative distance of it."""
+
 
 @dataclass(frozen=True, slots=True, eq=False)
 class OPFRow:
@@ -63,6 +66,9 @@ class OPFRow:
     """The scenario's cost coefficients (source first)."""
     q_max_var: FloatArray | None = None
     """The largest |q| each PV unit could dispatch (var, D-067)."""
+    active: tuple[int, int, int] | None = None
+    """Limits active at the solution: voltages at their lower and upper bounds, transformers at
+    their rating (within :data:`ACTIVE_REL` of the bound)."""
 
 
 class OPFLabeller:
@@ -122,9 +128,26 @@ class OPFLabeller:
             return OPFRow(o.scenario_id, "error", opf_class, message, costs=costs)
         p_pf = o.pv_p_w if o.pv_p_w is not None else np.zeros(0)
         curtailment = float(np.sum(p_pf - result.pv_p_w))
+        active = self._active(problem, result, str(o.state_id)) if result.solved else None
         return OPFRow(
-            o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs, q_max
-        )
+            o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs,
+            q_max, active,
+        )  # fmt: skip
+
+    def _active(
+        self, problem: OPFProblem, result: OPFResult, state_id: str
+    ) -> tuple[int, int, int]:
+        """Counts of the voltage bounds and transformer ratings active at ``result``."""
+        pairs, v = problem.pairs, result.v
+        neutral = np.where(pairs[:, 1] == GROUND, 0.0, v[pairs[:, 1]])
+        vpn = np.abs(v[pairs[:, 0]] - neutral)
+        low = int(np.sum(vpn <= problem.vpn_lo_v * (1 + ACTIVE_REL)))
+        high = int(np.sum(vpn >= problem.vpn_hi_v * (1 - ACTIVE_REL)))
+        model = self.runner.state_model(state_id)
+        names = set(problem.transformer_names)
+        ratings = [(e, e.rating_va) for e in model.elements if e.name in names and e.rating_va]
+        at_rating = sum(winding_va(e, v) >= va * (1 - ACTIVE_REL) for e, va in ratings)
+        return low, high, int(at_rating)
 
     def costs_of(self, sid: int) -> Costs:
         """The cost coefficients of scenario ``sid``: the preset ``economic``, or ``sampled``
@@ -193,6 +216,10 @@ class OPFLabeller:
                 "verify_max_bound_excess_pu": None
                 if r.verification is None
                 else r.verification.max_bound_excess_pu,
+                "controls_hold": None if r.verification is None else r.verification.controls_hold,
+                "n_vmin_active": None if r.active is None else r.active[0],
+                "n_vmax_active": None if r.active is None else r.active[1],
+                "n_rating_active": None if r.active is None else r.active[2],
             }
             for r in rows
         ]
