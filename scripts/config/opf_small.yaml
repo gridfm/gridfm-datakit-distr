@@ -1,0 +1,18 @@
+# OPF labels on one small four-wire LV feeder (CSIRO) in a few seconds: the getting-started
+# guide's OPF example (docs/manual/opf.md). Needs the `opf` extra.
+dataset_name: opf_small
+networks:
+  include: [csiro_enwl/n02_f5]
+  # 216.2 to 253.0 V phase-to-neutral (UK ESQCR) on the feeder's 240.18 V base
+  voltage_limits: {vmin_pu: 0.9002, vmax_pu: 1.0534}
+der:
+  pv:
+    penetration: 1.0
+    kwp: 20.0
+scenarios:
+  n_scenarios_per_variant: 10
+labels:
+  opf:
+    enabled: true
+settings:
+  seed: 1

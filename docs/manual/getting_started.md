@@ -262,9 +262,45 @@ factor, loadings, violation rates; `--plots` also draws them, with the `plots` e
 `README.md` is the dataset card; `manifest.json` records the resolved config, its hash and the
 versions that made the data.
 
-## 5. Where next
+## 5. OPF labels
+
+With the `opf` extra installed, a dataset can also carry the optimal power flow of every scenario:
+the dispatch of the PV units that imports the least power within the voltage limits, checked in
+OpenDSS ([OPF labels](opf.md)). `scripts/config/opf_small.yaml` asks for 10 scenarios of a small
+CSIRO feeder with large PV units:
+
+```bash
+uv sync --extra opf
+uv run --extra opf gridfm_datakit_distr generate scripts/config/opf_small.yaml --data-dir data
+```
+
+Every scenario has a row in `opf/opf_meta`, with its status and class; the solved ones have the
+dispatch in `opf/opf_der` and the voltages in `opf/opf_node_results`:
+
+```python
+from collections import Counter
+
+import pyarrow.parquet as pq
+
+opf = pq.read_table("data/opf_small/opf/opf_meta").to_pylist()
+print(Counter((r["opf_status"], r["opf_class"]) for r in opf))
+solved = [r for r in opf if r["opf_status"] == "Solve_Succeeded"]
+assert all(r["verified"] for r in solved)  # OpenDSS reproduces every dispatch
+curtailed = {r["scenario_id"]: r["curtailment_w"] for r in solved if r["curtailment_w"] > 1.0}
+print("curtailed (W):", curtailed)
+dispatch = pq.read_table("data/opf_small/opf/opf_der")
+pv = pq.read_table("data/opf_small/scenarios/der")
+print(dispatch.num_rows, "PV set points of the OPF next to", pv.num_rows, "of the power flow")
+```
+
+In a class-`B` scenario the power flow's dispatch breaks a voltage limit and the OPF corrects it,
+with reactive power first and by curtailing when that is not enough. The larger slice of five
+feeders is `scripts/config/opf_slice.yaml` (500 scenarios, about 22 minutes on one process).
+
+## 6. Where next
 
 - [Networks](networks.md): the catalog, where each network comes from and its conformance status.
 - [Variants](variants.md) and [Scenarios](scenarios.md): what changes from one sample to the next.
+- [OPF labels](opf.md): the OPF problem, its scope and its statuses.
 - [Outputs](outputs.md): every table and column, units and conventions.
 - [Configuration reference](config.md): every config key with its default.

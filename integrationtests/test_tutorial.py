@@ -15,10 +15,15 @@ from gridfm_datakit_distr.cli import app
 pytestmark = [pytest.mark.conformance, pytest.mark.network_data]
 REPO = Path(__file__).parents[1]
 TUTORIAL = REPO / "docs" / "manual" / "getting_started.md"
+OPF_SECTION = "## 5. OPF labels"
 
 
-def blocks(language: str) -> list[str]:
-    return re.findall(rf"```{language}\n(.*?)```", TUTORIAL.read_text(encoding="utf-8"), re.S)
+def blocks(language: str, *, opf: bool = False) -> list[str]:
+    """The code blocks of the guide outside its OPF section (``opf``: of the OPF section only)."""
+    text = TUTORIAL.read_text(encoding="utf-8")
+    head, _, tail = text.partition(OPF_SECTION)
+    opf_part, _, rest = tail.partition("\n## ")
+    return re.findall(rf"```{language}\n(.*?)```", opf_part if opf else head + rest, re.S)
 
 
 def test_the_tutorial_runs(
@@ -43,6 +48,24 @@ def test_the_tutorial_runs(
     for i, code in enumerate(snippets):
         exec(compile(code, f"tutorial-snippet-{i}", "exec"), namespace)
     assert namespace["kcl"] < 1e-6
+
+
+def test_the_opf_example_runs(
+    network_master: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("casadi")
+    network_master("csiro_enwl/n02_f5")
+    config = str(REPO / "scripts" / "config" / "opf_small.yaml")
+    monkeypatch.chdir(tmp_path)
+    args = ["generate", config, "--data-dir", "data"]
+    assert any("generate scripts/config/opf_small.yaml" in b for b in blocks("bash", opf=True))
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    namespace: dict[str, Any] = {}
+    (snippet,) = blocks("python", opf=True)
+    exec(compile(snippet, "tutorial-opf", "exec"), namespace)
+    assert namespace["solved"]
+    assert namespace["curtailed"]
 
 
 def test_the_example_configs_validate() -> None:

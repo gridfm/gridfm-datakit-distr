@@ -1,0 +1,29 @@
+# OPF labels on five four-wire LV feeders of the ENWL networks (CSIRO), with rooftop PV sized to
+# push part of the scenarios above the voltage limit: the OPF slice (docs/manual/opf.md).
+# Unlisted keys take their defaults: docs/manual/config.md. Needs the `opf` extra.
+dataset_name: opf_slice
+networks:
+  include:
+    - csiro_enwl/n05_f8
+    - csiro_enwl/n14_f6
+    - csiro_enwl/n15_f7
+    - csiro_enwl/n17_f7
+    - csiro_enwl/n21_f3
+  # 216.2 to 253.0 V phase-to-neutral (UK ESQCR, 230 V -6 %/+10 %) on these feeders' 240.18 V base
+  voltage_limits: {vmin_pu: 0.9002, vmax_pu: 1.0534}
+variants:
+  n_variants: 2
+der:
+  pv:
+    penetration: 0.4
+    kwp: {distribution: uniform, low: 5.0, high: 25.0}
+scenarios:
+  n_scenarios_per_variant: 50
+labels:
+  opf:
+    enabled: true
+    costs: economic
+    time_limit_s: 300
+settings:
+  seed: 7
+  chunk_size: 50
