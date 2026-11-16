@@ -52,6 +52,12 @@ class Perturbation:
     """Customer load -> peak power of its PV unit (kW)."""
     pv_power_factor: dict[str, float] = field(default_factory=dict)
     """Customer load -> power factor of its inverter, when not 1."""
+    pv_reactive_fraction: dict[str, float] = field(default_factory=dict)
+    """Customer load -> largest |q| of its inverter in the OPF (fraction of the rating), when
+    drawn (a fixed spec is not stored per unit)."""
+    pv_reactive_threshold: dict[str, float] = field(default_factory=dict)
+    """Customer load -> available power (fraction of the rating) below which its inverter gives
+    no reactive power in the OPF, when drawn."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -63,6 +69,8 @@ class Perturbation:
             ("phase_reallocation", {k: list(v) for k, v in self.phases.items()}),
             ("pv_kwp", self.pv_kwp),
             ("pv_power_factor", self.pv_power_factor),
+            ("pv_reactive_fraction", self.pv_reactive_fraction),
+            ("pv_reactive_threshold", self.pv_reactive_threshold),
         ):
             if values:
                 data[key] = values
@@ -114,17 +122,19 @@ def sample_perturbation(
             t = targets.loads[c]
             new = t.candidates[int(rng.integers(len(t.candidates)))]
             phases[t.element] = (t.bus1(t.phase), t.bus1(new))
-    rho, kwp, pf = _pv(der, targets, seed, net, k, attempt)
-    return Perturbation(attempt, line_length, neutral, grounding, phases, rho, kwp, pf)
+    rho, kwp, pf, fraction, threshold = _pv(der, targets, seed, net, k, attempt)
+    return Perturbation(
+        attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold
+    )
 
 
 def _pv(
     der: PV | None, targets: VariantTargets, seed: int, net: int, k: int, attempt: int
-) -> tuple[float, dict[str, float], dict[str, float]]:
+) -> tuple[float, dict[str, float], dict[str, float], dict[str, float], dict[str, float]]:
     """Penetration, then one uniform draw and one size per customer whatever the penetration:
     a customer with PV at one penetration has it, with the same size, at every higher one."""
     if der is None or der.penetration == _NO_PV or not targets.customers:
-        return 0.0, {}, {}
+        return 0.0, {}, {}, {}, {}
     rng = variant_rng(seed, net, k, VariantStream.DER_PLACEMENT, attempt)
     rho = float(der.penetration.sample(rng))
     chosen = rng.random(len(targets.customers)) < rho
@@ -138,7 +148,22 @@ def _pv(
         pf = {
             c.element: f for c, f, on in zip(targets.customers, factors, chosen, strict=True) if on
         }
-    return rho, kwp, pf
+    drawn: list[dict[str, float]] = []
+    for spec, stream in (
+        (der.reactive_fraction, VariantStream.DER_REACTIVE_FRACTION),
+        (der.reactive_threshold, VariantStream.DER_REACTIVE_THRESHOLD),
+    ):
+        values: dict[str, float] = {}
+        if not isinstance(spec, Fixed):
+            rng = variant_rng(seed, net, k, stream, attempt)
+            draws = [float(spec.sample(rng)) for _ in targets.customers]
+            values = {
+                c.element: v
+                for c, v, on in zip(targets.customers, draws, chosen, strict=True)
+                if on
+            }
+        drawn.append(values)
+    return rho, kwp, pf, drawn[0], drawn[1]
 
 
 def edit_script(

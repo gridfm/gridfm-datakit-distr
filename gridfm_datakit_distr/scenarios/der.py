@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import PV, PVProfile
+from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.variants.perturbation import Perturbation
 
@@ -52,6 +53,23 @@ class PVUnit:
     kwp: float
     s_rated_va: float
     power_factor: float
+    reactive_fraction: float
+    """Largest |q| in the OPF, as a fraction of ``s_rated_va`` (D-067)."""
+    reactive_threshold: float
+    """No reactive power in the OPF below this available power (fraction of ``s_rated_va``)."""
+
+    def q_max_var(self, p_avail_w: float) -> float:
+        """The largest |q| (var) the OPF may dispatch at an available power (W)."""
+        if p_avail_w < self.reactive_threshold * self.s_rated_va:
+            return 0.0
+        return self.reactive_fraction * self.s_rated_va
+
+
+def _fixed(spec: ValueSpec) -> float:
+    """The value of a fixed spec (a drawn one is stored per unit in the perturbation)."""
+    if not isinstance(spec, Fixed):
+        raise ValueError(f"no drawn value for a unit, spec {spec!r}")
+    return spec.value
 
 
 def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
@@ -63,6 +81,8 @@ def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
             kwp=kwp,
             s_rated_va=spec.inverter_kva_per_kwp * kwp * 1e3,
             power_factor=p.pv_power_factor.get(load, 1.0),
+            reactive_fraction=p.pv_reactive_fraction.get(load, _fixed(spec.reactive_fraction)),
+            reactive_threshold=p.pv_reactive_threshold.get(load, _fixed(spec.reactive_threshold)),
         )
         for load, kwp in sorted(p.pv_kwp.items())
     )

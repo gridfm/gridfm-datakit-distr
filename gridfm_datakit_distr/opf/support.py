@@ -1,20 +1,48 @@
 """Which networks the OPF problem covers, and why the others are left out.
 
-The problem of :mod:`gridfm_datakit_distr.opf.problem` covers networks made of lines, a
-neutral-grounding reactor and one voltage source grounded at its second terminal, with single-phase
-phase-to-neutral loads and PV units (``Generator.pv_<load>``) only. Transformers, capacitors,
-switches, other reactors, delta or multi-phase devices, other generators, PV systems and storage
-are not covered yet. No CasADi here: the check runs without the ``opf`` extra.
+The problem of :mod:`gridfm_datakit_distr.opf.problem` covers networks whose power-delivery
+elements (lines, switches, transformers, capacitors, reactors) enter through their admittances at
+the network state, with one voltage source grounded at its second terminal, loads and PV units
+(``Generator.pv_<load>``) connected wye (phases to a neutral node or to ground) or delta, on any
+number of phases (:func:`unit_branches`). Other generators, PV systems and storage are not covered
+yet. No CasADi here: the check runs without the ``opf`` extra.
 """
 
 from __future__ import annotations
 
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 
-PHASES = frozenset({"a", "b", "c"})
 PV_PREFIX = "generator.pv_"
 """PV units are the generators the variants place, ``Generator.pv_<load>``."""
+PD_CLASSES = frozenset({"line", "switch", "transformer", "capacitor", "reactor"})
+"""Power-delivery classes: they enter through their admittances at the network state."""
 MAX_NAMES = 3
+
+
+def unit_branches(model: ElectricalModel, element: Element) -> list[tuple[int, int]] | None:
+    """The branches (node pairs, :data:`GROUND` allowed in second place) a load or PV unit draws
+    its power through, each an equal share of it; None for a connection not covered.
+
+    One terminal of ``c`` conductors (OpenDSS ``NodeOrder``): wye when the last conductor is a
+    neutral node or ground, one branch from each other conductor to it (P/n per phase, checked in
+    spike s39); delta on three phases, ``(a, b), (b, c), (c, a)``; one branch between two phases.
+    """
+    if element.n_terminals != 1:
+        return None
+    nodes = element.local_nodes()
+
+    def ref(node: int) -> bool:
+        return node == GROUND or model.nodes[node].conductor == "n"
+
+    if len(nodes) >= 2 and ref(nodes[-1]) and not any(ref(n) for n in nodes[:-1]):
+        return [(n, nodes[-1]) for n in nodes[:-1]]
+    if any(ref(n) for n in nodes):
+        return None
+    if len(nodes) == 3:
+        return [(nodes[0], nodes[1]), (nodes[1], nodes[2]), (nodes[2], nodes[0])]
+    if len(nodes) == 2:
+        return [(nodes[0], nodes[1])]
+    return None
 
 
 def unsupported_reason(model: ElectricalModel) -> str | None:
@@ -42,31 +70,14 @@ def _listed(why: str, names: list[str]) -> str:
 
 def _reason(model: ElectricalModel, element: Element) -> str | None:
     cls = element.element_class
-    if cls == "line":
+    if cls in PD_CLASSES:
         return None
-    if cls == "reactor":
-        nodes = element.local_nodes()
-        to_neutral = all(n == GROUND or model.nodes[n].conductor == "n" for n in nodes)
-        return None if to_neutral and GROUND in nodes else "reactor other than a neutral grounding"
     if cls == "vsource":
         grounded = all(n == GROUND for terminal in element.terminals[1:] for n in terminal)
         return None if grounded else "voltage source not grounded at its second terminal"
     if cls == "generator" and not element.name.lower().startswith(PV_PREFIX):
         return "generator that is not a PV unit"
     if cls in ("load", "generator"):
-        return (
-            None
-            if _phase_to_neutral(model, element)
-            else f"{cls} not single-phase phase-to-neutral"
-        )
+        covered = unit_branches(model, element) is not None
+        return None if covered else f"{cls} with a connection not covered by the OPF"
     return f"{cls} not covered by the OPF yet"
-
-
-def _phase_to_neutral(model: ElectricalModel, element: Element) -> bool:
-    """One terminal joining one phase node and the neutral node of the same bus."""
-    nodes = element.local_nodes()
-    if element.n_terminals != 1 or len(nodes) != 2 or GROUND in nodes:
-        return False
-    a, b = (model.nodes[n] for n in nodes)
-    pair = {a.conductor, b.conductor}
-    return a.bus == b.bus and len(pair) == 2 and "n" in pair and pair - {"n"} <= PHASES

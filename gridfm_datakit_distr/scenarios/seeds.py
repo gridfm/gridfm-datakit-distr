@@ -40,6 +40,8 @@ class VariantStream(IntEnum):
     DER_PLACEMENT = 5
     DER_SIZE = 6
     DER_POWER_FACTOR = 7
+    DER_REACTIVE_FRACTION = 8
+    DER_REACTIVE_THRESHOLD = 9
 
 
 class ScenarioStream(IntEnum):
@@ -54,6 +56,8 @@ class ScenarioStream(IntEnum):
     TAP_JITTER = 6
     CUSTOMER_TIMES = 7
     """Per-customer profile times (``same_timestamp: false``); PV keeps ``PROFILE_TIME``."""
+    OPF_COSTS = 8
+    """Cost coefficients of the OPF's preset ``sampled``."""
 
 
 def network_key(network_id: str) -> int:

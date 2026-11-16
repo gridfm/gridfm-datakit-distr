@@ -250,6 +250,7 @@ def opf_meta(precision: Precision) -> pa.Schema:
             _required("source_c1", pa.float64()),
             _required("source_c2", pa.float64()),
             _nullable("objective", pa.float64()),
+            _nullable("source_p_w", pa.float64()),
             _nullable("iterations", pa.int32()),
             _nullable("t_solve_s", real),
             _nullable("curtailment_w", real),
@@ -270,6 +271,7 @@ def opf_der(precision: Precision) -> pa.Schema:
             _required("element_idx", pa.int32()),
             _required("p_w", real),
             _required("q_var", real),
+            _required("q_max_var", real),
             _required("c1", pa.float64()),
             _required("c2", pa.float64()),
         ]

@@ -116,6 +116,8 @@ Rooftop PV: placed per variant, output per scenario.
 | `der.pv.kwp` | value spec, > 0 | `{distribution: uniform, low: 2.0, high: 6.0}` | Peak power (kW) of each PV system. |
 | `der.pv.power_factor` | value spec, > 0 and ≤ 1 | `1.0` | Power factor of each inverter, drawn per variant; below 1 the inverter absorbs reactive power, within its rating. |
 | `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp of PV. |
+| `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | Largest reactive power of each inverter in the OPF, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per variant and unit. |
+| `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | No reactive power in the OPF when a unit's available power is below this fraction of its rating (IEEE 1547-2018 Category B: 0.05; 0: always); drawn per variant and unit. |
 
 ## `scenarios`
 
@@ -180,8 +182,20 @@ OPF labels: the minimum-cost OPF of each scenario (docs/manual/opf.md).
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario (needs the `opf` extra and constant-power loads). |
-| `labels.opf.costs` | one of `economic` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import). |
+| `labels.opf.costs` | one of `economic`, `sampled` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); `sampled`: coefficients drawn per scenario from `sampled`. |
 | `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit of one OPF solve (s), Ipopt's `max_wall_time`. |
+
+## `labels.opf.sampled`
+
+Cost coefficients of the preset ``sampled``, drawn per scenario (``c2 p^2 + c1 p``, ``p``
+in W): one pair for the source, one per PV unit.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `labels.opf.sampled.source_c1` | value spec, ≥ 0 | `1.0` | Linear cost of the source's power (per W). |
+| `labels.opf.sampled.source_c2` | value spec, ≥ 0 | `0.0` | Quadratic cost of the source's power (per W²). |
+| `labels.opf.sampled.pv_c1` | value spec, ≥ 0 | `{distribution: uniform, low: 0.0, high: 1.0}` | Linear cost of each PV unit's power (per W), drawn per unit. |
+| `labels.opf.sampled.pv_c2` | value spec, ≥ 0 | `0.0` | Quadratic cost of each PV unit's power (per W²). |
 
 ## `views`
 

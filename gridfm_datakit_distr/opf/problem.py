@@ -1,23 +1,26 @@
 """The OPF problem of one network state: a nodal current-voltage NLP solved with Ipopt (CasADi).
 
-Unknowns: the node voltages in rectangular coordinates, one current per load and PV unit, and the
-active and reactive power of each PV unit. Constraints:
+Unknowns: the node voltages in rectangular coordinates, one current per branch of every load and
+PV unit, and the active and reactive power of each PV unit. Constraints:
 
 - Kirchhoff's current law at every node, ``(Y_state + Y_s) V - Y_s E = C_g I_g - C_l I_l``,
-  linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus`,
-  ``Y_s`` and ``E`` the source's admittance and ideal voltages (:class:`Source`);
-- each device between its two nodes ``i, j``: ``(V_i - V_j) conj(I) = P + jQ``, the load's
-  constant power, the PV unit's ``p + jq``;
-- PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``;
+  linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus` (lines,
+  switches, transformers at their taps, capacitors, reactors), ``Y_s`` and ``E`` the source's
+  admittance and ideal voltages (:class:`Source`);
+- each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.opf.support.unit_branches`: wye,
+  delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's constant
+  power, the PV unit's ``p + jq``;
+- PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max`` (D-067);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
-  has no neutral node).
+  has no neutral node), per unit of the node's nominal voltage;
+- ``|S| <= rating`` into winding 1 of every transformer with a rating.
 
 Objective: ``sum_k (c2_k p_k^2 + c1_k p_k)`` over the source and the PV units (:class:`Costs`),
 ``p_k`` the active power element ``k`` delivers; the source's is that of its ideal voltages,
 ``Re sum E conj(Y_s (E - V_s))``. The model is built once per network state; the source voltage
 and the costs are CasADi parameters, the loads, PV limits and ratings enter as the bounds of the
-call, so each scenario is one Ipopt solve from a flat start. The NLP is scaled to per unit on the
-source's line-to-neutral base voltage and :data:`S_BASE_VA`; inputs and results are SI.
+call, so each scenario is one Ipopt solve from a flat start. The NLP is scaled to per unit on each
+node's base voltage and a power base (:func:`power_base`); inputs and results are SI.
 
 Requires the ``opf`` extra (CasADi).
 """
@@ -35,10 +38,10 @@ from numpy.typing import ArrayLike, NDArray
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
-from gridfm_datakit_distr.opf.support import unsupported_reason
+from gridfm_datakit_distr.opf.support import unit_branches, unsupported_reason
 
 S_BASE_VA = 1e3
-"""Power base of the NLP (VA). shortcut: the scale tested on LV feeders; revisit for MV networks."""
+"""Default and smallest power base of the NLP's scaling (VA): :func:`power_base`."""
 IPOPT_OPTIONS: dict[str, Any] = {"tol": 1e-9, "max_iter": 3000}
 """With ``max_wall_time`` from :class:`OPFProblem` (a limit hit ends as
 ``Maximum_WallTime_Exceeded``)."""
@@ -115,6 +118,9 @@ class OPFResult:
     """Active power each PV unit injects (W), in :attr:`OPFProblem.pv_names` order."""
     pv_q_var: FloatArray
     """Reactive power each PV unit injects (var)."""
+    source_p_w: float
+    """Active power the source delivers at the returned point (W): that of its ideal voltages,
+    behind its impedance (the ``p`` of the source's cost)."""
 
     @property
     def solved(self) -> bool:
@@ -131,71 +137,93 @@ class OPFProblem:
         vmin_pu: float,
         vmax_pu: float,
         time_limit_s: float = 300.0,
+        s_base_va: float = S_BASE_VA,
     ) -> None:
         """``vmin_pu``, ``vmax_pu``: bounds of the phase-to-neutral voltage magnitudes, per unit
         of each phase node's nominal line-to-neutral voltage (:func:`vpn_bounds`);
-        ``time_limit_s``: wall-clock limit of one solve (s)."""
-        self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, vmin_pu, vmax_pu)
-        """Phase and neutral node of every bounded voltage, and its bounds (V)."""
+        ``time_limit_s``: wall-clock limit of one solve (s); ``s_base_va``: power base of the NLP's
+        scaling (:func:`power_base`), with no effect on the problem itself."""
         reason = unsupported_reason(model)
         if reason is not None:
-            raise ValueError(f"{model.variant_id} is outside the OPF slice: {reason}")
+            raise ValueError(f"{model.variant_id} is outside the OPF's scope: {reason}")
+        self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, vmin_pu, vmax_pu)
+        """Phase and neutral node of every bounded voltage, and its bounds (V)."""
         loads = _devices(model, "load")
         pvs = _devices(model, "generator")
         self.load_names = tuple(e.name for e in loads)
         """Load elements by name: the order of the scenario's customers."""
         self.pv_names = tuple(e.name for e in pvs)
         """PV generators by name: the order of the variant's PV units."""
-        n, nl, ng = model.n_nodes, len(loads), len(pvs)
+        rated = [e for e in _devices(model, "transformer") if e.rating_va]
+        self.transformer_names = tuple(e.name for e in rated)
+        """Transformers whose apparent power at winding 1 is bounded by their rating."""
+        n, nl, ng, nt = model.n_nodes, len(loads), len(pvs), len(rated)
+        lb, gb = _branches(model, loads), _branches(model, pvs)
         self._n, self._nl, self._ng = n, nl, ng
-        self._v_base = model.nodes[int(source.nodes[0])].kv_base_ln * 1e3
-        y_base = S_BASE_VA / self._v_base**2
-        e = source.e_v / self._v_base  # pu at 1 pu
-        ys = source.y_s / y_base
+        self._load_share = _shares(lb, nl)  # (branches, loads): 1 / n_branches
+        pv_share = _shares(gb, ng)
+        self._s_base = s_base_va
+        # Per unit on each node's own base voltage and s_base: Y_pu = D Y D / s_base, D the
+        # diagonal of the bases; a device's current is per unit of its first node's base.
+        vb = np.array([node.kv_base_ln * 1e3 for node in model.nodes], dtype=np.float64)
+        self._vb = vb
         src = source.nodes
+        e = source.e_v / vb[src]  # pu at 1 pu
+        ys = vb[src][:, None] * source.y_s * vb[src][None, :] / s_base_va
         k = len(src)
         ys_nodes = sp.csr_matrix((ys.ravel(), (np.repeat(src, k), np.tile(src, k))), shape=(n, n))
-        y = (sp.csr_matrix(model.ybus()) / y_base + ys_nodes).tocsc()
+        scale = sp.diags(vb)
+        y = (scale @ sp.csr_matrix(model.ybus()) @ scale / s_base_va + ys_nodes).tocsc()
         b1 = np.zeros(n, dtype=np.complex128)
         b1[src] = ys @ e
         self._e_node = _flat_start(model, source, e)
-        pairs = self.pairs
 
-        cl, cg = _incidence(n, _ends(loads)), _incidence(n, _ends(pvs))
+        nlb, ngb = len(lb), len(gb)
+        self._nlb, self._ngb = nlb, ngb
+        cl, cg = _incidence(n, lb, vb), _incidence(n, gb, vb)
         zero = sp.csc_matrix((n, 2 * ng))
         a_kcl = sp.bmat(
             [[y.real, -y.imag, cl, None, -cg, None, zero],
              [y.imag, y.real, None, cl, None, -cg, None]]
         )  # fmt: skip
-        d = _incidence(n, pairs).T  # V_p - V_n per pair
+        d = _incidence(n, self.pairs, vb).T  # (V_p - V_n) / base_p per pair
 
         # Device rows, bounds and objective in SX; KCL as one sparse constant in MX: through SX
         # AD its Jacobian costs one colour per nonzero of the densest row (hub buses).
-        nx = 2 * n + 2 * nl + 4 * ng
+        nx = 2 * n + 2 * nlb + 2 * ngb + 2 * ng
         x = ca.SX.sym("x", nx)
         par = ca.SX.sym("p", 1 + 2 * (1 + ng))
         vr, vi = x[:n], x[n : 2 * n]
-        lr, li = x[2 * n : 2 * n + nl], x[2 * n + nl : 2 * n + 2 * nl]
-        o = 2 * n + 2 * nl
-        gr, gi, gp, gq = (x[o + j * ng : o + (j + 1) * ng] for j in range(4))
+        o = 2 * n
+        lr, li = x[o : o + nlb], x[o + nlb : o + 2 * nlb]
+        o += 2 * nlb
+        gr, gi = x[o : o + ngb], x[o + ngb : o + 2 * ngb]
+        o += 2 * ngb
+        gp, gq = x[o : o + ng], x[o + ng : o + 2 * ng]
         ulr, uli = ca.mtimes(_dm(cl.T), vr), ca.mtimes(_dm(cl.T), vi)
         ugr, ugi = ca.mtimes(_dm(cg.T), vr), ca.mtimes(_dm(cg.T), vi)
         dvr, dvi = ca.mtimes(_dm(d), vr), ca.mtimes(_dm(d), vi)
+        share = _dm(pv_share)
         v_pu = par[0]
         er, ei = v_pu * ca.DM(e.real), v_pu * ca.DM(e.imag)
         dr, di = er - vr[src.tolist()], ei - vi[src.tolist()]
         ysr, ysi = ca.DM(ys.real), ca.DM(ys.imag)
         isr = ca.mtimes(ysr, dr) - ca.mtimes(ysi, di)
         isi = ca.mtimes(ysi, dr) + ca.mtimes(ysr, di)
-        p_k = ca.vertcat(ca.dot(er, isr) + ca.dot(ei, isi), gp)
+        p_src = ca.dot(er, isr) + ca.dot(ei, isi)
+        p_k = ca.vertcat(p_src, gp)
         c1, c2 = par[1 : 2 + ng], par[2 + ng :]
         f = ca.dot(c1, p_k) + ca.dot(c2, p_k**2)
         h = ca.vertcat(
-            ulr * lr + uli * li, uli * lr - ulr * li,  # load P, Q
-            ugr * gr + ugi * gi - gp, ugi * gr - ugr * gi - gq,  # PV p, q
+            ulr * lr + uli * li, uli * lr - ulr * li,  # load branch P, Q
+            ugr * gr + ugi * gi - ca.mtimes(share, gp),  # PV branch p
+            ugi * gr - ugr * gi - ca.mtimes(share, gq),  # PV branch q
             dvr**2 + dvi**2,  # |V_p - V_n|^2
             gp**2 + gq**2,  # inverter rating
+            *[_winding_s2(model, e, vb, s_base_va, vr, vi) for e in rated],  # |S_winding1|^2
         )  # fmt: skip
+        self._s_rated2 = np.array([e.rating_va for e in rated], dtype=np.float64) ** 2
+        self._nt = nt
         xm, pm = ca.MX.sym("x", nx), ca.MX.sym("p", par.numel())
         f_m, h_m = ca.Function("fh", [x, par], [f, h])(xm, pm)
         g = ca.vertcat(ca.mtimes(_dm(a_kcl), xm) - pm[0] * ca.DM(np.r_[b1.real, b1.imag]), h_m)
@@ -204,7 +232,9 @@ class OPFProblem:
         opts |= {f"ipopt.{key}": value for key, value in IPOPT_OPTIONS.items()}
         opts["ipopt.max_wall_time"] = time_limit_s
         self._solver = ca.nlpsol("opf", "ipopt", {"x": xm, "p": pm, "f": f_m, "g": g}, opts)
-        self._vpn2 = ((self.vpn_lo_v / self._v_base) ** 2, (self.vpn_hi_v / self._v_base) ** 2)
+        self._p_source = ca.Function("p_source", [x, par], [p_src])
+        base_p = vb[self.pairs[:, 0]]
+        self._vpn2 = ((self.vpn_lo_v / base_p) ** 2, (self.vpn_hi_v / base_p) ** 2)
 
     def solve(
         self,
@@ -219,43 +249,57 @@ class OPFProblem:
     ) -> OPFResult:
         """Solve one scenario from a flat start: source voltages ``source_v_pu · E``, neutral 0.
 
-        Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA);
-        ``pv_q_max_var`` bounds ``|q|`` per unit (default: the rating alone). The status is
-        returned, never raised.
+        Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA), each
+        drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
+        unit (default: the rating alone). The status is returned, never raised.
         """
-        n, nl, ng, s = self._n, self._nl, self._ng, S_BASE_VA
+        n, nl, ng, s = self._n, self._nl, self._ng, self._s_base
         pl, ql = _vector(load_p_w, nl, "load_p_w") / s, _vector(load_q_var, nl, "load_q_var") / s
         p_avail = _vector(pv_p_avail_w, ng, "pv_p_avail_w") / s
         s_rated = _vector(pv_s_rated_va, ng, "pv_s_rated_va") / s
         q_max = s_rated if pv_q_max_var is None else _vector(pv_q_max_var, ng, "pv_q_max_var") / s
         c1, c2 = _vector(costs.c1, 1 + ng, "c1"), _vector(costs.c2, 1 + ng, "c2") * s
-        free = np.full(2 * n + 2 * nl + 2 * ng, np.inf)
+        free = np.full(2 * n + 2 * self._nlb + 2 * self._ngb, np.inf)
+        plb, qlb = self._load_share @ pl, self._load_share @ ql
         lo, hi = self._vpn2
         zeros = np.zeros(2 * n)
+        pv_rows = np.zeros(2 * self._ngb)
+        t_hi = self._s_rated2 / s**2
         bounds = {
             "lbx": np.r_[-free, np.zeros(ng), -q_max],
             "ubx": np.r_[free, p_avail, q_max],
-            "lbg": np.r_[zeros, pl, ql, np.zeros(2 * ng), lo,
-                         np.full(ng, -np.inf)],
-            "ubg": np.r_[zeros, pl, ql, np.zeros(2 * ng), hi, s_rated**2],
-        }  # fmt: skip
+            "lbg": np.r_[zeros, plb, qlb, pv_rows, lo, np.full(ng + self._nt, -np.inf)],
+            "ubg": np.r_[zeros, plb, qlb, pv_rows, hi, s_rated**2, t_hi],
+        }
         v0 = source_v_pu * self._e_node
-        x0 = np.r_[v0.real, v0.imag, np.zeros(2 * nl + 4 * ng)]
+        x0 = np.r_[v0.real, v0.imag, np.zeros(2 * self._nlb + 2 * self._ngb + 2 * ng)]
+        par = np.r_[source_v_pu, c1, c2]
         start = time.perf_counter()
-        sol = self._solver(x0=x0, p=np.r_[source_v_pu, c1, c2], **bounds)
+        sol = self._solver(x0=x0, p=par, **bounds)
         t_solve = time.perf_counter() - start
         stats = self._solver.stats()
         x = np.asarray(sol["x"], dtype=np.float64).ravel()
-        o = 2 * n + 2 * nl + 2 * ng
+        o = 2 * n + 2 * self._nlb + 2 * self._ngb
         return OPFResult(
             status=str(stats["return_status"]),
             objective=float(sol["f"]) * s,
             iterations=int(stats["iter_count"]),
             t_solve_s=t_solve,
-            v=(x[:n] + 1j * x[n : 2 * n]).astype(np.complex128) * self._v_base,
+            v=(x[:n] + 1j * x[n : 2 * n]).astype(np.complex128) * self._vb,
             pv_p_w=x[o : o + ng] * s,
             pv_q_var=x[o + ng :] * s,
+            source_p_w=float(self._p_source(x, par)) * s,
         )
+
+
+def power_base(load_va: ArrayLike) -> float:
+    """Power base (VA) of the NLP's scaling: the power of ten nearest the median load, at least
+    1 kVA (the scale of the LV feeders the formulation was first checked on)."""
+    sizes = np.abs(np.asarray(load_va, dtype=np.float64))
+    sizes = sizes[sizes > 0]
+    if not sizes.size:
+        return S_BASE_VA
+    return max(S_BASE_VA, 10.0 ** round(float(np.log10(np.median(sizes)))))
 
 
 def _devices(model: ElectricalModel, element_class: str) -> list[Element]:
@@ -263,17 +307,73 @@ def _devices(model: ElectricalModel, element_class: str) -> list[Element]:
     return sorted(found, key=lambda e: e.name)
 
 
-def _ends(devices: list[Element]) -> NDArray[np.int64]:
-    """``(m, 2)``: the two nodes of each two-node device."""
-    return np.array([e.local_nodes() for e in devices], dtype=np.int64).reshape(-1, 2)
+def _branches(model: ElectricalModel, devices: list[Element]) -> NDArray[np.int64]:
+    """``(m, 3)``: the two nodes of every branch of the devices and the device's position."""
+    rows = []
+    for j, e in enumerate(devices):
+        branches = unit_branches(model, e)
+        if branches is None:  # unsupported_reason has refused the network
+            raise ValueError(f"{e.name}: connection not covered")
+        rows += [(a, b, j) for a, b in branches]
+    return np.array(rows, dtype=np.int64).reshape(-1, 3)
 
 
-def _incidence(n: int, ends: NDArray[np.int64]) -> sp.csc_matrix:
-    """``n x m``: +1 at the first node of each pair, -1 at its second; nothing at ground."""
-    cols = np.r_[np.arange(len(ends)), np.arange(len(ends))]
-    rows, vals = ends.T.ravel(), np.repeat([1.0, -1.0], len(ends))
-    keep = rows != GROUND
-    return sp.csc_matrix((vals[keep], (rows[keep], cols[keep])), shape=(n, len(ends)))
+def _shares(branches: NDArray[np.int64], n_devices: int) -> sp.csr_matrix:
+    """``(branches, devices)``: 1 / (number of branches of the device) where the branch is its."""
+    owner = branches[:, 2]
+    counts = np.bincount(owner, minlength=n_devices)
+    return sp.csr_matrix(
+        (1.0 / counts[owner], (np.arange(len(owner)), owner)), shape=(len(owner), n_devices)
+    )
+
+
+def winding_va(element: Element, v: NDArray[np.complex128]) -> float:
+    """``|S|`` (VA) into winding 1 of a transformer at node voltages ``v`` (V), from its Yprim."""
+    assert element.yprim is not None
+    local = np.array([0.0 if n == GROUND else v[n] for n in element.local_nodes()])
+    first = element.n_conductors
+    current = element.yprim[:first] @ local
+    return float(abs(np.sum(local[:first] * np.conj(current))))
+
+
+def _winding_s2(
+    model: ElectricalModel,
+    element: Element,
+    vb: FloatArray,
+    s_base: float,
+    vr: ca.SX,
+    vi: ca.SX,
+) -> ca.SX:
+    """``|S|^2`` (pu of ``s_base``) into winding 1 of a transformer: ``sum V_k conj((Y V)_k)``
+    over the positions of its first terminal, ``Y`` its Yprim at the state, per unit on the
+    nodes' bases ``vb``."""
+    assert element.yprim is not None
+    local = element.local_nodes()
+    base = np.array([1.0 if node == GROUND else vb[node] for node in local])
+    y = base[:, None] * element.yprim * base[None, :] / s_base
+    zero = ca.SX(0)
+    ur = ca.vertcat(*[zero if node == GROUND else vr[node] for node in local])
+    ui = ca.vertcat(*[zero if node == GROUND else vi[node] for node in local])
+    first = element.n_conductors
+    g, b = ca.DM(y.real[:first]), ca.DM(y.imag[:first])
+    ir, ii = ca.mtimes(g, ur) - ca.mtimes(b, ui), ca.mtimes(b, ur) + ca.mtimes(g, ui)
+    s_re = ca.dot(ur[:first], ir) + ca.dot(ui[:first], ii)
+    s_im = ca.dot(ui[:first], ir) - ca.dot(ur[:first], ii)
+    return s_re**2 + s_im**2
+
+
+def _incidence(n: int, ends: NDArray[np.int64], vb: FloatArray) -> sp.csc_matrix:
+    """``n x m``: +1 at the first node ``a`` of each pair, ``-vb[b] / vb[a]`` at its second ``b``
+    (-1 on one voltage level); nothing at ground. Its transpose gives ``(V_a - V_b) / vb[a]`` in
+    per unit; its columns put a current per unit of ``vb[a]`` into the per-unit KCL rows."""
+    ends = ends[:, :2]
+    m = len(ends)
+    a, b = ends[:, 0], ends[:, 1]
+    keep = b != GROUND
+    rows = np.r_[a, b[keep]]
+    cols = np.r_[np.arange(m), np.arange(m)[keep]]
+    vals = np.r_[np.ones(m), -vb[b[keep]] / vb[a[keep]]]
+    return sp.csc_matrix((vals, (rows, cols)), shape=(n, m))
 
 
 def vpn_bounds(
@@ -303,7 +403,8 @@ def phase_neutral_pairs(model: ElectricalModel) -> NDArray[np.int64]:
 def _flat_start(
     model: ElectricalModel, source: Source, e: NDArray[np.complex128]
 ) -> NDArray[np.complex128]:
-    """Per node, the ideal source voltage of its conductor (pu at 1 pu); 0 on neutrals."""
+    """Per node, the ideal source voltage of its conductor (pu of the node's base, at 1 pu): the
+    source's angle and 1 pu on every phase node, 0 on neutrals."""
     by_conductor = {
         model.nodes[int(i)].conductor: ek for i, ek in zip(source.nodes, e, strict=True)
     }

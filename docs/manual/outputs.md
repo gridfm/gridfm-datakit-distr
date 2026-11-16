@@ -373,10 +373,11 @@ One row per scenario of the dataset.
 | `scenario_id` | int64 | |
 | `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `error` |
 | `opf_message` | string, nullable | the reason with `not_supported`, the exception with `error` |
-| `opf_class` | string | `A`: the uncontrolled power flow keeps every phase-to-neutral voltage within the OPF's bounds; `B`: it does not; `C`: no power-flow label |
-| `cost_preset` | string | `economic` |
+| `opf_class` | string | `A`: the uncontrolled power flow keeps every phase-to-neutral voltage within the OPF's bounds and every rated transformer within its rating; `B`: it does not; `C`: no power-flow label |
+| `cost_preset` | string | `economic` (source 1 per W, PV units 0) or `sampled` (drawn per scenario, `labels.opf.sampled`) |
 | `source_c1`, `source_c2` | float64 | the source's cost coefficients, `c2 p² + c1 p` with `p` the power the source delivers (W): per W, per W² |
 | `objective` | float64, nullable | `Σ c2 p² + c1 p` over the source and the PV units at the returned point (W with `economic`); null without a solve |
+| `source_p_w` | float64, nullable | the active power the source delivers at the returned point (W), the `p` of its cost: with `opf_der` it reproduces `objective`; null without a solve |
 | `iterations` | int32, nullable | Ipopt iterations |
 | `t_solve_s` | float32/64, nullable | wall time of the Ipopt solve (s) |
 | `curtailment_w` | float32/64, nullable | `Σ (p_pf - p_opf)` over the PV units (W), against the power-flow dispatch (`scenarios/der.p_w`); round-off of the order of 1e-3 W either side |
@@ -394,6 +395,7 @@ The dispatch of every PV unit, for the scenarios with `opf_status = Solve_Succee
 | `scenario_id` | int64 | |
 | `element_idx` | int32 | the PV generator |
 | `p_w`, `q_var` | float32/64 | active and reactive power injected (W, var) |
+| `q_max_var` | float32/64 | the largest \|q\| the unit could dispatch (var): `der.pv.reactive_fraction` of its rating, 0 when its available power is below `der.pv.reactive_threshold` of its rating |
 | `c1`, `c2` | float64 | the unit's cost coefficients (per W, per W²) |
 
 ### `opf/opf_node_results`

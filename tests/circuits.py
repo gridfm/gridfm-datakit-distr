@@ -303,6 +303,41 @@ CalcVoltageBases
 }
 
 
+# Every device model of the OPF beyond the four-wire slice: an 11 kV three-wire feeder (a delta
+# load and a phase-to-ground load), a 250 kVA delta-wye transformer with its neutral grounded, a
+# 0.4 kV four-wire feeder with wye loads on one, two and three phases, a delta load, a
+# phase-to-phase load, and PV units connected wye on three phases, delta, and phase to neutral.
+OPF_DEVICES = {
+    "master.dss": """\
+Clear
+New Circuit.devices basekv=11 pu=1.0 phases=3 bus1=mv angle=0 MVAsc3=200 MVAsc1=150
+New Line.mv bus1=mv.1.2.3 bus2=mv2.1.2.3 phases=3 r1=0.3 x1=0.3 r0=0.6 x0=1.0 c1=0 c0=0
+~ length=1 units=km
+New Load.mvdelta bus1=mv2.1.2.3 phases=3 conn=delta kV=11 kW=60 kvar=20 model=1
+New Load.mvphase bus1=mv2.2 phases=1 kV=6.351 kW=30 kvar=10 model=1
+New Transformer.t windings=2 Buses=[mv2.1.2.3 lv.1.2.3.4] Conns=[Delta Wye] kVs=[11 0.4]
+~ kVAs=[250 250] XHL=4 %Rs=[0.5 0.5] Rneut=0.5 Xneut=0
+New Linecode.lc4 nphases=4 units=km
+~ rmatrix=(0.5 | 0.1 0.5 | 0.1 0.1 0.5 | 0.1 0.1 0.1 0.6)
+~ xmatrix=(0.3 | 0.1 0.3 | 0.1 0.1 0.3 | 0.1 0.1 0.1 0.35)
+~ cmatrix=(0 | 0 0 | 0 0 0 | 0 0 0 0)
+New Line.lv1 bus1=lv.1.2.3.4 bus2=b1.1.2.3.4 phases=4 linecode=lc4 length=0.15 units=km
+New Line.lv2 bus1=b1.1.2.3.4 bus2=b2.1.2.3.4 phases=4 linecode=lc4 length=0.15 units=km
+New Load.wye3 bus1=b1.1.2.3.4 phases=3 kV=0.4 kW=12 kvar=4 model=1
+New Load.wye2 bus1=b1.1.2.4 phases=2 kV=0.4 kW=6 kvar=2 model=1
+New Load.house bus1=b2.3.4 phases=1 kV=0.23 kW=4 kvar=1 model=1
+New Load.delta3 bus1=b2.1.2.3 phases=3 conn=delta kV=0.4 kW=9 kvar=3 model=1
+New Load.pp bus1=b2.1.2 phases=1 kV=0.4 kW=3 kvar=1 model=1
+New Generator.pv_wye3 bus1=b1.1.2.3.4 phases=3 kV=0.4 kW=10 kvar=0 model=1 vminpu=0.6 vmaxpu=1.5
+New Generator.pv_delta3 bus1=b2.1.2.3 phases=3 conn=delta kV=0.4 kW=10 kvar=0 model=1
+~ vminpu=0.6 vmaxpu=1.5
+New Generator.pv_house bus1=b2.3.4 phases=1 kV=0.23 kW=3 kvar=0 model=1 vminpu=0.6 vmaxpu=1.5
+Set VoltageBases=[11 0.4]
+CalcVoltageBases
+""",
+}
+
+
 # The OPF feeder without its own generators: the variants place the PV units.
 OPF_LOADS = {
     "master.dss": "\n".join(
@@ -313,10 +348,12 @@ OPF_LOADS = {
 
 
 def opf_catalog(root: Path) -> Catalog:
-    """A catalog of two networks under ``root/src``: ``t/lv`` (:data:`OPF_LOADS`, inside the OPF's
-    scope) and ``t/mvlv`` (:data:`MV_LV_RNEUT`, with a transformer)."""
+    """A catalog of three networks under ``root/src``: ``t/lv`` (:data:`OPF_LOADS`) and ``t/mvlv``
+    (:data:`MV_LV_RNEUT`, with a transformer) inside the OPF's scope, ``t/other``
+    (:data:`ALL_CLASSES`, with a PV system, storage and a generator) outside it."""
     write_circuit(root / "src" / "lv", OPF_LOADS)
     write_circuit(root / "src" / "mvlv", MV_LV_RNEUT)
+    write_circuit(root / "src" / "other", ALL_CLASSES)
     source = ArchivesSource(
         kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
         citation="-", archives={},
@@ -324,6 +361,7 @@ def opf_catalog(root: Path) -> Catalog:
     networks = {
         "t/lv": Network(id="t/lv", source="src", master="lv/master.dss"),
         "t/mvlv": Network(id="t/mvlv", source="src", master="mvlv/master.dss"),
+        "t/other": Network(id="t/other", source="src", master="other/master.dss"),
     }
     return Catalog(sources={"src": source}, networks=networks)
 

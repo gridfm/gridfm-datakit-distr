@@ -1,5 +1,4 @@
-"""``generate`` with OPF labels on catalog networks: a CSIRO feeder inside the OPF's scope, IEEE 13
-outside it."""
+"""``generate`` with OPF labels on catalog networks: a CSIRO feeder and IEEE 13."""
 
 from __future__ import annotations
 
@@ -61,10 +60,12 @@ def test_generate_writes_verified_opf_labels(
     assert all(r["verified"] for r in rows)
     assert any(r["opf_class"] == "B" and r["curtailment_w"] > 1.0 for r in rows)
 
+    # IEEE 13: transformers, regulators at the scenario's taps, delta and phase-to-phase loads
     rows, ids = rows_of(out, "ieee13")
     assert len(rows) == len(ids) == 6
-    assert {r["opf_status"] for r in rows} == {"not_supported"}
-    assert all("transformer" in r["opf_message"] for r in rows)
+    assert {r["opf_status"] for r in rows} <= {SOLVED, "Infeasible_Problem_Detected"}
+    assert all(r["verified"] for r in rows if r["opf_status"] == SOLVED)
+    assert sum(r["opf_status"] == SOLVED for r in rows) >= 4
     nodes = DatasetWriter(out).read("scenarios/node_results", columns=["scenario_id"])
     assert nodes is not None
     assert ids <= set(nodes.column("scenario_id").to_pylist())  # power-flow labels kept

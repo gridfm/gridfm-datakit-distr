@@ -11,7 +11,8 @@ still holds the scenario. Every scenario gets a row (outputs.md §8):
 - ``error`` with the exception, if building, solving or verifying raised.
 
 ``opf_class``: ``A`` if the uncontrolled power flow keeps every phase-to-neutral voltage within the
-OPF's bounds, ``B`` if not, ``C`` without a power-flow label. The bounds are
+OPF's bounds and every rated transformer within its rating, ``B`` if not, ``C`` without a
+power-flow label. The bounds are
 ``networks.voltage_limits`` in per unit of each phase node's nominal line-to-neutral voltage.
 """
 
@@ -27,16 +28,21 @@ from numpy.typing import NDArray
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND
+from gridfm_datakit_distr.model.ids import split_scenario_id
 from gridfm_datakit_distr.opf.problem import (
     Costs,
+    FloatArray,
     OPFProblem,
     OPFResult,
     economic,
+    power_base,
     read_source,
     vpn_bounds,
+    winding_va,
 )
 from gridfm_datakit_distr.opf.support import unsupported_reason
 from gridfm_datakit_distr.opf.verify import Verification, verify
+from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner
 from gridfm_datakit_distr.solve.tables import concat_cast
 
@@ -53,6 +59,10 @@ class OPFRow:
     verification: Verification | None = None
     curtailment_w: float | None = None
     """``sum(p_pf - p_opf)`` over the PV units (W), against the uncontrolled dispatch."""
+    costs: Costs | None = None
+    """The scenario's cost coefficients (source first)."""
+    q_max_var: FloatArray | None = None
+    """The largest |q| each PV unit could dispatch (var, D-067)."""
 
 
 class OPFLabeller:
@@ -60,58 +70,83 @@ class OPFLabeller:
 
     def __init__(self, runner: VariantRunner, config: GenerationConfig) -> None:
         self.runner = runner
+        self.seed = config.settings.seed
         opf = config.labels.opf
         self.preset = opf.costs
+        self.sampled = opf.sampled
         self.time_limit_s = opf.time_limit_s
         model = runner.model
         self.reason = unsupported_reason(model)
         """Why the network is outside the OPF's scope; None inside."""
         units = runner.pv.units if runner.pv is not None else ()
+        self.units = units
         index = {e.name: e.idx for e in model.elements}
         self.pv_idx = np.array([index[u.generator] for u in units], dtype=np.int32)
         self.s_rated_va = np.array([u.s_rated_va for u in units], dtype=np.float64)
-        self.costs: Costs = economic(len(units))
         limits = config.networks.voltage_limits
         self.limits_pu = (limits.vmin_pu, limits.vmax_pu)
         self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, *self.limits_pu)
         self.source = None if self.reason is not None else read_source(runner.ctx, model)
+        self.s_base_va = power_base([abs(complex(c.p_w, c.q_var)) for c in runner.customers])
+        """Power base of the NLP's scaling, from the customers' nominal loads."""
         self._problems: dict[str, OPFProblem] = {}
 
     def label(self, o: ScenarioOutcome) -> OPFRow:
         """The OPF row of scenario ``o``, run right after ``runner.run`` returned it."""
         labelled = o.pf_status == "converged" and o.v is not None and o.state_id is not None
-        opf_class = self._class(o.v) if labelled and o.v is not None else "C"
+        opf_class = self._class(o.v, str(o.state_id)) if labelled and o.v is not None else "C"
+        costs = self.costs_of(o.scenario_id)
         if self.reason is not None:
-            return OPFRow(o.scenario_id, "not_supported", opf_class, self.reason)
+            return OPFRow(o.scenario_id, "not_supported", opf_class, self.reason, costs=costs)
         if not labelled:
-            return OPFRow(o.scenario_id, "no_pf_label", opf_class)
+            return OPFRow(o.scenario_id, "no_pf_label", opf_class, costs=costs)
+        p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else np.zeros(0)
+        q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
         try:
             problem = self._problem(str(o.state_id))
-            empty = np.zeros(0)
-            p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else empty
             result = problem.solve(
                 source_v_pu=o.source_v_pu,
                 load_p_w=o.load_p_w,
                 load_q_var=o.load_q_var,
                 pv_p_avail_w=p_avail,
                 pv_s_rated_va=self.s_rated_va,
-                costs=self.costs,
+                costs=costs,
+                pv_q_max_var=q_max,
             )
             check = None
             if result.solved:
                 check = verify(self.runner.ctx, self.runner.model, problem, result)
         except Exception as exc:  # recorded, never dropped
             first = str(exc).splitlines()[0] if str(exc) else ""
-            return OPFRow(o.scenario_id, "error", opf_class, f"{type(exc).__name__}: {first}")
+            message = f"{type(exc).__name__}: {first}"
+            return OPFRow(o.scenario_id, "error", opf_class, message, costs=costs)
         p_pf = o.pv_p_w if o.pv_p_w is not None else np.zeros(0)
         curtailment = float(np.sum(p_pf - result.pv_p_w))
-        return OPFRow(o.scenario_id, result.status, opf_class, None, result, check, curtailment)
+        return OPFRow(
+            o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs, q_max
+        )
+
+    def costs_of(self, sid: int) -> Costs:
+        """The cost coefficients of scenario ``sid``: the preset ``economic``, or ``sampled``
+        drawn from the scenario's ``OPF_COSTS`` stream (source c1, c2, then c1 and c2 per unit)."""
+        n = len(self.units)
+        if self.preset == "economic":
+            return economic(n)
+        s = split_scenario_id(sid)[2]
+        rng = scenario_rng(self.seed, self.runner.net, self.runner.k, s, ScenarioStream.OPF_COSTS)
+        spec = self.sampled
+        source = [float(spec.source_c1.sample(rng)), float(spec.source_c2.sample(rng))]
+        c1 = [float(spec.pv_c1.sample(rng)) for _ in range(n)]
+        c2 = [float(spec.pv_c2.sample(rng)) for _ in range(n)]
+        return Costs(c1=np.array([source[0], *c1]), c2=np.array([source[1], *c2]))
 
     def _problem(self, state_id: str) -> OPFProblem:
         if state_id not in self._problems:
             assert self.source is not None
             model = self.runner.state_model(state_id)
-            problem = OPFProblem(model, self.source, *self.limits_pu, self.time_limit_s)
+            problem = OPFProblem(
+                model, self.source, *self.limits_pu, self.time_limit_s, self.s_base_va
+            )
             customers = tuple(c.element for c in self.runner.customers)
             units = self.runner.pv.units if self.runner.pv is not None else ()
             if problem.load_names != customers or problem.pv_names != tuple(
@@ -121,12 +156,19 @@ class OPFLabeller:
             self._problems[state_id] = problem
         return self._problems[state_id]
 
-    def _class(self, v: NDArray[np.complex128]) -> str:
-        """``A`` within the bounds, ``B`` outside."""
+    def _class(self, v: NDArray[np.complex128], state_id: str) -> str:
+        """``A`` when the uncontrolled power flow keeps every voltage within its bounds and every
+        rated transformer within its rating, ``B`` otherwise."""
         neutral = np.where(self.pairs[:, 1] == GROUND, 0.0, v[self.pairs[:, 1]])
         vpn = np.abs(v[self.pairs[:, 0]] - neutral)
-        inside = (vpn >= self.vpn_lo_v) & (vpn <= self.vpn_hi_v)
-        return "A" if bool(np.all(inside)) else "B"
+        inside = bool(np.all((vpn >= self.vpn_lo_v) & (vpn <= self.vpn_hi_v)))
+        model = self.runner.state_model(state_id)
+        rated = all(
+            winding_va(e, v) <= e.rating_va
+            for e in model.elements
+            if e.enabled and e.element_class == "transformer" and e.rating_va
+        )
+        return "A" if inside and rated else "B"
 
     def tables(self, rows: Sequence[OPFRow], precision: schema.Precision) -> dict[str, pa.Table]:
         """``opf/opf_meta`` for every row; ``opf/opf_der`` and ``opf/opf_node_results`` for the
@@ -138,9 +180,10 @@ class OPFLabeller:
                 "opf_message": r.message,
                 "opf_class": r.opf_class,
                 "cost_preset": self.preset,
-                "source_c1": float(self.costs.c1[0]),
-                "source_c2": float(self.costs.c2[0]),
+                "source_c1": float(r.costs.c1[0]) if r.costs is not None else None,
+                "source_c2": float(r.costs.c2[0]) if r.costs is not None else None,
                 "objective": None if r.result is None else r.result.objective,
+                "source_p_w": None if r.result is None else r.result.source_p_w,
                 "iterations": None if r.result is None else r.result.iterations,
                 "t_solve_s": None if r.result is None else r.result.t_solve_s,
                 "curtailment_w": r.curtailment_w,
@@ -160,6 +203,8 @@ class OPFLabeller:
         der, nodes = [], []
         for r in solved:
             assert r.result is not None
+            assert r.costs is not None
+            assert r.q_max_var is not None
             der.append(
                 pa.table(
                     {
@@ -167,8 +212,9 @@ class OPFLabeller:
                         "element_idx": self.pv_idx,
                         "p_w": r.result.pv_p_w,
                         "q_var": r.result.pv_q_var,
-                        "c1": self.costs.c1[1:],
-                        "c2": self.costs.c2[1:],
+                        "q_max_var": r.q_max_var,
+                        "c1": r.costs.c1[1:],
+                        "c2": r.costs.c2[1:],
                     }
                 )
             )

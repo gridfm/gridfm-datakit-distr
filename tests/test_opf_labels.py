@@ -6,10 +6,12 @@ import copy
 import json
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
@@ -112,32 +114,47 @@ def test_the_slice_feeder_is_solved_and_verified(dataset: Path) -> None:
                for r in rows)  # fmt: skip
     assert {r["opf_class"] for r in rows} == {"A", "B"}
     assert any(r["opf_class"] == "B" and r["curtailment_w"] > 1.0 for r in rows)
+    mine = pa.array(sorted(lv), pa.int64())
     der = read(dataset, "opf/opf_der")
+    der = der.filter(pc.is_in(der["scenario_id"], mine))
     assert der.num_rows == 3 * len(rows)  # one PV unit per customer
     assert set(der.column("c1").to_pylist()) == set(der.column("c2").to_pylist()) == {0.0}
     nodes = read(dataset, "opf/opf_node_results")
-    assert nodes.num_rows == 12 * len(rows)
+    assert nodes.filter(pc.is_in(nodes["scenario_id"], mine)).num_rows == 12 * len(rows)
     engines = {json.loads(e)["casadi"] for e in meta.column("engine_versions").to_pylist()}
     assert len(engines) == 1
 
 
-def test_a_network_outside_the_slice_keeps_its_power_flow_labels(dataset: Path) -> None:
+def test_a_network_with_a_transformer_is_solved_and_verified(dataset: Path) -> None:
     meta = read(dataset, "scenarios/scenario_meta")
-    mvlv = pc.filter(meta, pc.equal(meta["network_id"], "t/mvlv"))
-    ids = set(mvlv["scenario_id"].to_pylist())
-    assert set(mvlv["pf_status"].to_pylist()) == {"converged"}
+    mvlv = set(pc.filter(meta, pc.equal(meta["network_id"], "t/mvlv"))["scenario_id"].to_pylist())
+    rows = [r for r in read(dataset, "opf/opf_meta").to_pylist() if r["scenario_id"] in mvlv]
+    assert len(rows) == len(mvlv) == 8
+    assert {r["opf_status"] for r in rows} == {SOLVED}
+    assert all(r["verified"] for r in rows)
+
+
+def test_a_network_outside_the_scope_keeps_its_power_flow_labels(dataset: Path) -> None:
+    meta = read(dataset, "scenarios/scenario_meta")
+    other = pc.filter(meta, pc.equal(meta["network_id"], "t/other"))
+    ids = set(other["scenario_id"].to_pylist())
+    assert set(other["pf_status"].to_pylist()) == {"converged"}
     pf_nodes = read(dataset, "scenarios/node_results")
     assert ids <= set(pf_nodes.column("scenario_id").to_pylist())
-    rows = [r for r in read(dataset, "opf/opf_meta").to_pylist() if r["scenario_id"] in ids]
+    opf = read(dataset, "opf/opf_meta").to_pylist()
+    rows = [r for r in opf if r["scenario_id"] in ids]
     assert len(rows) == len(ids)
     assert {r["opf_status"] for r in rows} == {"not_supported"}
-    assert all("transformer not covered by the OPF yet" in r["opf_message"] for r in rows)
+    assert all("pvsystem not covered by the OPF yet" in r["opf_message"] for r in rows)
     assert all(r["objective"] is None and r["verified"] is None for r in rows)
+    counts = Counter(r["opf_status"] for r in opf)
     card = (dataset / "README.md").read_text(encoding="utf-8")
-    assert f"- OPF labels: Solve_Succeeded {16 - len(ids)}, not_supported {len(ids)}" in card
+    listed = ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+    assert f"- OPF labels: {listed}" in card
     networks = {n["network_id"]: n for n in Manifest.load(dataset).networks}
     assert networks["t/lv"]["opf_not_supported"] is None
-    assert "Transformer.t" in networks["t/mvlv"]["opf_not_supported"]
+    assert networks["t/mvlv"]["opf_not_supported"] is None
+    assert "PVSystem.pv" in networks["t/other"]["opf_not_supported"]
 
 
 def test_a_variant_without_pv_is_solved(tmp_path: Path) -> None:
@@ -167,3 +184,52 @@ def test_the_opf_tables_do_not_depend_on_the_process_count(tmp_path: Path) -> No
     run_generate(tmp_path, four, data)
     assert (one / "opf" / "opf_meta").is_dir()
     same_dataset(one, four)  # every table bit for bit, but the timing columns
+
+
+def test_without_violations_every_scenario_is_class_a_at_full_output(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    data = config(**{
+        "der.pv.kwp": 2.0, "networks.include": ["t/lv"], "settings.float_precision": "full",
+    })  # fmt: skip
+    generate(data, out, catalog=catalog(tmp_path), root=tmp_path)
+    opf = read(out, "opf/opf_meta").to_pylist()
+    assert {(r["opf_status"], r["opf_class"]) for r in opf} == {(SOLVED, "A")}
+    avail = {
+        (r["scenario_id"], r["element_idx"]): r["p_avail_w"]
+        for r in read(out, "scenarios/der").to_pylist()
+    }
+    for r in read(out, "opf/opf_der").to_pylist():
+        expected = avail[(r["scenario_id"], r["element_idx"])]
+        assert r["p_w"] == pytest.approx(expected, rel=1e-6, abs=1e-6)
+
+
+@pytest.fixture(scope="module")
+def sampled(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("opf_sampled")
+    out = root / "out"
+    data = config(**{
+        "labels.opf.costs": "sampled", "networks.include": ["t/lv"],
+        "settings.float_precision": "full",
+    })  # fmt: skip
+    generate(data, out, catalog=catalog(root), root=root)
+    return out
+
+
+def test_stored_costs_reproduce_the_objective(sampled: Path) -> None:
+    meta = {r["scenario_id"]: r for r in read(sampled, "opf/opf_meta").to_pylist()}
+    der = read(sampled, "opf/opf_der").to_pylist()
+    for sid, m in meta.items():
+        assert m["cost_preset"] == "sampled"
+        mine = [r for r in der if r["scenario_id"] == sid]
+        p0 = m["source_p_w"]
+        cost = m["source_c1"] * p0 + m["source_c2"] * p0**2
+        cost += sum(r["c1"] * r["p_w"] + r["c2"] * r["p_w"] ** 2 for r in mine)
+        assert cost == pytest.approx(m["objective"], rel=1e-9, abs=1e-6)
+
+
+def test_sampled_costs_differ_by_unit_and_scenario(sampled: Path) -> None:
+    der = read(sampled, "opf/opf_der").to_pylist()
+    c1 = [r["c1"] for r in der]
+    assert len(set(c1)) == len(c1)  # one draw per unit and scenario
+    assert all(0.0 <= c < 1.0 for c in c1)
+    assert {r["source_c1"] for r in read(sampled, "opf/opf_meta").to_pylist()} == {1.0}

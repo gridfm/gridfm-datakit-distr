@@ -284,6 +284,18 @@ class PV(_Config):
     inverter_kva_per_kwp: float = Field(
         default=1.1, gt=0, description="Inverter rating (kVA) per kWp of PV."
     )
+    reactive_fraction: FractionSpec = Field(
+        default=Fixed(0.44),
+        description="Largest reactive power of each inverter in the OPF, as a fraction of its "
+        "rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per "
+        "variant and unit.",
+    )
+    reactive_threshold: FractionSpec = Field(
+        default=Fixed(0.05),
+        description="No reactive power in the OPF when a unit's available power is below this "
+        "fraction of its rating (IEEE 1547-2018 Category B: 0.05; 0: always); drawn per variant "
+        "and unit.",
+    )
 
 
 class DER(_Config):
@@ -374,6 +386,25 @@ class Controls(_Config):
     )
 
 
+class SampledCosts(_Config):
+    """Cost coefficients of the preset ``sampled``, drawn per scenario (``c2 p^2 + c1 p``, ``p``
+    in W): one pair for the source, one per PV unit."""
+
+    source_c1: NonNegativeSpec = Field(
+        default=Fixed(1.0), description="Linear cost of the source's power (per W)."
+    )
+    source_c2: NonNegativeSpec = Field(
+        default=Fixed(0.0), description="Quadratic cost of the source's power (per W²)."
+    )
+    pv_c1: NonNegativeSpec = Field(
+        default=Uniform(0.0, 1.0),
+        description="Linear cost of each PV unit's power (per W), drawn per unit.",
+    )
+    pv_c2: NonNegativeSpec = Field(
+        default=Fixed(0.0), description="Quadratic cost of each PV unit's power (per W²)."
+    )
+
+
 class OPFLabels(_Config):
     """OPF labels: the minimum-cost OPF of each scenario (docs/manual/opf.md)."""
 
@@ -382,10 +413,12 @@ class OPFLabels(_Config):
         description="Solve and verify the OPF of every scenario (needs the `opf` extra and "
         "constant-power loads).",
     )
-    costs: Literal["economic"] = Field(
+    costs: Literal["economic", "sampled"] = Field(
         default="economic",
-        description="Cost preset. `economic`: source 1 per W, PV units 0 (minimum import).",
+        description="Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); "
+        "`sampled`: coefficients drawn per scenario from `sampled`.",
     )
+    sampled: SampledCosts = SampledCosts()
     time_limit_s: float = Field(
         default=300.0,
         gt=0,

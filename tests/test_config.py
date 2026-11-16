@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from gridfm_datakit_distr.config import (
@@ -354,9 +355,12 @@ def test_opf_labels_need_the_opf_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     one_issue(with_("labels.opf.enabled", True), "labels.opf.enabled", "OPF labels need the 'opf'")
 
 
-def test_only_the_economic_costs_exist() -> None:
-    found = issues(with_("labels.opf", {"enabled": True, "costs": "sampled"}))
-    assert found[0].startswith("labels.opf.costs: Input should be 'economic'"), found
+def test_the_cost_presets_are_economic_and_sampled() -> None:
+    pytest.importorskip("casadi")
+    sampled = validate_config(with_("labels.opf", {"enabled": True, "costs": "sampled"}))
+    assert sampled.labels.opf.sampled.source_c1.sample(np.random.default_rng(0)) == 1.0
+    found = issues(with_("labels.opf", {"enabled": True, "costs": "shared"}))
+    assert found[0].startswith("labels.opf.costs: Input should be 'economic' or 'sampled'"), found
 
 
 # ------------------------------------------------------------------- network selection

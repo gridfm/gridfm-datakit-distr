@@ -15,6 +15,7 @@ from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.opf.problem import (
     SOLVED,
+    Costs,
     OPFProblem,
     OPFResult,
     Source,
@@ -22,7 +23,7 @@ from gridfm_datakit_distr.opf.problem import (
     read_source,
 )
 from gridfm_datakit_distr.scenarios.profiles import customers_of
-from tests.circuits import MV_LV_RNEUT, OPF_FEEDER, write_circuit
+from tests.circuits import ALL_CLASSES, OPF_FEEDER, write_circuit
 
 VMIN_PU, VMAX_PU = 0.94, 1.10
 """Per unit of the nominal voltage: the feeder's 0.4 kV base, 230.94 V phase-to-neutral."""
@@ -139,10 +140,31 @@ def test_an_infeasible_scenario_returns_its_status(case: Case) -> None:
     assert result.status
 
 
-def test_a_network_outside_the_slice_is_refused(tmp_path: Path) -> None:
-    write_circuit(tmp_path / "src", MV_LV_RNEUT)
+def test_a_network_outside_the_scope_is_refused(tmp_path: Path) -> None:
+    write_circuit(tmp_path / "src", ALL_CLASSES)
     prepared = prepare_network(
-        Network(id="t/mvlv", source="src", master="master.dss"), root=tmp_path
+        Network(id="t/other", source="src", master="master.dss"), root=tmp_path
     )
-    with pytest.raises(ValueError, match="transformer"):
+    with pytest.raises(ValueError, match="pvsystem not covered"):
         OPFProblem(prepared.model, read_source(prepared.ctx, prepared.model), VMIN_PU, VMAX_PU)
+
+
+def test_different_costs_give_different_dispatches(case: Case) -> None:
+    """With an overvoltage to remove, the costs decide which unit curtails."""
+    customers = customers_of(case.prepared)
+
+    def dispatch(pv_c1: list[float]) -> np.ndarray:
+        result = case.problem.solve(
+            source_v_pu=1.0,
+            load_p_w=[c.p_w for c in customers],
+            load_q_var=[c.q_var for c in customers],
+            pv_p_avail_w=[30e3, 30e3],
+            pv_s_rated_va=[30e3, 30e3],
+            costs=Costs(c1=np.array([1.0, *pv_c1]), c2=np.zeros(3)),
+        )
+        assert result.status == SOLVED
+        return result.pv_p_w
+
+    cheap_h2, cheap_h3 = dispatch([0.1, 0.9]), dispatch([0.9, 0.1])
+    assert cheap_h2[0] > cheap_h3[0] + 1.0  # W
+    assert cheap_h3[1] > cheap_h2[1] + 1.0
