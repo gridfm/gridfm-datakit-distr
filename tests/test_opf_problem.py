@@ -39,7 +39,11 @@ class Case:
 
 @pytest.fixture(scope="module")
 def case(tmp_path_factory: pytest.TempPathFactory) -> Case:
-    root = tmp_path_factory.mktemp("opf")
+    return make_case(tmp_path_factory.mktemp("opf"))
+
+
+def make_case(root: Path) -> Case:
+    """The inline feeder prepared, its source and its OPF problem."""
     write_circuit(root / "src", OPF_FEEDER)
     prepared = prepare_network(Network(id="t/opf", source="src", master="master.dss"), root=root)
     source = read_source(prepared.ctx, prepared.model)

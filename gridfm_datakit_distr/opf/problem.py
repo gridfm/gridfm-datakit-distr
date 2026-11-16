@@ -126,6 +126,7 @@ class OPFProblem:
         self, model: ElectricalModel, source: Source, vpn_min_v: float, vpn_max_v: float
     ) -> None:
         """``vpn_min_v``, ``vpn_max_v``: bounds of the phase-to-neutral voltage magnitude (V)."""
+        self.vpn_min_v, self.vpn_max_v = vpn_min_v, vpn_max_v
         reason = unsupported_reason(model)
         if reason is not None:
             raise ValueError(f"{model.variant_id} is outside the OPF slice: {reason}")
@@ -148,7 +149,7 @@ class OPFProblem:
         b1 = np.zeros(n, dtype=np.complex128)
         b1[src] = ys @ e
         self._e_node = _flat_start(model, source, e)
-        pairs = _pairs(model)
+        pairs = phase_neutral_pairs(model)
         self._n_pairs = len(pairs)
 
         cl, cg = _incidence(n, _ends(loads)), _incidence(n, _ends(pvs))
@@ -265,7 +266,7 @@ def _incidence(n: int, ends: NDArray[np.int64]) -> sp.csc_matrix:
     return sp.csc_matrix((vals[keep], (rows[keep], cols[keep])), shape=(n, len(ends)))
 
 
-def _pairs(model: ElectricalModel) -> NDArray[np.int64]:
+def phase_neutral_pairs(model: ElectricalModel) -> NDArray[np.int64]:
     """``(k, 2)``: each phase node and its bus's neutral node (:data:`GROUND` if none)."""
     by_bus: dict[str, dict[str, int]] = {}
     for node in model.nodes:

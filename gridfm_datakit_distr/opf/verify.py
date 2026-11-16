@@ -1,0 +1,82 @@
+"""Verification of an OPF dispatch in OpenDSS.
+
+The dispatch is set on the PV generators of a context that holds the scenario (loads and source
+voltage set, controls frozen), the power flow is solved with the controls off at the context's
+label tolerance, and the solution is checked: every load and generator at its set point
+(:func:`setpoint_report`), node voltages equal to the OPF's within :data:`TOLERANCE_PU` of each
+node's base, phase-to-neutral voltages within the OPF's bounds up to :data:`TOLERANCE_PU`. The NLP
+and OpenDSS share the admittances, so the two solutions agree to the solvers' accuracy. The
+generators get back their outputs afterwards; a failed check is returned, never raised.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from gridfm_datakit_distr.engine.context import DssContext
+from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
+from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult, phase_neutral_pairs
+from gridfm_datakit_distr.validate.setpoints import setpoint_report
+
+TOLERANCE_PU = 1e-6
+"""Largest voltage difference and bound excess accepted, per unit of the node's base."""
+
+
+@dataclass(frozen=True, slots=True)
+class Verification:
+    """The outcome of one verification."""
+
+    verified: bool
+    reason: str | None
+    """The failed checks, ``None`` when verified."""
+    converged: bool
+    max_dv_pu: float
+    """Largest ``|V_opendss - V_opf|`` per unit of the node's base; NaN without a power flow."""
+    max_bound_excess_pu: float
+    """Largest excess of ``|V_p - V_n|`` over its bounds, per unit of the phase node's base; 0
+    within the bounds, NaN without a power flow."""
+
+
+def verify(
+    ctx: DssContext, model: ElectricalModel, problem: OPFProblem, result: OPFResult
+) -> Verification:
+    """Check ``result`` (a solve of ``problem`` for the scenario ``ctx`` holds) in OpenDSS."""
+    api = ctx.api
+    before: list[tuple[float, float]] = []
+    try:
+        for name, p_w, q_var in zip(problem.pv_names, result.pv_p_w, result.pv_q_var, strict=True):
+            api.Generators.Name(name.split(".", 1)[1])
+            before.append((float(api.Generators.kW()), float(api.Generators.kvar())))
+            api.Generators.kW(float(p_w) / 1e3)
+            api.Generators.kvar(float(q_var) / 1e3)
+        ctx.command("Set ControlMode=OFF")
+        ctx.command("Set Mode=Snap")
+        status = ctx.solve()
+        if not status.converged:
+            return Verification(False, "power flow not converged", False, np.nan, np.nan)
+        report = setpoint_report(ctx)
+        order = {name: j for j, name in enumerate(ctx.ynode_order())}
+        v = ctx.ynode_voltages()[[order[n.opendss_node.lower()] for n in model.nodes]]
+    finally:
+        for name, (kw, kvar) in zip(problem.pv_names, before, strict=False):
+            api.Generators.Name(name.split(".", 1)[1])
+            api.Generators.kW(kw)
+            api.Generators.kvar(kvar)
+    base_v = np.array([n.kv_base_ln for n in model.nodes]) * 1e3
+    dv = float(np.max(np.abs(v - result.v) / base_v))
+    pairs = phase_neutral_pairs(model)
+    neutral = np.where(pairs[:, 1] == GROUND, 0.0, v[pairs[:, 1]])
+    vpn = np.abs(v[pairs[:, 0]] - neutral)
+    excess = np.maximum(vpn - problem.vpn_max_v, problem.vpn_min_v - vpn) / base_v[pairs[:, 0]]
+    excess_max = max(float(np.max(excess, initial=0.0)), 0.0)
+    failed = []
+    if not report.passes():
+        failed.append(f"set points: {len(report.off)} off, worst {report.worst}")
+    if not dv <= TOLERANCE_PU:
+        failed.append(f"voltages differ from the OPF's by {dv:.2e} pu")
+    if not excess_max <= TOLERANCE_PU:
+        failed.append(f"voltage bounds exceeded by {excess_max:.2e} pu")
+    reason = "; ".join(failed) or None
+    return Verification(reason is None, reason, True, dv, excess_max)

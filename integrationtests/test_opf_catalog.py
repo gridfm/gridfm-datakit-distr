@@ -12,8 +12,15 @@ pytest.importorskip("casadi")
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.networks.catalog import load_catalog
 from gridfm_datakit_distr.networks.compile import compile_network
-from gridfm_datakit_distr.networks.prepare import prepare_network
-from gridfm_datakit_distr.opf.problem import SOLVED, OPFProblem, economic, read_source
+from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
+from gridfm_datakit_distr.opf.problem import (
+    SOLVED,
+    OPFProblem,
+    OPFResult,
+    economic,
+    read_source,
+)
+from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 
 pytestmark = [pytest.mark.network_data]
@@ -42,11 +49,10 @@ def pv_edits(network_id: str) -> list[str]:
     return edits
 
 
-def test_the_objective_of_a_curtailing_case_is_reproduced(
-    network_master: Callable[[str], Path],
-) -> None:
-    network_master(NETWORK)
+def curtailing_case() -> tuple[PreparedNetwork, OPFProblem, OPFResult]:
+    """The feeder with its PV at full output, solved (the scenario's power flow), and its OPF."""
     prepared = prepare_network(load_catalog().network(NETWORK), edits=pv_edits(NETWORK))
+    assert prepared.solve.converged
     problem = OPFProblem(
         prepared.model, read_source(prepared.ctx, prepared.model), VPN_MIN_V, VPN_MAX_V
     )
@@ -62,7 +68,25 @@ def test_the_objective_of_a_curtailing_case_is_reproduced(
         costs=economic(n_pv),
         pv_q_max_var=[0.0] * n_pv,  # unity power factor, as in the reference case
     )
+    return prepared, problem, result
+
+
+def test_the_objective_of_a_curtailing_case_is_reproduced(
+    network_master: Callable[[str], Path],
+) -> None:
+    network_master(NETWORK)
+    _, problem, result = curtailing_case()
     assert result.status == SOLVED
     assert abs(result.objective - OBJECTIVE_W) <= 1e-6 * abs(OBJECTIVE_W)
-    curtailment = 1.0 - result.pv_p_w.sum() / (PV_KW * 1e3 * n_pv)
+    curtailment = 1.0 - result.pv_p_w.sum() / (PV_KW * 1e3 * len(problem.pv_names))
     assert curtailment > 0.1
+
+
+def test_the_dispatch_of_a_curtailing_case_verifies(network_master: Callable[[str], Path]) -> None:
+    network_master(NETWORK)
+    prepared, problem, result = curtailing_case()
+    assert result.solved
+    check = verify(prepared.ctx, prepared.model, problem, result)
+    assert check.verified, check.reason
+    assert check.max_dv_pu <= TOLERANCE_PU
+    assert check.max_bound_excess_pu <= TOLERANCE_PU
