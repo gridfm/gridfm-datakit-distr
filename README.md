@@ -50,13 +50,13 @@ solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
 2. Install gridfm-datakit-distr (the repository is private for now: you need access to it)
 
     ```bash
-    pip install "gridfm-datakit-distr @ git+ssh://git@github.com/cardef/gridfm-datakit-distr.git@v0.1.0"
+    pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.1.0"
     ```
 
 3. Optional: Julia with PowerModelsDistribution, for the OPF labels of the next version
 
     ```bash
-    pip install "gridfm-datakit-distr[julia] @ git+ssh://git@github.com/cardef/gridfm-datakit-distr.git@v0.1.0"
+    pip install "gridfm-datakit-distr[julia] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.1.0"
     gridfm_datakit_distr setup-julia
     ```
 
@@ -66,7 +66,7 @@ With [uv](https://docs.astral.sh/uv/) (creates `.venv` and installs the versions
 `uv.lock`):
 
 ```bash
-git clone git@github.com:cardef/gridfm-datakit-distr.git
+git clone git@github.com:gridfm/gridfm-datakit-distr.git
 cd gridfm-datakit-distr
 uv sync
 uv run pytest -m "not slow and not julia"
