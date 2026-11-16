@@ -82,7 +82,7 @@ def runner_of(
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(net, options, tmp_path))
     result = generate_variant(
-        net, targets, cfg.variants, 5, 0, 0, options=options, root=tmp_path, der=cfg.der.pv
+        net, targets, cfg.variants, 5, 0, options=options, root=tmp_path, der=cfg.der.pv
     )
     return VariantRunner(net, result, cfg, 0, root=tmp_path), cfg
 

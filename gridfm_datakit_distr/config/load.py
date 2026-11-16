@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from gridfm_datakit_distr.config.schema import GenerationConfig, Networks
 from gridfm_datakit_distr.model.ids import MAX_NETWORK_INDEX
 from gridfm_datakit_distr.networks.catalog import Catalog, load_catalog
+from gridfm_datakit_distr.scenarios.seeds import network_key
 
 MAX_NETWORKS = MAX_NETWORK_INDEX + 1
 """Scenario ids hold 16 bits of network index."""
@@ -135,6 +136,11 @@ def _selection(networks: Networks, catalog: Catalog) -> tuple[list[SelectedNetwo
         selected.append(SelectedNetwork(network_id, chosen))
     if len(selected) > MAX_NETWORKS:
         issues.append(("networks.include", f"{len(selected)} networks, at most {MAX_NETWORKS}"))
+    keys: dict[int, str] = {}
+    for s in selected:  # a shared key would correlate two networks' draws (p ~ n^2 / 2^65)
+        other = keys.setdefault(network_key(s.network_id), s.network_id)
+        if other != s.network_id:
+            issues.append(("networks.include", f"{other} and {s.network_id} share a seed key"))
     return selected, issues
 
 

@@ -37,7 +37,7 @@ def test_pv_units_deliver_their_sampled_outputs(
     variants = Variants.model_validate(
         {"n_variants": 2, "phase_reallocation": {"enabled": True, "fraction": 0.2}}
     )
-    results = generate_variants(network, variants, seed=11, i=0, der=SPEC)
+    results = generate_variants(network, variants, seed=11, der=SPEC)
     for r in results:
         assert r.status == "ok", r.failures
         assert r.perturbation is not None

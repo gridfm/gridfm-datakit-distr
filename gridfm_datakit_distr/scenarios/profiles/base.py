@@ -66,8 +66,8 @@ class ProfileProvider(Protocol):
     name: str
     customers: tuple[Customer, ...]
 
-    def draw(self, seed: int, i: int, k: int, s: int) -> LoadDraw:
-        """Setpoints of scenario ``s`` of variant ``k`` of network ``i``."""
+    def draw(self, seed: int, net: int, k: int, s: int) -> LoadDraw:
+        """Setpoints of scenario ``s`` of variant ``k`` of the network of key ``net``."""
         ...
 
 

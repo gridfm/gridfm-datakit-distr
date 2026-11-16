@@ -26,7 +26,7 @@ from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
 from gridfm_datakit_distr.model.ids import variant_id
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, PrepareOptions, prepare_network
-from gridfm_datakit_distr.scenarios.seeds import variant_seed
+from gridfm_datakit_distr.scenarios.seeds import network_key, variant_seed
 from gridfm_datakit_distr.validate.residual import residual
 from gridfm_datakit_distr.variants.perturbation import (
     Perturbation,
@@ -137,21 +137,21 @@ def generate_variant(
     targets: VariantTargets,
     config: Variants,
     seed: int,
-    i: int,
     k: int,
     *,
     options: PrepareOptions | None = None,
     root: Path | None = None,
     der: PV | None = None,
 ) -> VariantResult:
-    """Variant ``k`` of ``network``, the ``i``-th network of the dataset; with ``der``, the PV
-    units of its customers."""
+    """Variant ``k`` of ``network``; with ``der``, the PV units of its customers. Its draws depend
+    on the network's id, not on its place in the dataset."""
     vid = variant_id(network.id, k)
-    fingerprint = variant_seed(seed, i, k)
+    net = network_key(network.id)
+    fingerprint = variant_seed(seed, net, k)
     opts = options or PrepareOptions()
     failures: list[str] = []
     for attempt in range(MAX_ATTEMPTS):
-        p = sample_perturbation(config, targets, seed, i, k, attempt, der=der)
+        p = sample_perturbation(config, targets, seed, net, k, attempt, der=der)
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)
         deviation = check_edits(p, targets, prepared.model)
@@ -179,16 +179,15 @@ def generate_variants(
     network: Network,
     config: Variants,
     seed: int,
-    i: int,
     *,
     options: PrepareOptions | None = None,
     root: Path | None = None,
     der: PV | None = None,
 ) -> list[VariantResult]:
-    """The ``config.n_variants`` variants of ``network``, the ``i``-th network of the dataset."""
+    """The ``config.n_variants`` variants of ``network``."""
     targets = collect_targets(prepare_network(network, options, root))
     return [
-        generate_variant(network, targets, config, seed, i, k, options=options, root=root, der=der)
+        generate_variant(network, targets, config, seed, k, options=options, root=root, der=der)
         for k in range(config.n_variants)
     ]
 

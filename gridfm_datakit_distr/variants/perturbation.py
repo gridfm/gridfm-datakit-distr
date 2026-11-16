@@ -75,22 +75,22 @@ def sample_perturbation(
     config: Variants,
     targets: VariantTargets,
     seed: int,
-    i: int,
+    net: int,
     k: int,
     attempt: int = 0,
     *,
     der: PV | None = None,
 ) -> Perturbation:
-    """Draw the perturbation of variant ``k`` of network ``i`` (attempt ``attempt``); with
-    ``der``, the PV units of its customers too."""
+    """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
+    ``attempt``); with ``der``, the PV units of its customers too."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
-        rng = variant_rng(seed, i, k, VariantStream.LINE_LENGTH, attempt)
+        rng = variant_rng(seed, net, k, VariantStream.LINE_LENGTH, attempt)
         line_length = {t.element: float(spec.line_length_scale.sample(rng)) for t in targets.lines}
     neutral: dict[str, float] = {}
     if spec.neutral_impedance_scale != _IDENTITY:
-        rng = variant_rng(seed, i, k, VariantStream.NEUTRAL_IMPEDANCE, attempt)
+        rng = variant_rng(seed, net, k, VariantStream.NEUTRAL_IMPEDANCE, attempt)
         neutral = {
             t.element: float(spec.neutral_impedance_scale.sample(rng))
             for t in targets.lines
@@ -98,14 +98,14 @@ def sample_perturbation(
         }
     grounding: dict[str, float] = {}
     if spec.grounding_resistance_ohm is not None:
-        rng = variant_rng(seed, i, k, VariantStream.GROUNDING_RESISTANCE, attempt)
+        rng = variant_rng(seed, net, k, VariantStream.GROUNDING_RESISTANCE, attempt)
         grounding = {
             g.key: float(spec.grounding_resistance_ohm.sample(rng)) for g in targets.groundings
         }
     phases: dict[str, tuple[str, str]] = {}
     realloc = config.phase_reallocation
     if realloc.enabled and targets.loads:
-        rng = variant_rng(seed, i, k, VariantStream.PHASE_REALLOCATION, attempt)
+        rng = variant_rng(seed, net, k, VariantStream.PHASE_REALLOCATION, attempt)
         n = len(targets.loads)
         chosen = sorted(
             int(c) for c in rng.choice(n, size=int(realloc.fraction * n + 0.5), replace=False)
@@ -114,26 +114,26 @@ def sample_perturbation(
             t = targets.loads[c]
             new = t.candidates[int(rng.integers(len(t.candidates)))]
             phases[t.element] = (t.bus1(t.phase), t.bus1(new))
-    rho, kwp, pf = _pv(der, targets, seed, i, k, attempt)
+    rho, kwp, pf = _pv(der, targets, seed, net, k, attempt)
     return Perturbation(attempt, line_length, neutral, grounding, phases, rho, kwp, pf)
 
 
 def _pv(
-    der: PV | None, targets: VariantTargets, seed: int, i: int, k: int, attempt: int
+    der: PV | None, targets: VariantTargets, seed: int, net: int, k: int, attempt: int
 ) -> tuple[float, dict[str, float], dict[str, float]]:
     """Penetration, then one uniform draw and one size per customer whatever the penetration:
     a customer with PV at one penetration has it, with the same size, at every higher one."""
     if der is None or der.penetration == _NO_PV or not targets.customers:
         return 0.0, {}, {}
-    rng = variant_rng(seed, i, k, VariantStream.DER_PLACEMENT, attempt)
+    rng = variant_rng(seed, net, k, VariantStream.DER_PLACEMENT, attempt)
     rho = float(der.penetration.sample(rng))
     chosen = rng.random(len(targets.customers)) < rho
-    rng = variant_rng(seed, i, k, VariantStream.DER_SIZE, attempt)
+    rng = variant_rng(seed, net, k, VariantStream.DER_SIZE, attempt)
     sizes = [float(der.kwp.sample(rng)) for _ in targets.customers]
     kwp = {c.element: s for c, s, on in zip(targets.customers, sizes, chosen, strict=True) if on}
     pf: dict[str, float] = {}
     if der.power_factor != _IDENTITY:
-        rng = variant_rng(seed, i, k, VariantStream.DER_POWER_FACTOR, attempt)
+        rng = variant_rng(seed, net, k, VariantStream.DER_POWER_FACTOR, attempt)
         factors = [float(der.power_factor.sample(rng)) for _ in targets.customers]
         pf = {
             c.element: f for c, f, on in zip(targets.customers, factors, chosen, strict=True) if on

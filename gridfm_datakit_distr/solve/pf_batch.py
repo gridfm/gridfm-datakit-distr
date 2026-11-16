@@ -45,7 +45,12 @@ from gridfm_datakit_distr.scenarios.controls import (
 )
 from gridfm_datakit_distr.scenarios.der import PVDraw, PVOutputs, pv_units
 from gridfm_datakit_distr.scenarios.profiles import customers_of, make_provider
-from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng, scenario_seed
+from gridfm_datakit_distr.scenarios.seeds import (
+    ScenarioStream,
+    network_key,
+    scenario_rng,
+    scenario_seed,
+)
 from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
 from gridfm_datakit_distr.validate.residual import check_this_scenario, residual
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
@@ -116,6 +121,8 @@ class VariantRunner:
             raise ValueError(f"{variant.variant_id} failed: no scenarios to run")
         self.config = config
         self.i, self.k = i, variant.variant_idx
+        self.net = network_key(network.id)
+        """Key of the network's draws (the index ``i`` only numbers its scenario ids)."""
         self.variant_id = variant.variant_id
         self.network_id = network.id
         self.options = prepare_options(config)
@@ -152,13 +159,13 @@ class VariantRunner:
 
     def run(self, s: int) -> ScenarioOutcome:
         """Scenario ``s`` of the variant."""
-        seed, i, k = self.config.settings.seed, self.i, self.k
+        seed, net, k = self.config.settings.seed, self.net, self.k
         start = time.perf_counter()
         draws = _Draws(np.zeros(0), np.zeros(0), None, None, 0.0)
         try:
-            loads = self.loads.draw(seed, i, k, s)
-            pv = self.pv.draw(seed, i, k, s, loads.time_s) if self.pv is not None else None
-            rng = scenario_rng(seed, i, k, s, ScenarioStream.SOURCE_VOLTAGE)
+            loads = self.loads.draw(seed, net, k, s)
+            pv = self.pv.draw(seed, net, k, s, loads.time_s) if self.pv is not None else None
+            rng = scenario_rng(seed, net, k, s, ScenarioStream.SOURCE_VOLTAGE)
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
             draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src)
             self._set(draws)
@@ -253,14 +260,14 @@ class VariantRunner:
             return replace(self.initial_state, origin=origin), None
         apply_state(self.ctx, self.initial_state)  # every scenario settles from the same state
         self.ctx.command("Set Mode=Snap")
-        rng = scenario_rng(seed, self.i, self.k, s, ScenarioStream.TAP_JITTER)
+        rng = scenario_rng(seed, self.net, self.k, s, ScenarioStream.TAP_JITTER)
         args = (self.ctx, controls.mode, self.variant_id)
         state, status = settle(*args, jitter_steps=controls.tap_jitter_steps, rng=rng)
         if status is not None and not status.converged:
             with self._more_iterations():
                 apply_state(self.ctx, self.initial_state)
                 self.ctx.command("Set Mode=Snap")
-                rng = scenario_rng(seed, self.i, self.k, s, ScenarioStream.TAP_JITTER)
+                rng = scenario_rng(seed, self.net, self.k, s, ScenarioStream.TAP_JITTER)
                 state, status = settle(*args, jitter_steps=controls.tap_jitter_steps, rng=rng)
         return state, status
 
@@ -302,7 +309,7 @@ class VariantRunner:
             scenario_id=scenario_id(self.i, self.k, s),
             network_id=self.network_id,
             variant_id=self.variant_id,
-            seed=scenario_seed(self.config.settings.seed, self.i, self.k, s),
+            seed=scenario_seed(self.config.settings.seed, self.net, self.k, s),
             pf_status=status,
             state_id=None if state is None else state.state_id,
             origin=None if state is None else state.origin,

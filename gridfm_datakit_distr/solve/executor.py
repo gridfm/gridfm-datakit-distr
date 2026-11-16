@@ -365,7 +365,7 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
             _TARGETS[base] = targets
     i, seed = task.job.network_idx, config.settings.seed
     variant = generate_variant(
-        network, targets, config.variants, seed, i, k, options=options, root=root,
+        network, targets, config.variants, seed, k, options=options, root=root,
         der=config.der.pv,
     )  # fmt: skip
     slot.variant = variant

@@ -88,7 +88,7 @@ def test_scenarios_on_catalog_networks(
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(network, options))
     result = generate_variant(
-        network, targets, cfg.variants, 13, 0, 0, options=options, der=cfg.der.pv
+        network, targets, cfg.variants, 13, 0, options=options, der=cfg.der.pv
     )
     assert result.status == "ok", result.failures
     runner = VariantRunner(network, result, cfg, 0)

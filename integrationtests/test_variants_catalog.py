@@ -52,7 +52,7 @@ def test_variants_pass_c1_c2(
     network_master: Callable[[str], Path], network_id: str, kinds: set[str]
 ) -> None:
     network_master(network_id)
-    results = generate_variants(load_catalog().network(network_id), EXAMPLE, seed=11, i=0)
+    results = generate_variants(load_catalog().network(network_id), EXAMPLE, seed=11)
     assert len(results) == 3
     for r in results:
         assert r.status == "ok", r.failures

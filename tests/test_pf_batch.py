@@ -44,7 +44,7 @@ def variant(
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(network, options, tmp_path))
     result = generate_variant(
-        network, targets, cfg.variants, SEED, 0, 0, options=options, root=tmp_path, der=cfg.der.pv
+        network, targets, cfg.variants, SEED, 0, options=options, root=tmp_path, der=cfg.der.pv
     )
     assert result.status == "ok"
     return network, result

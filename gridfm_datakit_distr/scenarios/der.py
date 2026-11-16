@@ -92,13 +92,13 @@ class PVOutputs:
         self._rated = np.array([u.s_rated_va for u in self.units], dtype=np.float64)
         self._tan = np.tan(np.arccos([u.power_factor for u in self.units]))
 
-    def draw(self, seed: int, i: int, k: int, s: int, time_s: int | None) -> PVDraw:
+    def draw(self, seed: int, net: int, k: int, s: int, time_s: int | None) -> PVDraw:
         """Setpoints of scenario ``s``; ``time_s``: the load profile's time, if it has one."""
         if time_s is None:
-            hour = float(scenario_rng(seed, i, k, s, ScenarioStream.PROFILE_TIME).uniform(0, 24))
+            hour = float(scenario_rng(seed, net, k, s, ScenarioStream.PROFILE_TIME).uniform(0, 24))
         else:
             hour = (int(time_s) % DAY_S) / 3600.0
-        rng = scenario_rng(seed, i, k, s, ScenarioStream.PV_OUTPUT)
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_OUTPUT)
         cloudiness = float(self.profile.cloudiness.sample(rng))
         p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness)
         p = np.minimum(p_avail, self._rated)  # inverter clipping when kVA < kWp

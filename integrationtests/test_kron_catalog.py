@@ -71,7 +71,7 @@ def test_the_view_per_scenario(network_master: Callable[[str], Path], network_id
     )
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(network, options))
-    result = generate_variant(network, targets, cfg.variants, 2, 0, 0, options=options)
+    result = generate_variant(network, targets, cfg.variants, 2, 0, options=options)
     runner = VariantRunner(network, result, cfg, 0)
     view = KronView(runner, network, result)
     assert view.identity == (network_id == "ieee13")

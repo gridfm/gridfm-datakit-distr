@@ -323,6 +323,17 @@ def test_features_not_in_this_version(path: str, value: Any, reason: str) -> Non
     one_issue(with_(path, value), path, reason)
 
 
+def test_networks_must_have_distinct_seed_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gridfm_datakit_distr.config import load
+
+    monkeypatch.setattr(load, "network_key", lambda network_id: 7)  # force a collision
+    one_issue(
+        with_("networks.include", ["ieee13", "ieee34"]),
+        "networks.include",
+        "ieee13 and ieee34 share a seed key",
+    )
+
+
 def test_opf_labels_are_accepted() -> None:
     pytest.importorskip("casadi")
     config = validate_config(with_("labels.opf.enabled", True))

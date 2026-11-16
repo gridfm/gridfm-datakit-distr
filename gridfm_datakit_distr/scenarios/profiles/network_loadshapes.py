@@ -161,13 +161,13 @@ class LoadshapeProvider:
         self._fixed_p = np.array([f[0] for f in fixed])
         self._fixed_q = np.array([f[1] for f in fixed])
 
-    def draw(self, seed: int, i: int, k: int, s: int) -> LoadDraw:
+    def draw(self, seed: int, net: int, k: int, s: int) -> LoadDraw:
         # one time for all on PROFILE_TIME; per-customer times on their own stream, since the PV
         # hour of a scenario without a common time is drawn from PROFILE_TIME
         stream = (
             ScenarioStream.PROFILE_TIME if self.same_timestamp else ScenarioStream.CUSTOMER_TIMES
         )
-        rng = scenario_rng(seed, i, k, s, stream)
+        rng = scenario_rng(seed, net, k, s, stream)
         n_times = self.series.p_w.shape[1]
         mapped = self._rows >= 0
         p, q = self._fixed_p.copy(), self._fixed_q.copy()

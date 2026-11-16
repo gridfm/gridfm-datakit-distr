@@ -28,7 +28,7 @@ CONFIG: dict[str, Any] = {
     "der": {"pv": {"penetration": 1.0, "kwp": 40.0, "inverter_kva_per_kwp": 1.0}},
     "scenarios": {"n_scenarios_per_variant": 6, "pv_profile": {"cloudiness": 0.0}},
     "labels": {"opf": {"enabled": True}},
-    "settings": {"seed": 1, "num_processes": 1},
+    "settings": {"seed": 2, "num_processes": 1},  # two of the six scenarios curtail
 }
 
 

@@ -88,7 +88,7 @@ def test_generators_sit_on_their_customers_nodes(
 ) -> None:
     network, root, _ = base
     variants = Variants.model_validate({"phase_reallocation": {"enabled": True, "fraction": 1.0}})
-    result = generate_variant(network, targets, variants, SEED, 0, 0, root=root, der=pv())
+    result = generate_variant(network, targets, variants, SEED, 0, root=root, der=pv())
     assert result.status == "ok", result.failures
     model, p = result.model, result.perturbation
     assert model is not None
@@ -116,7 +116,7 @@ def test_zero_penetration_reproduces_the_base_case(
     p = sample_perturbation(Variants(), targets, SEED, 0, 0, der=pv(penetration=0.0))
     assert edit_script(p, targets) == []
     result = generate_variant(
-        network, targets, Variants(), SEED, 0, 0, root=root, der=pv(penetration=0.0)
+        network, targets, Variants(), SEED, 0, root=root, der=pv(penetration=0.0)
     )
     assert result.model is not None
     assert [e.name for e in result.model.elements] == [e.name for e in prepared.model.elements]
@@ -140,7 +140,7 @@ def outputs(
 ) -> tuple[PVOutputs, Any]:
     network, root, _ = base
     spec = pv(**changes)
-    result = generate_variant(network, targets, Variants(), SEED, 0, 0, root=root, der=spec)
+    result = generate_variant(network, targets, Variants(), SEED, 0, root=root, der=spec)
     assert result.perturbation is not None
     units = pv_units(result.perturbation, spec)
     return PVOutputs(units, spec, PVProfile()), result

@@ -21,7 +21,7 @@ This document is the contract between the generator and its consumers (a future 
 - `network_id`: string from `networks/catalog.yaml`, e.g. `ieee13`, `csiro_enwl/n01_f1`, `edp/rural`.
 - `variant_id`: `"{network_id}/v{k:04d}"`.
 - `state_id`: first 16 hex chars of SHA-1 over (`variant_id`, tap vector rounded to 1e-9, capacitor states) — content-addressed, deduplicated.
-- `scenario_id`: `int64`, unique within a dataset; assigned deterministically from the seed tree.
+- `scenario_id`: `int64`, unique within a dataset; assigned deterministically from the seed tree. Its network bits are the network's index in the dataset; the key of a scenario that is the same in every dataset holding its network is (`network_id`, `variant_idx`, `s`).
 - `node_idx`, `element_idx`: `int32`, dense, 0-based, stable within a variant.
 - Ground is never a node: terminal positions connected to ground have `node_idx = -1`.
 
@@ -123,7 +123,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `variant_id` | string | |
 | `network_id` | string | |
 | `variant_idx` | int32 | |
-| `seed` | uint64 | 64-bit fingerprint of the variant's seed sequence (`generate_state(1, uint64)`); draws come from the sequence fixed by `settings.seed` and the variant's position |
+| `seed` | uint64 | 64-bit fingerprint of the variant's seed sequence (`generate_state(1, uint64)`); draws come from the sequence fixed by `settings.seed`, the network's id (two 32-bit words of its SHA-256) and the variant index, so a network's variants and scenarios do not depend on the other networks of the dataset |
 | `perturbation` | string (JSON) | sampled parameters (line length scales, grounding resistances, phase reallocations, …) |
 | `perturbation_script_sha1` | string | hash of the OpenDSS edit script that realises the variant |
 | `n_nodes`, `n_elements` | int32 | |
@@ -235,7 +235,7 @@ Network admittance matrix of the state, at node level (node indices of the varia
 | `network_id`, `variant_id` | string | |
 | `state_id` | string, nullable | network state of the label solve; null if the controls did not settle or the scenario failed before |
 | `origin` | string, nullable | how this scenario's controls reached its state: `static_settle` (settled on the scenario's setpoints), `static_settle+jitter` (the tap jitter moved the settled taps and the controls settled again, to another state), `as_is` (controls off, taps and capacitors as compiled); null when `state_id` is null. Scenarios sharing a state can have different origins |
-| `seed` | uint64 | 64-bit fingerprint of the scenario's seed sequence |
+| `seed` | uint64 | 64-bit fingerprint of the scenario's seed sequence (keyed by `settings.seed`, the network's id, the variant and scenario indices) |
 | `profile_time_s` | int64, nullable | time of the load profile drawn, seconds since the start of the source's profile (no source is dated); null for synthetic profiles or one time per customer |
 | `profile_source` | string | provider name |
 | `der_penetration` | float32/64 | share of customers with PV in the variant |

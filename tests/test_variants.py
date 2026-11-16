@@ -15,7 +15,7 @@ from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
-from gridfm_datakit_distr.scenarios.seeds import variant_seed
+from gridfm_datakit_distr.scenarios.seeds import network_key, variant_seed
 from gridfm_datakit_distr.variants import generate
 from gridfm_datakit_distr.variants.generate import (
     VariantError,
@@ -122,7 +122,7 @@ def test_defaults_change_nothing(base: tuple[Network, Path, PreparedNetwork]) ->
     targets = collect_targets(prepared)
     p = sample_perturbation(Variants(), targets, SEED, 0, 0)
     assert edit_script(p, targets) == []
-    result = generate_variant(network, targets, Variants(), SEED, 0, 0, root=root)
+    result = generate_variant(network, targets, Variants(), SEED, 0, root=root)
     assert result.status == "ok"
     assert result.model is not None
     assert json.loads(result.record()["perturbation"]) == {"attempt": 0}
@@ -140,7 +140,7 @@ def test_the_script_realises_the_perturbation(
     base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
 ) -> None:
     network, root, _ = base
-    result = generate_variant(network, targets, variants(), SEED, 0, 0, root=root)
+    result = generate_variant(network, targets, variants(), SEED, 0, root=root)
     assert result.status == "ok", result.failures
     assert result.edit_deviation <= 1e-12
     p, model = result.perturbation, result.model
@@ -177,13 +177,13 @@ def test_the_edit_check_catches_the_units_trap(
 
 def test_records(base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets) -> None:
     network, root, _ = base
-    result = generate_variant(network, targets, variants(), SEED, 2, 5, root=root)
+    result = generate_variant(network, targets, variants(), SEED, 5, root=root)
     assert result.model is not None
     row = result.record()
     assert row["variant_id"] == "t/var/v0005"
     assert row["network_id"] == "t/var"
     assert row["variant_idx"] == 5
-    assert row["seed"] == variant_seed(SEED, 2, 5)
+    assert row["seed"] == variant_seed(SEED, network_key("t/var"), 5)
     assert (
         row["perturbation_script_sha1"]
         == hashlib.sha1("\n".join(result.script).encode("utf-8")).hexdigest()
@@ -218,14 +218,14 @@ def test_failed_checks_are_resampled_then_recorded(
         return ["C1: forced"] if calls["n"] <= 2 else real(prepared)
 
     monkeypatch.setattr(generate, "physics_failures", flaky)
-    result = generate_variant(network, targets, variants(), SEED, 0, 0, root=root)
+    result = generate_variant(network, targets, variants(), SEED, 0, root=root)
     assert result.status == "ok"
     assert result.perturbation is not None
     assert result.perturbation.attempt == 2
     assert result.failures == ("attempt 0: C1: forced", "attempt 1: C1: forced")
 
     monkeypatch.setattr(generate, "physics_failures", lambda prepared: ["C2: forced"])
-    failed = generate_variant(network, targets, variants(), SEED, 0, 0, root=root)
+    failed = generate_variant(network, targets, variants(), SEED, 0, root=root)
     assert failed.status == "failed"
     assert failed.model is None
     assert len(failed.failures) == 3
@@ -240,12 +240,12 @@ def test_an_edit_that_misses_its_target_raises(
     network, root, _ = base
     monkeypatch.setattr(generate, "check_edits", lambda *args: 1e-3)
     with pytest.raises(VariantError, match="edits not realised"):
-        generate_variant(network, targets, variants(), SEED, 0, 0, root=root)
+        generate_variant(network, targets, variants(), SEED, 0, root=root)
 
 
 def test_generate_variants(base: tuple[Network, Path, PreparedNetwork]) -> None:
     network, root, _ = base
-    results = generate_variants(network, variants(), SEED, 0, root=root)
+    results = generate_variants(network, variants(), SEED, root=root)
     assert [r.variant_id for r in results] == ["t/var/v0000", "t/var/v0001", "t/var/v0002"]
     assert all(r.status == "ok" for r in results)
     assert len({r.script_sha1 for r in results}) == 3

@@ -25,15 +25,15 @@ class SyntheticProvider:
         self.spec = spec
         self._p_nominal = np.array([c.p_w for c in self.customers], dtype=np.float64)
 
-    def draw(self, seed: int, i: int, k: int, s: int) -> LoadDraw:
+    def draw(self, seed: int, net: int, k: int, s: int) -> LoadDraw:
         n = len(self.customers)
         g = float(
-            self.spec.global_scale.sample(scenario_rng(seed, i, k, s, ScenarioStream.LOAD_SCALE))
+            self.spec.global_scale.sample(scenario_rng(seed, net, k, s, ScenarioStream.LOAD_SCALE))
         )
         sigma = self.spec.local_sigma
-        z = scenario_rng(seed, i, k, s, ScenarioStream.LOAD_NOISE).standard_normal(n)
+        z = scenario_rng(seed, net, k, s, ScenarioStream.LOAD_NOISE).standard_normal(n)
         m = np.exp(sigma * z - sigma**2 / 2)
-        rng = scenario_rng(seed, i, k, s, ScenarioStream.POWER_FACTOR)
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.POWER_FACTOR)
         pf = np.array([float(self.spec.power_factor.sample(rng)) for _ in range(n)])
         p = g * m * self._p_nominal
         q = p * np.tan(np.arccos(pf))

@@ -133,7 +133,7 @@ def run_chunk(
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(network, options, tmp_path))
     result = generate_variant(
-        network, targets, cfg.variants, 3, 0, 0, options=options, root=tmp_path, der=cfg.der.pv
+        network, targets, cfg.variants, 3, 0, options=options, root=tmp_path, der=cfg.der.pv
     )
     runner = VariantRunner(network, result, cfg, 0, root=tmp_path)
     return runner, result, [runner.run(s) for s in range(6)]

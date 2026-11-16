@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute
 import pyarrow.parquet as pq
 import pytest
 
@@ -323,3 +325,40 @@ def test_a_network_without_a_view_exports_its_errors(tmp_path: Path) -> None:
     assert not stale.exists()
     status = pq.read_table(tmp_path / "export" / "t" / "one" / "posseq_scenarios.parquet")
     assert all("PosSeqError" in m for m in status.column("view_message").to_pylist())
+
+
+def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path) -> None:
+    """t/reg alone and after t/feeder: equal tables but for the network bits of ``scenario_id``
+    and the part names."""
+    both, alone = tmp_path / "both", tmp_path / "alone"
+    networks = catalog(tmp_path)
+    generate(config(), both, catalog=networks, root=tmp_path)
+    data = copy.deepcopy(CONFIG)
+    data["networks"]["include"] = ["t/reg"]
+    generate(GenerationConfig.model_validate(data), alone, catalog=networks, root=tmp_path)
+    mask = (1 << 47) - 1
+
+    def local(table: pa.Table) -> pa.Table:
+        # config_hash identifies the dataset's config, which differs by its network list
+        drop = [c for c in table.column_names if c in TIMINGS | {"config_hash"}]
+        table = table.drop_columns(drop)
+        if "scenario_id" in table.column_names:
+            sids = table.column("scenario_id").to_pylist()
+            ids = pa.array([s & mask for s in sids], pa.int64())
+            table = table.set_column(
+                table.schema.get_field_index("scenario_id"), "scenario_id", ids
+            )
+        return table
+
+    parts = sorted(both.rglob("part-00001-*.parquet"))
+    assert parts
+    for part in parts:
+        rel = part.relative_to(both)
+        twin = alone / rel.parent / part.name.replace("part-00001-", "part-00000-")
+        assert local(pq.read_table(part)).equals(local(pq.read_table(twin))), rel
+    states = pq.read_table(alone / "states" / "states.parquet")
+    mine = set(states.column("state_id").to_pylist())
+    for name in ("states/states", "states/ybus"):
+        table = pq.read_table(both / f"{name}.parquet")
+        table = table.filter(pa.compute.is_in(table["state_id"], pa.array(sorted(mine))))
+        assert table.equals(pq.read_table(alone / f"{name}.parquet")), name

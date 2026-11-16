@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import random
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
@@ -19,6 +20,7 @@ from gridfm_datakit_distr.model.ids import (
 from gridfm_datakit_distr.scenarios.seeds import (
     ScenarioStream,
     VariantStream,
+    network_key,
     scenario_rng,
     scenario_seed,
     scenario_sequence,
@@ -70,16 +72,23 @@ def test_split_rejects_negative_ids() -> None:
 
 
 def test_sequences_follow_the_spawn_tree_of_the_plan() -> None:
-    root = np.random.SeedSequence(SEED)
-    nets = root.spawn(3)
-    variants = nets[2].spawn(4)
+    net = network_key("csiro_enwl/n01_f1")
+    network = np.random.SeedSequence(SEED, spawn_key=(net >> 32, net & 0xFFFF_FFFF))
+    variants = network.spawn(4)
     scenarios = variants[1].spawn(6)
-    assert variant_sequence(SEED, 2, 1).generate_state(4).tolist() == (
+    assert variant_sequence(SEED, net, 1).generate_state(4).tolist() == (
         variants[1].generate_state(4).tolist()
     )
-    assert scenario_sequence(SEED, 2, 1, 5).generate_state(4).tolist() == (
+    assert scenario_sequence(SEED, net, 1, 5).generate_state(4).tolist() == (
         scenarios[5].generate_state(4).tolist()
     )
+
+
+def test_the_network_key_is_the_sha256_of_its_id() -> None:
+    digest = hashlib.sha256(b"ieee13").digest()
+    assert network_key("ieee13") == int.from_bytes(digest[:8], "big")
+    assert network_key("ieee13") != network_key("ieee34")
+    assert 2**32 <= network_key("ieee13") < 2**64  # two words in the spawn key
 
 
 def _draws(keys: list[tuple[int, int, int]]) -> dict[tuple[int, int, int], list[float]]:
@@ -125,8 +134,8 @@ def test_variant_streams_never_share_a_key_with_scenarios() -> None:
     # a variant's purpose streams live above the scenario indices (< 2**31)
     stream = variant_rng(SEED, 0, 0, VariantStream.LINE_LENGTH).bit_generator.seed_seq
     assert isinstance(stream, np.random.SeedSequence)
-    assert stream.spawn_key[2] >= 2**31
-    assert stream.spawn_key[:2] == (0, 0)
+    assert stream.spawn_key[3] >= 2**31
+    assert stream.spawn_key[:3] == (0, 0, 0)
 
 
 def test_resampling_attempts_get_their_own_draws() -> None:
@@ -169,14 +178,12 @@ def test_seed_columns_are_stable_fingerprints() -> None:
     assert v != s
     assert v == variant_seed(SEED, 1, 2)
     expected = int(
-        np.random.SeedSequence(SEED, spawn_key=(1, 2, 3)).generate_state(1, np.uint64)[0]
+        np.random.SeedSequence(SEED, spawn_key=(0, 1, 2, 3)).generate_state(1, np.uint64)[0]
     )
     assert s == expected
 
 
-@pytest.mark.parametrize(
-    "bad", [(-1, 0), (0, -1), (MAX_NETWORK_INDEX + 1, 0), (0, MAX_VARIANT_INDEX + 1)]
-)
+@pytest.mark.parametrize("bad", [(-1, 0), (0, -1), (2**64, 0), (0, MAX_VARIANT_INDEX + 1)])
 def test_tree_bounds(bad: tuple[int, int]) -> None:
     with pytest.raises(ValueError, match="must be in"):
         variant_sequence(SEED, *bad)
