@@ -9,8 +9,9 @@ elements, extraction errors) raise; check outcomes are reported, not raised.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from gridfm_datakit_distr.engine.context import DssContext, SolveStatus
@@ -64,6 +65,25 @@ class PreparedNetwork:
     """The variant's edit script; empty for the network as loaded."""
 
 
+def with_nominal(model: ElectricalModel, levels: dict[float, float]) -> ElectricalModel:
+    """``model`` with the nominal voltage of the levels the catalog declares (line-to-line base
+    kV -> nominal phase-to-neutral kV); a declared level that matches no bus is an error."""
+    if not levels:
+        return model
+    nodes = list(model.nodes)
+    for base_ll, nominal_ln in levels.items():
+        matched = [
+            n.idx
+            for n in nodes
+            if math.isclose(n.kv_base_ln * math.sqrt(3.0), base_ll, rel_tol=1e-6)
+        ]
+        if not matched:
+            raise ValueError(f"{model.network_id}: no bus on the declared {base_ll} kV level")
+        for i in matched:
+            nodes[i] = replace(nodes[i], kv_nominal_ln=nominal_ln)
+    return ElectricalModel(model.network_id, model.variant_id, nodes, model.elements)
+
+
 def prepare_network(
     network: Network,
     options: PrepareOptions | None = None,
@@ -93,6 +113,7 @@ def prepare_network(
     if fix:
         status = ctx.solve()
         model = extract_electrical(ctx, network.id, variant)
+    model = with_nominal(model, network.nominal_kv_ln)
     bases = check_bases(ctx, model) if fix else as_loaded
     return PreparedNetwork(
         network=network,

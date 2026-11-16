@@ -33,6 +33,7 @@ NODES = pa.schema(
         _required("conductor", pa.string()),
         _required("opendss_node", pa.string()),
         _required("kv_base_ln", pa.float64()),
+        _nullable("kv_nominal_ln", pa.float64()),
         _required("is_grounded", pa.bool_()),
         _nullable("r_ground_ohm", pa.float64()),
         _nullable("x_ground_ohm", pa.float64()),

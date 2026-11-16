@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -170,6 +171,15 @@ def test_tables_match_their_schemas() -> None:
         schema.check_schema(table, schema.TABLES[name], name)
     with pytest.raises(ValueError, match="does not match"):
         schema.check_schema(pa.table({"x": [1]}), schema.NODES, "variants/nodes")
+
+
+def test_the_nominal_voltage_round_trips() -> None:
+    model = small_model()
+    model.nodes[1] = replace(model.nodes[1], kv_nominal_ln=0.22)
+    back = io_parquet.from_tables(io_parquet.to_tables(model, "s1"), model.variant_id, "s1")
+    assert [n.kv_nominal_ln for n in back.nodes] == [None, 0.22, None]
+    assert back.nodes[1].nominal_v_ln == 220.0
+    assert back.nodes[0].nominal_v_ln == back.nodes[0].kv_base_ln * 1e3
 
 
 def test_ratings_are_stored_as_float32() -> None:

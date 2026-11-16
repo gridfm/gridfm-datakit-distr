@@ -131,15 +131,20 @@ class _Config(BaseModel):
 
 
 class VoltageLimits(_Config):
-    """Voltage limits for statistics and OPF: a preset or explicit values."""
+    """Voltage limits for statistics and OPF: a preset or explicit values, per unit of each
+    network's nominal line-to-neutral voltage (the base unless the catalog declares one)."""
 
     preset: Literal["uk_esqcr", "ansi_a"] | None = Field(
         default=None,
         description="`uk_esqcr`: 0.94 to 1.10 pu (UK ESQCR, 230 V +10 %/-6 %); `ansi_a`: "
         "0.95 to 1.05 pu (ANSI C84.1 Range A). Sets `vmin_pu` and `vmax_pu`.",
     )
-    vmin_pu: float = Field(default=0.94, gt=0, description="Lower voltage limit (pu).")
-    vmax_pu: float = Field(default=1.10, gt=0, description="Upper voltage limit (pu).")
+    vmin_pu: float = Field(
+        default=0.94, gt=0, description="Lower voltage limit (pu of the nominal voltage)."
+    )
+    vmax_pu: float = Field(
+        default=1.10, gt=0, description="Upper voltage limit (pu of the nominal voltage)."
+    )
 
     @model_validator(mode="before")
     @classmethod

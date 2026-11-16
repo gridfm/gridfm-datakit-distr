@@ -17,7 +17,7 @@ import numpy as np
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
-from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult, phase_neutral_pairs
+from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
 
 TOLERANCE_PU = 1e-6
@@ -35,7 +35,8 @@ class Verification:
     max_dv_pu: float
     """Largest ``|V_opendss - V_opf|`` per unit of the node's base; NaN without a power flow."""
     max_bound_excess_pu: float
-    """Largest excess of ``|V_p - V_n|`` over its bounds, per unit of the phase node's base; 0
+    """Largest excess of ``|V_p - V_n|`` over its bounds, per unit of the phase node's nominal
+    voltage; 0
     within the bounds, NaN without a power flow."""
 
 
@@ -66,10 +67,11 @@ def verify(
             api.Generators.kvar(kvar)
     base_v = np.array([n.kv_base_ln for n in model.nodes]) * 1e3
     dv = float(np.max(np.abs(v - result.v) / base_v))
-    pairs = phase_neutral_pairs(model)
+    pairs = problem.pairs
     neutral = np.where(pairs[:, 1] == GROUND, 0.0, v[pairs[:, 1]])
     vpn = np.abs(v[pairs[:, 0]] - neutral)
-    excess = np.maximum(vpn - problem.vpn_max_v, problem.vpn_min_v - vpn) / base_v[pairs[:, 0]]
+    nominal = np.array([model.nodes[int(i)].nominal_v_ln for i in pairs[:, 0]])
+    excess = np.maximum(vpn - problem.vpn_hi_v, problem.vpn_lo_v - vpn) / nominal
     excess_max = max(float(np.max(excess, initial=0.0)), 0.0)
     failed = []
     if not report.passes():

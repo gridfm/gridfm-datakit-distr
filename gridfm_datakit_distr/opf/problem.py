@@ -128,13 +128,15 @@ class OPFProblem:
         self,
         model: ElectricalModel,
         source: Source,
-        vpn_min_v: float,
-        vpn_max_v: float,
+        vmin_pu: float,
+        vmax_pu: float,
         time_limit_s: float = 300.0,
     ) -> None:
-        """``vpn_min_v``, ``vpn_max_v``: bounds of the phase-to-neutral voltage magnitude (V);
+        """``vmin_pu``, ``vmax_pu``: bounds of the phase-to-neutral voltage magnitudes, per unit
+        of each phase node's nominal line-to-neutral voltage (:func:`vpn_bounds`);
         ``time_limit_s``: wall-clock limit of one solve (s)."""
-        self.vpn_min_v, self.vpn_max_v = vpn_min_v, vpn_max_v
+        self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, vmin_pu, vmax_pu)
+        """Phase and neutral node of every bounded voltage, and its bounds (V)."""
         reason = unsupported_reason(model)
         if reason is not None:
             raise ValueError(f"{model.variant_id} is outside the OPF slice: {reason}")
@@ -157,8 +159,7 @@ class OPFProblem:
         b1 = np.zeros(n, dtype=np.complex128)
         b1[src] = ys @ e
         self._e_node = _flat_start(model, source, e)
-        pairs = phase_neutral_pairs(model)
-        self._n_pairs = len(pairs)
+        pairs = self.pairs
 
         cl, cg = _incidence(n, _ends(loads)), _incidence(n, _ends(pvs))
         zero = sp.csc_matrix((n, 2 * ng))
@@ -203,7 +204,7 @@ class OPFProblem:
         opts |= {f"ipopt.{key}": value for key, value in IPOPT_OPTIONS.items()}
         opts["ipopt.max_wall_time"] = time_limit_s
         self._solver = ca.nlpsol("opf", "ipopt", {"x": xm, "p": pm, "f": f_m, "g": g}, opts)
-        self._vpn2 = ((vpn_min_v / self._v_base) ** 2, (vpn_max_v / self._v_base) ** 2)
+        self._vpn2 = ((self.vpn_lo_v / self._v_base) ** 2, (self.vpn_hi_v / self._v_base) ** 2)
 
     def solve(
         self,
@@ -234,9 +235,9 @@ class OPFProblem:
         bounds = {
             "lbx": np.r_[-free, np.zeros(ng), -q_max],
             "ubx": np.r_[free, p_avail, q_max],
-            "lbg": np.r_[zeros, pl, ql, np.zeros(2 * ng), np.full(self._n_pairs, lo),
+            "lbg": np.r_[zeros, pl, ql, np.zeros(2 * ng), lo,
                          np.full(ng, -np.inf)],
-            "ubg": np.r_[zeros, pl, ql, np.zeros(2 * ng), np.full(self._n_pairs, hi), s_rated**2],
+            "ubg": np.r_[zeros, pl, ql, np.zeros(2 * ng), hi, s_rated**2],
         }  # fmt: skip
         v0 = source_v_pu * self._e_node
         x0 = np.r_[v0.real, v0.imag, np.zeros(2 * nl + 4 * ng)]
@@ -273,6 +274,16 @@ def _incidence(n: int, ends: NDArray[np.int64]) -> sp.csc_matrix:
     rows, vals = ends.T.ravel(), np.repeat([1.0, -1.0], len(ends))
     keep = rows != GROUND
     return sp.csc_matrix((vals[keep], (rows[keep], cols[keep])), shape=(n, len(ends)))
+
+
+def vpn_bounds(
+    model: ElectricalModel, vmin_pu: float, vmax_pu: float
+) -> tuple[NDArray[np.int64], FloatArray, FloatArray]:
+    """:func:`phase_neutral_pairs` and the bounds (V) of their voltage magnitudes: ``vmin_pu``
+    and ``vmax_pu`` times the phase node's nominal line-to-neutral voltage."""
+    pairs = phase_neutral_pairs(model)
+    nominal = np.array([model.nodes[int(i)].nominal_v_ln for i in pairs[:, 0]], dtype=np.float64)
+    return pairs, vmin_pu * nominal, vmax_pu * nominal
 
 
 def phase_neutral_pairs(model: ElectricalModel) -> NDArray[np.int64]:

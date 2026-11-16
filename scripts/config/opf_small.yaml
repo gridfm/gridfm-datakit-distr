@@ -3,8 +3,8 @@
 dataset_name: opf_small
 networks:
   include: [csiro_enwl/n02_f5]
-  # 216.2 to 253.0 V phase-to-neutral (UK ESQCR) on the feeder's 240.18 V base
-  voltage_limits: {vmin_pu: 0.9002, vmax_pu: 1.0534}
+  # UK ESQCR: 216.2 to 253.0 V phase-to-neutral on the feeder's nominal 230 V
+  voltage_limits: {preset: uk_esqcr}
 der:
   pv:
     penetration: 1.0

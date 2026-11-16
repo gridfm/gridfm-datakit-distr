@@ -138,6 +138,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `conductor` | string | `a`, `b`, `c`, `n`, `s1`, `s2` |
 | `opendss_node` | string | e.g. `671.2` |
 | `kv_base_ln` | float64 | line-to-neutral base voltage of the bus (kV) |
+| `kv_nominal_ln` | float64, nullable | nominal line-to-neutral voltage of the bus (kV) where the catalog declares one different from the base (the CSIRO feeders and the European LV feeder: 0.23 kV on a 0.416 kV base); null: the base. Voltage limits (`networks.voltage_limits`) are per unit of it |
 | `is_grounded` | bool | conductor tied to ground at this bus |
 | `r_ground_ohm`, `x_ground_ohm` | float64, nullable | grounding impedance if any |
 | `is_source` | bool | node of the source (slack) bus |
@@ -382,7 +383,7 @@ One row per scenario of the dataset.
 | `verified` | bool, nullable | the dispatch passes the OpenDSS verification; null unless `Solve_Succeeded` |
 | `verify_reason` | string, nullable | the failed checks: power flow not converged, set points, voltages, voltage bounds |
 | `verify_max_dv_pu` | float64, nullable | largest `\|V_opendss - V_opf\|` per unit of the node's line-to-neutral base; verified only up to 1e-6 |
-| `verify_max_bound_excess_pu` | float64, nullable | largest excess of a phase-to-neutral voltage over its bounds in the OpenDSS solution, per unit of the node's base; at most 1e-6 when verified |
+| `verify_max_bound_excess_pu` | float64, nullable | largest excess of a phase-to-neutral voltage over its bounds in the OpenDSS solution, per unit of the phase node's nominal voltage; at most 1e-6 when verified |
 
 ### `opf/opf_der`
 

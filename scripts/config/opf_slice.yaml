@@ -9,8 +9,8 @@ networks:
     - csiro_enwl/n15_f7
     - csiro_enwl/n17_f7
     - csiro_enwl/n21_f3
-  # 216.2 to 253.0 V phase-to-neutral (UK ESQCR, 230 V -6 %/+10 %) on these feeders' 240.18 V base
-  voltage_limits: {vmin_pu: 0.9002, vmax_pu: 1.0534}
+  # UK ESQCR, 230 V -6 %/+10 %: 216.2 to 253.0 V phase-to-neutral on the feeders' nominal 230 V
+  voltage_limits: {preset: uk_esqcr}
 variants:
   n_variants: 2
 der:

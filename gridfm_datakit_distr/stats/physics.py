@@ -2,9 +2,10 @@
 
 Per network, over the converged scenarios:
 
-- ``vm_<phase>``: |V| of the phase nodes (pu of the line-to-neutral base), phases a, b, c and the
-  split-phase halves s1, s2;
-- ``neutral_v``: |V| of the neutral nodes to ground (pu of the line-to-neutral base);
+- ``vm_<phase>``: |V| of the phase nodes (pu of the nominal line-to-neutral voltage,
+  ``variants/nodes.kv_nominal_ln``, else the base), phases a, b, c and the split-phase halves s1,
+  s2;
+- ``neutral_v``: |V| of the neutral nodes to ground (pu of the same voltage);
 - ``vuf``: |V2| / |V1| of every bus with phases a, b and c. The ratio is the same for
   phase-to-ground, phase-to-neutral and line-to-line voltages (a common-mode voltage has no
   sequence component; line voltages scale V1 and V2 by the same magnitude), so it is IEC's VUF;
@@ -153,7 +154,7 @@ class _Variant:
     """Index arrays of one variant's model and the tables to rebuild it at a network state."""
 
     variant_id: str
-    base_v: NDArray[np.float64]
+    nominal_v: NDArray[np.float64]
     conductor: NDArray[np.str_]
     phase: dict[str, NDArray[np.intp]]
     neutral: NDArray[np.intp]
@@ -196,7 +197,8 @@ def _variant(root: Path, key: str, variant_id: str, yprim_state: pa.Table | None
     order = np.argsort(elements.column("element_idx").to_numpy())
     return _Variant(
         variant_id=variant_id,
-        base_v=nodes.column("kv_base_ln").to_numpy() * 1e3,
+        nominal_v=pc.coalesce(nodes.column("kv_nominal_ln"), nodes.column("kv_base_ln")).to_numpy()
+        * 1e3,
         conductor=conductor,
         phase={c: np.flatnonzero(conductor == c) for c in PHASE_LABELS},
         neutral=np.flatnonzero(conductor == "n"),
@@ -302,7 +304,7 @@ def _add_chunk(
     vmax: float,
 ) -> None:
     nodes = pq.read_table(nodes_part)
-    n_nodes = m.base_v.size
+    n_nodes = m.nominal_v.size
     if nodes.num_rows == 0:
         return
     if nodes.num_rows % n_nodes:
@@ -314,7 +316,7 @@ def _add_chunk(
     v = nodes.column("v_re").to_numpy() + 1j * nodes.column("v_im").to_numpy()
     v = v.reshape(n_scen, n_nodes)
     sids = nodes.column("scenario_id").to_numpy().reshape(n_scen, n_nodes)[:, 0]
-    vm = np.abs(v) / m.base_v
+    vm = np.abs(v) / m.nominal_v
     s.scenarios += n_scen
     out_of_band = np.zeros(n_scen, dtype=bool)
     for c, cols in m.phase.items():

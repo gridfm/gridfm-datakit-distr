@@ -153,3 +153,16 @@ def test_power_base(tmp_path: Path) -> None:
     value, origin = s_base_va(ctx, model)
     assert origin == "total nominal load"
     assert value == pytest.approx(abs(10e3 + 5e3j))
+
+
+def test_a_declared_nominal_voltage_reaches_its_level(tmp_path: Path) -> None:
+    from gridfm_datakit_distr.networks.catalog import Network
+    from gridfm_datakit_distr.networks.prepare import prepare_network
+
+    write_circuit(tmp_path / "src", TWO_BUS)
+    network = Network(id="t/two", source="src", master="master.dss", nominal_kv_ln={0.4: 0.22})
+    model = prepare_network(network, root=tmp_path).model
+    assert {n.kv_nominal_ln for n in model.nodes} == {0.22}
+    wrong = network.model_copy(update={"nominal_kv_ln": {11.0: 6.35}})
+    with pytest.raises(ValueError, match=r"no bus on the declared 11\.0 kV level"):
+        prepare_network(wrong, root=tmp_path)

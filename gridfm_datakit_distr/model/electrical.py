@@ -39,6 +39,15 @@ class Node:
     r_ground_ohm: float | None = None
     x_ground_ohm: float | None = None
     is_source: bool = False
+    kv_nominal_ln: float | None = None
+    """Nominal line-to-neutral voltage of the bus (kV) where the catalog declares one different
+    from the base; None: the base. Voltage limits are per unit of it."""
+
+    @property
+    def nominal_v_ln(self) -> float:
+        """Nominal line-to-neutral voltage (V): :attr:`kv_nominal_ln`, else the base."""
+        kv = self.kv_base_ln if self.kv_nominal_ln is None else self.kv_nominal_ln
+        return kv * 1e3
 
 
 @dataclass(eq=False, slots=True)

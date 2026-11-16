@@ -24,7 +24,8 @@ from gridfm_datakit_distr.opf.problem import (
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 from tests.circuits import MV_LV_RNEUT, OPF_FEEDER, write_circuit
 
-VPN_MIN_V, VPN_MAX_V = 216.2, 253.0
+VMIN_PU, VMAX_PU = 0.94, 1.10
+"""Per unit of the nominal voltage: the feeder's 0.4 kV base, 230.94 V phase-to-neutral."""
 REL_TOL = 1e-6
 """Solver accuracy asked of a label: Ipopt runs at tol 1e-9 on per-unit quantities."""
 
@@ -47,7 +48,7 @@ def make_case(root: Path) -> Case:
     write_circuit(root / "src", OPF_FEEDER)
     prepared = prepare_network(Network(id="t/opf", source="src", master="master.dss"), root=root)
     source = read_source(prepared.ctx, prepared.model)
-    problem = OPFProblem(prepared.model, source, VPN_MIN_V, VPN_MAX_V)
+    problem = OPFProblem(prepared.model, source, VMIN_PU, VMAX_PU)
     order = {name: j for j, name in enumerate(prepared.ctx.ynode_order())}
     to_model = np.array([order[n.opendss_node.lower()] for n in prepared.model.nodes])
     return Case(prepared, source, problem, to_model)
@@ -88,7 +89,8 @@ def test_without_violation_every_unit_keeps_its_available_power(case: Case) -> N
     assert result.status == SOLVED
     assert result.solved
     np.testing.assert_allclose(result.pv_p_w, 2e3, rtol=REL_TOL, atol=0)
-    assert VPN_MIN_V < vpn(case, result.v).min() <= vpn(case, result.v).max() < VPN_MAX_V
+    lo, hi = case.problem.vpn_lo_v.min(), case.problem.vpn_hi_v.max()
+    assert lo < vpn(case, result.v).min() <= vpn(case, result.v).max() < hi
     # The dispatch, reactive power included, gives OpenDSS the same voltages.
     ctx = case.prepared.ctx
     for name, p, q in zip(case.problem.pv_names, result.pv_p_w, result.pv_q_var, strict=True):
@@ -109,7 +111,9 @@ def test_overvoltage_is_curtailed_to_the_bound(case: Case) -> None:
     assert result.status == SOLVED
     assert np.sum(30e3 - result.pv_p_w) > 1.0  # W, far above the solver's accuracy
     v_max = vpn(case, result.v).max()
-    assert abs(v_max - VPN_MAX_V) <= REL_TOL * VPN_MAX_V
+    v_bound = VMAX_PU * 400 / 3**0.5  # V
+    assert np.allclose(case.problem.vpn_hi_v, v_bound, rtol=1e-12)
+    assert abs(v_max - v_bound) <= REL_TOL * v_bound
     s2 = result.pv_q_var**2 + result.pv_p_w**2
     np.testing.assert_array_less(s2, (30e3) ** 2 * (1 + REL_TOL))
 
@@ -141,4 +145,4 @@ def test_a_network_outside_the_slice_is_refused(tmp_path: Path) -> None:
         Network(id="t/mvlv", source="src", master="master.dss"), root=tmp_path
     )
     with pytest.raises(ValueError, match="transformer"):
-        OPFProblem(prepared.model, read_source(prepared.ctx, prepared.model), VPN_MIN_V, VPN_MAX_V)
+        OPFProblem(prepared.model, read_source(prepared.ctx, prepared.model), VMIN_PU, VMAX_PU)

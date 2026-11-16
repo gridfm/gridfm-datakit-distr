@@ -39,13 +39,14 @@ Which catalog networks enter the dataset (`docs/manual/networks.md`).
 
 ## `networks.voltage_limits`
 
-Voltage limits for statistics and OPF: a preset or explicit values.
+Voltage limits for statistics and OPF: a preset or explicit values, per unit of each
+network's nominal line-to-neutral voltage (the base unless the catalog declares one).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `networks.voltage_limits.preset` | one of `uk_esqcr`, `ansi_a` or null | null | `uk_esqcr`: 0.94 to 1.10 pu (UK ESQCR, 230 V +10 %/-6 %); `ansi_a`: 0.95 to 1.05 pu (ANSI C84.1 Range A). Sets `vmin_pu` and `vmax_pu`. |
-| `networks.voltage_limits.vmin_pu` | number > 0 | `0.94` | Lower voltage limit (pu). |
-| `networks.voltage_limits.vmax_pu` | number > 0 | `1.1` | Upper voltage limit (pu). |
+| `networks.voltage_limits.vmin_pu` | number > 0 | `0.94` | Lower voltage limit (pu of the nominal voltage). |
+| `networks.voltage_limits.vmax_pu` | number > 0 | `1.1` | Upper voltage limit (pu of the nominal voltage). |
 
 ## `normalisation`
 

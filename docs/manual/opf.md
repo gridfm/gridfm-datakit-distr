@@ -13,7 +13,7 @@ For one scenario, at the network state, loads and source voltage of its power fl
 
 The problem is the unbalanced AC OPF in current-voltage form with an explicit neutral, written on the node voltages in rectangular coordinates, and solved with Ipopt (through CasADi) from a flat start, at a tolerance of 1e-9. Ipopt returns local optima: no label claims global optimality.
 
-**Voltage limits.** `vmin_pu` and `vmax_pu` are per unit of the line-to-neutral base voltage of the network's source bus (`variants/nodes.kv_base_ln`), the base the statistics use. On the CSIRO feeders that base is 240.2 V, so the defaults 0.94 and 1.10 give 225.8 to 264.2 V; the UK limits of 216.2 to 253.0 V are `vmin_pu: 0.9002`, `vmax_pu: 1.0534` there.
+**Voltage limits.** `vmin_pu` and `vmax_pu` are per unit of each bus's nominal line-to-neutral voltage (`variants/nodes.kv_nominal_ln`, else the base), as in the statistics. The catalog declares a nominal voltage where it differs from the base: the CSIRO feeders and the European LV feeder are nominally 230 V phase-to-neutral on a 416 V base, so the defaults 0.94 and 1.10 (preset `uk_esqcr`) give the UK limits of 216.2 to 253.0 V.
 
 **Verification.** A solved dispatch is set on the PV units in OpenDSS and the power flow is solved with the controls off. The label is `verified` when every load and generator delivers its set point, every node voltage equals the OPF's within 1e-6 per unit of its base, and no phase-to-neutral voltage exceeds its bounds by more than 1e-6 per unit.
 

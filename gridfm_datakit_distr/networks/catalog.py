@@ -133,6 +133,10 @@ class Network(_Model):
     base_loads: Literal["as_is", "loadshape_mean"] = "as_is"
     """``loadshape_mean``: each load's base kW and kvar become the mean of its daily (else yearly)
     loadshape, for sources whose base values are placeholders (EDP: kW = kvar = 1)."""
+    nominal_kv_ln: dict[float, float] = Field(default_factory=dict)
+    """Nominal phase-to-neutral voltage (kV) of the buses of a voltage level, keyed by the level's
+    line-to-line base (kV), where it differs from the base (e.g. a 230 V network on a 416 V base);
+    voltage limits are per unit of it. Levels not listed: the nominal voltage is the base."""
 
 
 class Collection(_Model):
@@ -147,6 +151,10 @@ class Collection(_Model):
     """Folder (value of the ``representation`` group) -> representation name."""
     default: str
     neutral: NeutralRepresentation | None = None
+    nominal_kv_ln: dict[float, float] = Field(default_factory=dict)
+    """Nominal phase-to-neutral voltage (kV) of the buses of a voltage level, keyed by the level's
+    line-to-line base (kV), where it differs from the base (e.g. a 230 V network on a 416 V base);
+    voltage limits are per unit of it. Levels not listed: the nominal voltage is the base."""
 
 
 class _CatalogFile(_Model):
@@ -216,6 +224,7 @@ def _expand(collection: Collection, source: SourceT) -> list[Network]:
                 master=masters[collection.default],
                 neutral=collection.neutral,
                 representations=masters,
+                nominal_kv_ln=collection.nominal_kv_ln,
             )
         )
     return networks

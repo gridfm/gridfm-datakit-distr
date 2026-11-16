@@ -28,7 +28,8 @@ pytestmark = [pytest.mark.network_data]
 NETWORK = "csiro_enwl/n05_f8"
 PV_KW = 30.0
 """A unit at every fourth load (definition order), single phase, unity power factor."""
-VPN_MIN_V, VPN_MAX_V = 216.2, 253.0
+VMIN_PU, VMAX_PU = 0.94, 1.10
+"""Of the feeders' nominal 230 V: 216.2 to 253.0 V, the bounds of the reference case."""
 OBJECTIVE_W = -194192.36617879625
 """Derived number: the objective this formulation reached on this case in the study that chose
 it (Ipopt tol 1e-9, OpenDSS's source model), 13.0 % of the PV curtailed."""
@@ -54,7 +55,7 @@ def curtailing_case() -> tuple[PreparedNetwork, OPFProblem, OPFResult]:
     prepared = prepare_network(load_catalog().network(NETWORK), edits=pv_edits(NETWORK))
     assert prepared.solve.converged
     problem = OPFProblem(
-        prepared.model, read_source(prepared.ctx, prepared.model), VPN_MIN_V, VPN_MAX_V
+        prepared.model, read_source(prepared.ctx, prepared.model), VMIN_PU, VMAX_PU
     )
     customers = customers_of(prepared)
     assert tuple(c.element for c in customers) == problem.load_names

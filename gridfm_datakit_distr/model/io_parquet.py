@@ -39,6 +39,7 @@ def _nodes_table(model: ElectricalModel) -> pa.Table:
             "conductor": [n.conductor for n in nodes],
             "opendss_node": [n.opendss_node for n in nodes],
             "kv_base_ln": [n.kv_base_ln for n in nodes],
+            "kv_nominal_ln": [n.kv_nominal_ln for n in nodes],
             "is_grounded": [n.is_grounded for n in nodes],
             "r_ground_ohm": [n.r_ground_ohm for n in nodes],
             "x_ground_ohm": [n.x_ground_ohm for n in nodes],
@@ -186,6 +187,7 @@ def from_tables(
             r_ground_ohm=row["r_ground_ohm"],
             x_ground_ohm=row["x_ground_ohm"],
             is_source=row["is_source"],
+            kv_nominal_ln=row["kv_nominal_ln"],
         )
         for row in nodes_t.to_pylist()
     ]

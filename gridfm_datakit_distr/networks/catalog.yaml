@@ -84,7 +84,13 @@ networks:
     neutral: kron
     representations: {unbalanced: 8500-Node/Master-unbal.dss}
   - {id: ieee123, source: epri_ieee, master: 123Bus/IEEE123Master.dss, neutral: kron}
-  - {id: ieee_eulv, source: epri_ieee, master: LVTestCase/Master.dss, neutral: kron}
+  # A UK feeder: its loads are rated 0.23 kV on the 0.416 kV level, so 230 V is its nominal
+  # phase-to-neutral voltage (voltage limits are per unit of it), not the 240.2 V base.
+  - id: ieee_eulv
+    source: epri_ieee
+    master: LVTestCase/Master.dss
+    neutral: kron
+    nominal_kv_ln: {0.416: 0.23}
   # EDP masters go on to add monitors (and a 1e-7 kW dummy load at every bus), run a
   # daily simulation and export CSV files; only the network definition before the first monitor
   # redirect is compiled. Base loads are placeholders (kW = kvar = 1): each takes the mean of
@@ -126,3 +132,6 @@ collections:
       Three-wire-modified-phase-to-neutral: modified_phase_to_neutral
     default: four_wire
     neutral: explicit
+    # ENWL feeders (UK): loads rated 0.23 kV on the 0.416 kV level, nominally 230 V
+    # phase-to-neutral (voltage limits are per unit of it), not the 240.2 V base.
+    nominal_kv_ln: {0.416: 0.23}

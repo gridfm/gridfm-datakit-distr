@@ -12,7 +12,7 @@ still holds the scenario. Every scenario gets a row (outputs.md §8):
 
 ``opf_class``: ``A`` if the uncontrolled power flow keeps every phase-to-neutral voltage within the
 OPF's bounds, ``B`` if not, ``C`` without a power-flow label. The bounds are
-``networks.voltage_limits`` in per unit of the source bus's line-to-neutral base.
+``networks.voltage_limits`` in per unit of each phase node's nominal line-to-neutral voltage.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from gridfm_datakit_distr.opf.problem import (
     OPFProblem,
     OPFResult,
     economic,
-    phase_neutral_pairs,
     read_source,
+    vpn_bounds,
 )
 from gridfm_datakit_distr.opf.support import unsupported_reason
 from gridfm_datakit_distr.opf.verify import Verification, verify
@@ -71,13 +71,9 @@ class OPFLabeller:
         self.pv_idx = np.array([index[u.generator] for u in units], dtype=np.int32)
         self.s_rated_va = np.array([u.s_rated_va for u in units], dtype=np.float64)
         self.costs: Costs = economic(len(units))
-        # shortcut: one base for the whole network, right for the OPF's scope (no transformer);
-        # per-node bounds when transformers enter
-        source_node = int(model.source_nodes()[0])
-        base_v = model.nodes[source_node].kv_base_ln * 1e3
         limits = config.networks.voltage_limits
-        self.vpn_v = (limits.vmin_pu * base_v, limits.vmax_pu * base_v)
-        self.pairs = phase_neutral_pairs(model)
+        self.limits_pu = (limits.vmin_pu, limits.vmax_pu)
+        self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, *self.limits_pu)
         self.source = None if self.reason is not None else read_source(runner.ctx, model)
         self._problems: dict[str, OPFProblem] = {}
 
@@ -115,7 +111,7 @@ class OPFLabeller:
         if state_id not in self._problems:
             assert self.source is not None
             model = self.runner.state_model(state_id)
-            problem = OPFProblem(model, self.source, *self.vpn_v, self.time_limit_s)
+            problem = OPFProblem(model, self.source, *self.limits_pu, self.time_limit_s)
             customers = tuple(c.element for c in self.runner.customers)
             units = self.runner.pv.units if self.runner.pv is not None else ()
             if problem.load_names != customers or problem.pv_names != tuple(
@@ -129,8 +125,8 @@ class OPFLabeller:
         """``A`` within the bounds, ``B`` outside."""
         neutral = np.where(self.pairs[:, 1] == GROUND, 0.0, v[self.pairs[:, 1]])
         vpn = np.abs(v[self.pairs[:, 0]] - neutral)
-        lo, hi = self.vpn_v
-        return "A" if bool(np.all((vpn >= lo) & (vpn <= hi))) else "B"
+        inside = (vpn >= self.vpn_lo_v) & (vpn <= self.vpn_hi_v)
+        return "A" if bool(np.all(inside)) else "B"
 
     def tables(self, rows: Sequence[OPFRow], precision: schema.Precision) -> dict[str, pa.Table]:
         """``opf/opf_meta`` for every row; ``opf/opf_der`` and ``opf/opf_node_results`` for the
