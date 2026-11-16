@@ -9,7 +9,15 @@ import pytest
 
 pytest.importorskip("casadi")
 
-from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify
+from pathlib import Path
+
+from gridfm_datakit_distr.networks.catalog import Network
+from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
+from gridfm_datakit_distr.opf.problem import OPFProblem, economic, read_source
+from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, Verification, verify
+from gridfm_datakit_distr.scenarios.controls import model_at_state, read_state, settle
+from gridfm_datakit_distr.scenarios.profiles import customers_of
+from tests.circuits import CONTROLLED, write_circuit
 from tests.test_opf_problem import Case, make_case, solve
 
 
@@ -74,3 +82,53 @@ def test_the_uncontrolled_power_flow_is_reproduced_afterwards(case: Case) -> Non
     ctx.command("Set Mode=Snap")
     assert ctx.solve().converged
     np.testing.assert_array_equal(ctx.ynode_voltages()[case.to_model], before)
+
+
+def test_controls_hold_tells_whether_the_controls_keep_the_state(tmp_path: Path) -> None:
+    write_circuit(tmp_path / "src", CONTROLLED)
+    prepared = prepare_network(
+        Network(id="t/ctrl", source="src", master="master.dss"), root=tmp_path
+    )
+    ctx = prepared.ctx
+    settle(ctx, "static_settle", "t/ctrl/v0000")  # taps and steps the controls hold, frozen
+    settled = read_state(ctx, "t/ctrl/v0000", "as_is")
+    held = controlled_case_at(prepared)
+    assert held.verified, held.reason
+    assert held.controls_hold is True
+    assert read_state(ctx, "t/ctrl/v0000", "as_is").state_id == settled.state_id  # restored
+    (t, taps) = settled.taps[0]
+    ctx.api.Transformers.Name(t)
+    ctx.api.Transformers.Wdg(2)
+    ctx.api.Transformers.Tap(taps[1] + 0.05)  # a state the regulator would leave
+    moved = controlled_case_at(prepared)
+    assert moved.verified, moved.reason
+    assert moved.controls_hold is False
+
+
+def controlled_case_at(prepared: PreparedNetwork) -> Verification:
+    """Verification of the OPF at the state the context holds."""
+    ctx = prepared.ctx
+    ctx.command("Set ControlMode=OFF")
+    ctx.command("Set Mode=Snap")
+    assert ctx.solve().converged
+    model = model_at_state(prepared.model, ctx)
+    problem = OPFProblem(model, read_source(ctx, model), 0.5, 1.5)
+    customers = customers_of(prepared)
+    ctx.api.Vsources.First()
+    result = problem.solve(
+        source_v_pu=float(ctx.api.Vsources.PU()),
+        load_p_w=[c.p_w for c in customers],
+        load_q_var=[c.q_var for c in customers],
+        pv_p_avail_w=[],
+        pv_s_rated_va=[],
+        costs=economic(0),
+    )
+    assert result.solved
+    return verify(ctx, model, problem, result)
+
+
+def test_without_controls_controls_hold_is_none(case: Case) -> None:
+    uncontrolled(case, 2.0)
+    result = solve(case, pv_kw=2.0, kva_per_kwp=1.25)
+    check = verify(case.prepared.ctx, case.prepared.model, case.problem, result)
+    assert check.controls_hold is None

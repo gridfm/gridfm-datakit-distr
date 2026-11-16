@@ -18,6 +18,12 @@ import numpy as np
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
 from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult
+from gridfm_datakit_distr.scenarios.controls import (
+    MAX_CONTROL_ITER,
+    apply_state,
+    has_controls,
+    read_state,
+)
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
 
 TOLERANCE_PU = 1e-6
@@ -36,8 +42,11 @@ class Verification:
     """Largest ``|V_opendss - V_opf|`` per unit of the node's base; NaN without a power flow."""
     max_bound_excess_pu: float
     """Largest excess of ``|V_p - V_n|`` over its bounds, per unit of the phase node's nominal
-    voltage; 0
-    within the bounds, NaN without a power flow."""
+    voltage; 0 within the bounds, NaN without a power flow."""
+    controls_hold: bool | None = None
+    """With regulators or switched capacitors: whether, at the solved dispatch, a solve with the
+    controls on (``ControlMode=STATIC``) keeps the scenario's taps and steps; None without
+    controls. It does not enter ``verified``: the label is the optimum at the frozen state."""
 
 
 def verify(
@@ -56,10 +65,11 @@ def verify(
         ctx.command("Set Mode=Snap")
         status = ctx.solve()
         if not status.converged:
-            return Verification(False, "power flow not converged", False, np.nan, np.nan)
+            return Verification(False, "power flow not converged", False, np.nan, np.nan, None)
         report = setpoint_report(ctx)
         order = {name: j for j, name in enumerate(ctx.ynode_order())}
         v = ctx.ynode_voltages()[[order[n.opendss_node.lower()] for n in model.nodes]]
+        hold = _controls_hold(ctx, model.variant_id) if has_controls(ctx) else None
     finally:
         for name, (kw, kvar) in zip(problem.pv_names, before, strict=False):
             api.Generators.Name(name.split(".", 1)[1])
@@ -81,4 +91,19 @@ def verify(
     if not excess_max <= TOLERANCE_PU:
         failed.append(f"voltage bounds exceeded by {excess_max:.2e} pu")
     reason = "; ".join(failed) or None
-    return Verification(reason is None, reason, True, dv, excess_max)
+    return Verification(reason is None, reason, True, dv, excess_max, hold)
+
+
+def _controls_hold(ctx: DssContext, variant_id: str) -> bool:
+    """Whether the controls keep the frozen state at the solved dispatch: one more solve with
+    ``ControlMode=STATIC`` from it, then the frozen state and ``ControlMode=OFF`` back."""
+    frozen = read_state(ctx, variant_id, "as_is")
+    try:
+        ctx.command(f"Set ControlMode=STATIC MaxControlIter={MAX_CONTROL_ITER}")
+        ctx.command("Set Mode=Snap")
+        status = ctx.solve()
+        moved = read_state(ctx, variant_id, "as_is")
+    finally:
+        apply_state(ctx, frozen)
+        ctx.command("Set ControlMode=OFF")
+    return status.converged and moved.state_id == frozen.state_id
