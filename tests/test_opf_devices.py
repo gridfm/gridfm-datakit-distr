@@ -24,9 +24,9 @@ from gridfm_datakit_distr.opf.problem import (
     winding_va,
 )
 from gridfm_datakit_distr.opf.support import unsupported_reason
-from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify
+from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify, voltage_gap
 from gridfm_datakit_distr.scenarios.profiles import customers_of
-from tests.circuits import LATERAL, OPF_DEVICES, write_circuit
+from tests.circuits import DELTA_DELTA, LATERAL, OPF_DEVICES, write_circuit
 
 WIDE = (0.5, 1.5)
 """Voltage limits that never bind here: the solution is the power flow at the dispatch."""
@@ -145,3 +145,41 @@ def test_a_start_at_the_power_flow_reaches_the_same_optimum(devices: Case) -> No
     assert (flat.status, warm.status) == (SOLVED, SOLVED)
     assert warm.objective == pytest.approx(flat.objective, rel=1e-9)
     assert warm.iterations < flat.iterations
+
+
+def test_a_zone_grounded_by_convention_is_bounded_and_verified_phase_to_phase(
+    tmp_path: Path,
+) -> None:
+    """Bus x floats behind a delta-delta transformer: its bounds are phase to phase, on √3 times
+    the nominal line-to-neutral voltage, and the dispatch verifies in OpenDSS."""
+    case = build(tmp_path, DELTA_DELTA)
+    model = case.prepared.model
+    x = sorted(n.idx for n in model.nodes if n.bus == "x")
+    assert [list(z) for z in case.problem.conventional] == [x]
+    pairs = [tuple(p) for p in case.problem.pairs if p[0] in x]
+    assert pairs == [(x[0], x[1]), (x[1], x[2]), (x[2], x[0])]
+    at_x = np.isin(case.problem.pairs[:, 0], x)
+    nominal = np.sqrt(3.0) * model.nodes[x[0]].nominal_v_ln
+    np.testing.assert_allclose(case.problem.vpn_hi_v[at_x], WIDE[1] * nominal, rtol=1e-12)
+    result = solve(case, [20e3])
+    assert result.status == SOLVED
+    check = verify(case.prepared.ctx, model, case.problem, result)
+    assert check.verified, check.reason
+
+
+def test_the_gap_ignores_a_common_mode_shift_only() -> None:
+    """In a zone grounded by convention a common-mode shift passes and a perturbed
+    phase-to-phase voltage fails: the comparison is not vacuous."""
+    base = np.full(5, 1000.0)
+    v = np.exp(-2j * np.pi / 3 * np.arange(5)) * 1000.0
+    zone = [np.array([2, 3, 4], dtype=np.int64)]
+    shifted = v.copy()
+    shifted[2:] += 37.0 - 12.0j  # the zone's common mode moves
+    assert voltage_gap(shifted, v, base, zone) <= 1e-12
+    assert voltage_gap(shifted, v, base, []) > 1e-2  # without the zone it would fail
+    perturbed = shifted.copy()
+    perturbed[3] += 2e-3  # one phase-to-phase voltage moves by 2e-6 pu
+    assert voltage_gap(perturbed, v, base, zone) > TOLERANCE_PU
+    outside = v.copy()
+    outside[0] += 2e-3
+    assert voltage_gap(outside, v, base, zone) > TOLERANCE_PU

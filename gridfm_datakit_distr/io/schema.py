@@ -12,7 +12,7 @@ import pyarrow as pa
 
 from gridfm_datakit_distr.views import datakit_columns as datakit
 
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 
 def _required(name: str, type_: pa.DataType) -> pa.Field[Any]:
@@ -38,6 +38,7 @@ NODES = pa.schema(
         _nullable("r_ground_ohm", pa.float64()),
         _nullable("x_ground_ohm", pa.float64()),
         _required("is_source", pa.bool_()),
+        _required("ground_by_convention", pa.bool_()),
         _nullable("backbone_bus", pa.string()),
     ]
 )

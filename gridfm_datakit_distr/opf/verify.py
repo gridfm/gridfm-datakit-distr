@@ -4,20 +4,24 @@ The dispatch is set on the PV generators of a context that holds the scenario (l
 voltage set, controls frozen), the power flow is solved with the controls off at the context's
 label tolerance, and the solution is checked: every load and generator at its set point
 (:func:`setpoint_report`), node voltages equal to the OPF's within :data:`TOLERANCE_PU` of each
-node's base, phase-to-neutral voltages within the OPF's bounds up to :data:`TOLERANCE_PU`. The NLP
+node's base (in a zone whose voltage to ground is a numerical convention, the voltages relative to
+the zone's first node: its common mode is no label), the bounded voltages within the OPF's bounds
+up to :data:`TOLERANCE_PU`. The NLP
 and OpenDSS share the admittances, so the two solutions agree to the solvers' accuracy. The
 generators get back their outputs afterwards; a failed check is returned, never raised.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
-from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult
+from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult, pair_nominal_v
 from gridfm_datakit_distr.scenarios.controls import (
     MAX_CONTROL_ITER,
     apply_state,
@@ -76,11 +80,11 @@ def verify(
             api.Generators.kW(kw)
             api.Generators.kvar(kvar)
     base_v = np.array([n.kv_base_ln for n in model.nodes]) * 1e3
-    dv = float(np.max(np.abs(v - result.v) / base_v))
+    dv = voltage_gap(v, result.v, base_v, problem.conventional)
     pairs = problem.pairs
     neutral = np.where(pairs[:, 1] == GROUND, 0.0, v[pairs[:, 1]])
     vpn = np.abs(v[pairs[:, 0]] - neutral)
-    nominal = np.array([model.nodes[int(i)].nominal_v_ln for i in pairs[:, 0]])
+    nominal = pair_nominal_v(model, pairs)
     excess = np.maximum(vpn - problem.vpn_hi_v, problem.vpn_lo_v - vpn) / nominal
     excess_max = max(float(np.max(excess, initial=0.0)), 0.0)
     failed = []
@@ -92,6 +96,21 @@ def verify(
         failed.append(f"voltage bounds exceeded by {excess_max:.2e} pu")
     reason = "; ".join(failed) or None
     return Verification(reason is None, reason, True, dv, excess_max, hold)
+
+
+def voltage_gap(
+    v: NDArray[np.complex128],
+    v_opf: NDArray[np.complex128],
+    base_v: NDArray[np.float64],
+    zones: Sequence[NDArray[np.int64]],
+) -> float:
+    """Largest ``|V - V_opf|`` per unit of each node's base; inside each of ``zones`` (voltage to
+    ground a numerical convention) the differences relative to the zone's first node, so that a
+    common-mode shift of the zone alone passes and any change of a voltage within it does not."""
+    gap = v - v_opf
+    for zone in zones:
+        gap[zone] = gap[zone] - gap[zone[0]]
+    return float(np.max(np.abs(gap) / base_v))
 
 
 def _controls_hold(ctx: DssContext, variant_id: str) -> bool:

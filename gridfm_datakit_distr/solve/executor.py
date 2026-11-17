@@ -95,7 +95,15 @@ class UnitResult:
 
 
 def peak_rss_mib() -> float:
-    """Peak resident memory of this process so far (MiB; ``ru_maxrss`` is in KiB on Linux)."""
+    """Peak resident memory of this process so far (MiB). Linux's ``VmHWM``: ``ru_maxrss`` keeps
+    the parent's peak across the fork and exec of a spawned worker (measured: it grew with the
+    parent's); elsewhere ``ru_maxrss``, KiB on Linux."""
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) / 1024.0
+    except OSError:
+        pass
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 

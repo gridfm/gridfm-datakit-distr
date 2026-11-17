@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.3.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.4.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (a future multiphase GENCO in gridfm-graphkit, baselines, benchmark users).
 
@@ -145,6 +145,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `is_grounded` | bool | conductor tied to ground at this bus |
 | `r_ground_ohm`, `x_ground_ohm` | float64, nullable | grounding impedance if any |
 | `is_source` | bool | node of the source (slack) bus |
+| `ground_by_convention` | bool | the node's voltage to ground is not a label: its zone (the nodes joined by lines, switches, capacitors, reactors and one transformer winding) is tied to ground by nothing but OpenDSS's anti-float admittance of the windings, a numerical convention. Only voltage differences between nodes of the zone are labels there, in `scenarios/node_results` and `opf/opf_node_results` alike; the OPF bounds and verifies the phase-to-phase voltages of such a zone (§8). Example: bus 610 of IEEE 123, behind a delta-delta transformer. A zone that line capacitance ties to ground is not marked (its voltage to ground is physical) |
 | `backbone_bus` | string, nullable | three-phase backbone bus this node aggregates to in the positive-sequence export (§7.2); null without a three-phase backbone |
 
 ### `variants/elements/part-*.parquet`
@@ -400,7 +401,7 @@ The export reproduces the view that the generation computed up to draft.7 to the
 
 ## 8. OPF
 
-Written with `labels.opf.enabled` (the problem, its scope and its statuses: [OPF labels](opf.md)). Each scenario's OPF is solved at the scenario's network state, loads and source voltage; the PV units are dispatched. Parts and keys as the scenario tables (§1, §6).
+Written with `labels.opf.enabled` (the problem, its scope and its statuses: [OPF labels](opf.md)). Each scenario's OPF is solved at the scenario's network state, loads and source voltage; the PV units are dispatched. Parts and keys as the scenario tables (§1, §6). The bounded voltages are phase to neutral (to ground at a bus without neutral), and phase to phase instead of to ground at a bus without neutral in a zone whose nodes are `ground_by_convention` (§4): there the voltages to ground carry no information.
 
 ### `opf/opf_meta`
 
@@ -421,10 +422,10 @@ One row per scenario of the dataset.
 | `curtailment_w` | float32/64, nullable | `Σ (p_pf - p_opf)` over the PV units (W), against the power-flow dispatch (`scenarios/der.p_w`); round-off of the order of 1e-3 W either side |
 | `verified` | bool, nullable | the dispatch passes the OpenDSS verification; null unless `Solve_Succeeded` |
 | `verify_reason` | string, nullable | the failed checks: power flow not converged, set points, voltages, voltage bounds |
-| `verify_max_dv_pu` | float64, nullable | largest `\|V_opendss - V_opf\|` per unit of the node's line-to-neutral base; verified only up to 1e-6 |
-| `verify_max_bound_excess_pu` | float64, nullable | largest excess of a phase-to-neutral voltage over its bounds in the OpenDSS solution, per unit of the phase node's nominal voltage; at most 1e-6 when verified |
+| `verify_max_dv_pu` | float64, nullable | largest `\|V_opendss - V_opf\|` per unit of the node's line-to-neutral base (in a `ground_by_convention` zone, of the voltages relative to the zone's first node); verified only up to 1e-6 |
+| `verify_max_bound_excess_pu` | float64, nullable | largest excess of a bounded voltage over its bounds in the OpenDSS solution, per unit of its nominal voltage (phase to phase: √3 times the line-to-neutral one); at most 1e-6 when verified |
 | `controls_hold` | bool, nullable | on a network with regulators or switched capacitors: whether a solve with the controls on (`ControlMode=STATIC`) at the solved dispatch keeps the scenario's taps and steps; null without controls or without a verification. Not part of `verified`: the label is the optimum at the frozen state |
-| `n_vmin_active`, `n_vmax_active` | int32, nullable | phase-to-neutral voltages at their lower and upper bounds at the solution (within 1e-6 relative); null unless `Solve_Succeeded` |
+| `n_vmin_active`, `n_vmax_active` | int32, nullable | bounded voltages (phase to neutral, or phase to phase in a `ground_by_convention` zone) at their lower and upper bounds at the solution (within 1e-6 relative); null unless `Solve_Succeeded` |
 | `n_rating_active` | int32, nullable | transformers at their rating at the solution (within 1e-6 relative); null unless `Solve_Succeeded` |
 | `opf_start` | string, nullable | `flat`, or `power_flow` when the flat start did not end `Solve_Succeeded` and the row comes from a second solve started at the scenario's power-flow solution (`t_solve_s` then counts both, `iterations` the second); null without a solve |
 

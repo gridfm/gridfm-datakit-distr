@@ -10,9 +10,8 @@ yet. No CasADi here: the check runs without the ``opf`` extra.
 
 from __future__ import annotations
 
-import numpy as np
-
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
+from gridfm_datakit_distr.model.ground import floating_zones, is_conventional
 
 PV_PREFIX = "generator.pv_"
 """PV units are the generators the variants place, ``Generator.pv_<load>``."""
@@ -58,64 +57,29 @@ def unsupported_reason(model: ElectricalModel) -> str | None:
     sources = sum(e.enabled and e.element_class == "vsource" for e in model.elements)
     if sources != 1:
         reasons.setdefault(f"{sources} voltage sources, the OPF needs exactly one", [])
-    floating = floating_buses(model)
-    if floating:
-        why = "buses without a ground reference (voltages to ground undetermined)"
-        reasons[why] = floating
+    capacitive = sorted(
+        {
+            model.nodes[i].bus
+            for z in floating_zones(model)
+            if not is_conventional(model, z)
+            for i in z
+        }
+    )
+    if capacitive:  # zones under a numerical convention are covered on phase-to-phase voltages
+        why = (
+            "buses tied to ground only through line capacitance "
+            "(OPF convergence there not established)"
+        )
+        reasons[why] = capacitive
     if not reasons:
         return None
     return "; ".join(_listed(why, names) for why, names in reasons.items())
 
 
 def floating_buses(model: ElectricalModel) -> list[str]:
-    """Buses of the galvanic zones that nothing ties to ground, sorted.
-
-    A zone gathers the nodes of every line, switch, reactor and capacitor, and of each terminal
-    of a transformer (windings are coupled magnetically, not galvanically). It is grounded when it
-    holds a source node, a grounded neutral, or an element position tied to node 0. In a floating
-    zone (behind a delta-delta transformer, IEEE 37) only OpenDSS's anti-float admittances, about
-    1e-6 of the series ones, set the common-mode voltage: a solve at ``tol = 1e-9`` cannot
-    reproduce the voltages to ground within the verification's 1e-6 pu (T3.4).
-    """
-    parent = list(range(model.n_nodes))
-
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    grounded = {n.idx for n in model.nodes if n.is_grounded or n.is_source}
-    for e in model.elements:
-        if not (e.enabled and e.is_pd):
-            continue
-        local = e.local_nodes()
-        tied = _tied_to_ground(e)
-        groups = (
-            [
-                list(range(k * e.n_conductors, (k + 1) * e.n_conductors))
-                for k in range(e.n_terminals)
-            ]
-            if e.element_class == "transformer"
-            else [list(range(len(local)))]
-        )
-        for positions in groups:
-            nodes = [local[k] for k in positions if local[k] != GROUND]
-            if any(local[k] == GROUND and tied[k] for k in positions):
-                grounded.update(nodes)
-            for n in nodes[1:]:
-                parent[find(n)] = find(nodes[0])
-    roots = {find(i) for i in grounded}
-    return sorted({n.bus for n in model.nodes if find(n.idx) not in roots})
-
-
-def _tied_to_ground(element: Element) -> list[bool]:
-    """Per local position: whether the Yprim couples it (a delta winding lists an unused fourth
-    position at node 0, with an empty row)."""
-    if element.yprim is None:
-        return [False] * element.n_positions
-    rows = np.abs(element.yprim).max(axis=1)
-    return [bool(r >= 1e-3 * rows.max()) for r in rows]
+    """Buses of the galvanic zones that nothing ties to ground, sorted
+    (:mod:`gridfm_datakit_distr.model.ground`)."""
+    return sorted({model.nodes[i].bus for zone in floating_zones(model) for i in zone})
 
 
 def _listed(why: str, names: list[str]) -> str:

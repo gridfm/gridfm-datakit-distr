@@ -18,8 +18,9 @@ TOLERANCE = {"full": 1e-9, "mixed": 1e-6}  # mixed: float32 setpoints
 FLOOR = {  # full precision: the stored OpenDSS solution is the limit, not the closed loop
     "ieee13": "3.6e-9 pu; the stored solution is 1.6e-9 to 2.5e-9 pu from the exact solution "
     "of the stored equations (switch of 1e7 S, per-unit condition number 2e8)",
-    "ieee37": "5.2e-9 pu in the floating zone (voltages to ground undetermined), 3.4e-10 outside",
-    "ieee123": "6.3e-9 pu at the floating bus 610, 1.7e-9 outside (switches of 1e6 S)",
+    "ieee37": "5.2e-9 pu in the zone tied to ground only by cable capacitance, 3.4e-10 outside",
+    "ieee123": "6.3e-9 pu to ground at bus 610 (ground by convention), 1.7e-9 outside "
+    "(switches of 1e6 S)",
     "edp/industrial": "2.1e-8 pu; KCL residual of the stored solution 2.8e-6 A, of the closed "
     "loop's 8.9e-7 A",
 }

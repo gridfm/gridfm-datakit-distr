@@ -5,8 +5,8 @@ tap-independent PD elements) and, if it has tap-dependent elements, the state-le
 their Yprims (``states/yprim_state``, keyed by ``state_id``). Yprims are stored as their
 non-zero entries; ratings are stored as float32 (outputs.md §4), so they round-trip exactly only
 when representable in float32. When reading, an enabled PD element without stored entries gets
-an all-zero Yprim; PC elements, disabled PD elements and tap-dependent elements read without
-their state get ``None``.
+an all-zero Yprim (a tap-dependent one when its state is given); PC elements, disabled PD
+elements and tap-dependent elements read without their state get ``None``.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import pyarrow.compute as pc
 
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel, Element, Node
+from gridfm_datakit_distr.model.ground import conventional_zones
 from gridfm_datakit_distr.model.ids import split_variant_id
 
 NODES = "variants/nodes"
@@ -31,6 +32,7 @@ YPRIM_STATE = "states/yprim_state"
 
 def _nodes_table(model: ElectricalModel) -> pa.Table:
     nodes = model.nodes
+    convention = {i for zone in conventional_zones(model) for i in zone}
     return pa.table(
         {
             "variant_id": [model.variant_id] * len(nodes),
@@ -44,6 +46,7 @@ def _nodes_table(model: ElectricalModel) -> pa.Table:
             "r_ground_ohm": [n.r_ground_ohm for n in nodes],
             "x_ground_ohm": [n.x_ground_ohm for n in nodes],
             "is_source": [n.is_source for n in nodes],
+            "ground_by_convention": [n.idx in convention for n in nodes],
             "backbone_bus": [None] * len(nodes),
         },
         schema=schema.NODES,
@@ -200,7 +203,8 @@ def from_tables(
     rows = elements_t.to_pylist()
     sizes = {r["element_idx"]: r["n_terminals"] * r["n_conductors"] for r in rows}
     yprims = _yprims(_select(tables[YPRIM], "variant_id", variant_id), sizes)
-    if YPRIM_STATE in tables:
+    with_state = YPRIM_STATE in tables
+    if with_state:
         if state_id is None:
             raise ValueError("state-level Yprims given without a state_id")
         state = _select(tables[YPRIM_STATE], "state_id", state_id)
@@ -211,8 +215,9 @@ def from_tables(
         k = r["element_idx"]
         if k in yprims:
             return yprims[k]
-        if r["is_pd"] and r["enabled"] and not r["is_tap_dependent"]:
-            return np.zeros((sizes[k], sizes[k]), dtype=np.complex128)  # all entries were zero
+        if r["is_pd"] and r["enabled"] and (not r["is_tap_dependent"] or with_state):
+            # all entries were zero: e.g. a switched capacitor with every step open (IEEE 8500)
+            return np.zeros((sizes[k], sizes[k]), dtype=np.complex128)
         return None  # PC element, disabled PD element, or state not given
 
     elements = [

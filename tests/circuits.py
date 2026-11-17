@@ -216,6 +216,31 @@ RNEUT_OHM = 5 + 0.01j
 MV_LV_RNEUT = mv_lv("Rneut=5 Xneut=0.01")
 # Rneut left at its default (-1, open): the LV neutral floats (EDP industrial style).
 MV_LV_FLOATING = mv_lv("")
+# The same with charging capacitance on the LV line: a zone tied to ground by a physical shunt.
+MV_LV_FLOATING_CAPACITIVE = {
+    "master.dss": MV_LV_FLOATING["master.dss"].replace(
+        "cmatrix=(0 | 0 0 | 0 0 0 | 0 0 0 0)",
+        "cmatrix=(300 | -60 300 | -60 -60 300 | -60 -60 -60 300)",
+    )
+}
+# Behind a delta-delta transformer, a three-wire bus with a delta load and a delta PV unit, and
+# no line: only the anti-float admittance of the windings ties it to ground (IEEE 123's bus 610).
+DELTA_DELTA = {
+    "master.dss": """\
+Clear
+New Circuit.dd basekv=4.16 pu=1.0 phases=3 bus1=mv
+New Line.mv bus1=mv.1.2.3 bus2=mv2.1.2.3 phases=3 r1=0.3 x1=0.3 r0=0.6 x0=1 c1=0 c0=0
+~ length=1 units=km
+New Load.mv bus1=mv2.1.2.3 phases=3 kV=4.16 kW=200 kvar=60 model=1
+New Transformer.dd windings=2 Buses=[mv2.1.2.3 x.1.2.3] Conns=[Delta Delta] kVs=[4.16 0.48]
+~ kVAs=[150 150] XHL=2 %Rs=[0.5 0.5]
+New Load.x bus1=x.1.2.3 phases=3 conn=delta kV=0.48 kW=60 kvar=20 model=1
+New Generator.pv_x bus1=x.1.2.3 phases=3 conn=delta kV=0.48 kW=20 kvar=0 model=1
+~ vminpu=0.6 vmaxpu=1.5
+Set VoltageBases=[4.16 0.48]
+CalcVoltageBases
+""",
+}
 # A wye load grounded on the MV side (Kron pattern) plus an explicit LV neutral: mixed.
 MV_LV_MIXED = mv_lv(
     "Rneut=5 Xneut=0.01", "New Load.mvload bus1=mv2.1.2.3 phases=3 kV=22 kW=100 kvar=30 model=1"

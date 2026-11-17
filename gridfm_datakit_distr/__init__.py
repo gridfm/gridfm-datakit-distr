@@ -5,4 +5,4 @@ CasADi on the extracted admittances, verified in OpenDSS; cross-checks with
 PowerModelsDistribution.jl.
 """
 
-__version__ = "0.2.0.dev7"
+__version__ = "0.2.0.dev8"

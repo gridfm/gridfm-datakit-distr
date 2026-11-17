@@ -38,6 +38,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from gridfm_datakit_distr.extract.source import Source
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
+from gridfm_datakit_distr.model.ground import conventional_zones
 from gridfm_datakit_distr.opf.support import unit_branches, unsupported_reason
 
 S_BASE_VA = 1e3
@@ -106,14 +107,17 @@ class OPFProblem:
         s_base_va: float = S_BASE_VA,
     ) -> None:
         """``vmin_pu``, ``vmax_pu``: bounds of the phase-to-neutral voltage magnitudes, per unit
-        of each phase node's nominal line-to-neutral voltage (:func:`vpn_bounds`);
+        of each phase node's nominal line-to-neutral voltage, and of the phase-to-phase ones in a
+        zone whose voltage to ground is a numerical convention (:func:`vpn_bounds`);
         ``time_limit_s``: wall-clock limit of one solve (s); ``s_base_va``: power base of the NLP's
         scaling (:func:`power_base`), with no effect on the problem itself."""
         reason = unsupported_reason(model)
         if reason is not None:
             raise ValueError(f"{model.variant_id} is outside the OPF's scope: {reason}")
         self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, vmin_pu, vmax_pu)
-        """Phase and neutral node of every bounded voltage, and its bounds (V)."""
+        """Phase and neutral node (or second phase) of every bounded voltage, and its bounds (V)."""
+        self.conventional = [np.array(z, dtype=np.int64) for z in conventional_zones(model)]
+        """Zones whose voltage to ground is a numerical convention: only differences count."""
         loads = _devices(model, "load")
         pvs = _devices(model, "generator")
         self.load_names = tuple(e.name for e in loads)
@@ -391,23 +395,39 @@ def vpn_bounds(
     model: ElectricalModel, vmin_pu: float, vmax_pu: float
 ) -> tuple[NDArray[np.int64], FloatArray, FloatArray]:
     """:func:`phase_neutral_pairs` and the bounds (V) of their voltage magnitudes: ``vmin_pu``
-    and ``vmax_pu`` times the phase node's nominal line-to-neutral voltage."""
+    and ``vmax_pu`` times the pair's nominal voltage (:func:`pair_nominal_v`)."""
     pairs = phase_neutral_pairs(model)
-    nominal = np.array([model.nodes[int(i)].nominal_v_ln for i in pairs[:, 0]], dtype=np.float64)
+    nominal = pair_nominal_v(model, pairs)
     return pairs, vmin_pu * nominal, vmax_pu * nominal
 
 
+def pair_nominal_v(model: ElectricalModel, pairs: NDArray[np.int64]) -> FloatArray:
+    """Nominal voltage (V) of each pair: the phase node's nominal line-to-neutral voltage, times
+    √3 between two phases."""
+    ln = np.array([model.nodes[int(i)].nominal_v_ln for i in pairs[:, 0]], dtype=np.float64)
+    two_phases = np.array(
+        [j != GROUND and model.nodes[int(j)].conductor != "n" for j in pairs[:, 1]], dtype=bool
+    )
+    return np.where(two_phases, np.sqrt(3.0) * ln, ln)
+
+
 def phase_neutral_pairs(model: ElectricalModel) -> NDArray[np.int64]:
-    """``(k, 2)``: each phase node and its bus's neutral node (:data:`GROUND` if none)."""
+    """``(k, 2)``: each phase node and its bus's neutral node (:data:`GROUND` if none). At a bus
+    without neutral in a zone whose voltage to ground is a numerical convention
+    (:func:`conventional_zones`), the bus's phase-to-phase pairs instead of pairs to ground:
+    ``(a, b), (b, c), (c, a)``, or the one pair of two phases."""
+    conventional = {i for z in conventional_zones(model) for i in z}
     by_bus: dict[str, dict[str, int]] = {}
     for node in model.nodes:
         by_bus.setdefault(node.bus, {})[node.conductor] = node.idx
-    pairs = [
-        (idx, nodes.get("n", GROUND))
-        for nodes in by_bus.values()
-        for conductor, idx in nodes.items()
-        if conductor != "n"
-    ]
+    pairs: list[tuple[int, int]] = []
+    for nodes in by_bus.values():
+        phases = [idx for conductor, idx in nodes.items() if conductor != "n"]
+        if phases and "n" not in nodes and phases[0] in conventional:
+            ring = list(zip(phases, phases[1:] + phases[:1], strict=True))
+            pairs += ring if len(phases) > 2 else ring[:1] if len(phases) == 2 else []
+        else:
+            pairs += [(idx, nodes.get("n", GROUND)) for idx in phases]
     return np.array(pairs, dtype=np.int64).reshape(-1, 2)
 
 

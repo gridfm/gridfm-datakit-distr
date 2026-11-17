@@ -1,0 +1,13 @@
+# Catalog health run: every network with the default config, 2 variants x 200 scenarios each.
+# Run one network at a time (networks.include overridden) to keep the disk use of one network;
+# `stats` then gives the health table's columns. Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: health
+networks:
+  include: ["*"]
+variants:
+  n_variants: 2
+scenarios:
+  n_scenarios_per_variant: 200
+settings:
+  seed: 42
+  chunk_size: 200

@@ -157,6 +157,18 @@ def test_tap_dependent_yprim_needs_its_state(tmp_path: Path) -> None:
         back.ybus()
 
 
+def test_a_state_yprim_of_zeros_reads_back_as_zeros() -> None:
+    """An element whose Yprim at the state is all zero (a switched capacitor with every step
+    open) has no stored entries: with its state given it reads back as zeros, not as missing."""
+    model = small_model()
+    model.elements[2].yprim = np.zeros_like(model.elements[2].yprim)
+    tables = io_parquet.to_tables(model, state_id="s1")
+    assert tables[io_parquet.YPRIM_STATE].num_rows == 0
+    back = io_parquet.from_tables(tables, model.variant_id, "s1")
+    np.testing.assert_array_equal(back.elements[2].yprim, model.elements[2].yprim)
+    back.ybus()  # no element without Yprim
+
+
 def test_tables_with_several_variants(tmp_path: Path) -> None:
     a, b = small_model("net/v0000"), small_model("net/v0001")
     b.elements[0].yprim = 2 * Y_LINE

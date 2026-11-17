@@ -7,13 +7,16 @@ import sys
 from pathlib import Path
 
 from gridfm_datakit_distr.model.electrical import ElectricalModel
+from gridfm_datakit_distr.model.ground import conventional_zones
+from gridfm_datakit_distr.model.io_parquet import variant_level_tables
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import prepare_network
-from gridfm_datakit_distr.opf.support import unsupported_reason
+from gridfm_datakit_distr.opf.support import floating_buses, unsupported_reason
 from tests.circuits import (
     ALL_CLASSES,
     FOUR_WIRE,
     MV_LV_FLOATING,
+    MV_LV_FLOATING_CAPACITIVE,
     MV_LV_RNEUT,
     OPF_FEEDER,
     write_circuit,
@@ -54,10 +57,24 @@ def test_the_power_flow_path_does_not_import_casadi() -> None:
     assert done.returncode == 0, done.stderr
 
 
-def test_a_network_without_a_ground_reference_is_not_covered(tmp_path: Path) -> None:
-    """Behind a transformer whose LV neutral is left open, nothing ties the LV zone to ground."""
-    reason = unsupported_reason(model_of(tmp_path, MV_LV_FLOATING))
+def test_a_zone_tied_to_ground_by_a_convention_only_is_covered_and_marked(tmp_path: Path) -> None:
+    """Behind a transformer whose LV neutral is left open, only the windings' anti-float
+    admittance ties the LV zone to ground: covered, its nodes marked in the stored nodes."""
+    model = model_of(tmp_path, MV_LV_FLOATING)
+    assert unsupported_reason(model) is None
+    (zone,) = conventional_zones(model)
+    assert {model.nodes[i].bus for i in zone} == {"lv", "c"}
+    marked = variant_level_tables(model)["variants/nodes"].to_pylist()
+    assert {r["bus"] for r in marked if r["ground_by_convention"]} == {"lv", "c"}
+
+
+def test_a_zone_tied_to_ground_by_line_capacitance_only_is_not_covered(tmp_path: Path) -> None:
+    model = model_of(tmp_path, MV_LV_FLOATING_CAPACITIVE)
+    assert floating_buses(model) == ["c", "lv"]
+    assert conventional_zones(model) == []
+    reason = unsupported_reason(model)
     assert reason is not None
-    assert reason.startswith("buses without a ground reference (voltages to ground undetermined)")
-    assert "lv" in reason
+    assert reason.startswith("buses tied to ground only through line capacitance")
     assert "mv2" not in reason  # the MV zone holds the source
+    nodes = variant_level_tables(model)["variants/nodes"].to_pylist()
+    assert not any(r["ground_by_convention"] for r in nodes)  # physical, if weak
