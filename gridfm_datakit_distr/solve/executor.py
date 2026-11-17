@@ -23,6 +23,7 @@ from a dataset by ``export-posseq``: ``views/posseq_export``.)
 from __future__ import annotations
 
 import os
+import resource
 import shutil
 import threading
 from collections import Counter
@@ -42,6 +43,7 @@ from gridfm_datakit_distr.config.load import select_networks
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.extract.extract_semantic import extract_semantic
+from gridfm_datakit_distr.extract.source import read_source, source_tables
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.card import dataset_card, networks_table
 from gridfm_datakit_distr.io.croissant import write_croissant
@@ -89,6 +91,12 @@ class UnitResult:
     key: str
     status: UnitStatus
     message: str | None = None
+    peak_rss_mib: float | None = field(default_factory=lambda: peak_rss_mib())
+
+
+def peak_rss_mib() -> float:
+    """Peak resident memory of this process so far (MiB; ``ru_maxrss`` is in KiB on Linux)."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
 # ---------------------------------------------------------------------------------------- plan
@@ -238,7 +246,7 @@ def _network_tables(
 
 def _record(manifest: Manifest, units: dict[str, Unit], results: Sequence[UnitResult]) -> None:
     for r in results:
-        manifest.finish(units[r.key], r.status, r.message)
+        manifest.finish(units[r.key], r.status, r.message, r.peak_rss_mib)
 
 
 def finalise(
@@ -432,7 +440,9 @@ def _unit_tables(
         if ybus is not None:
             out["views/kron/ybus"] = (chunk_key, ybus, schema.YBUS_STATE)
     if unit.chunk == 0:  # the variant's own tables, once
-        for name, table in variant_tables(slot.variant).items():
+        found_v = variant_tables(slot.variant)
+        found_v.update(source_tables(runner.model, read_source(runner.ctx, runner.model)))
+        for name, table in found_v.items():
             if name == "variants/nodes":
                 table = _with_backbone(table, slot.backbone_owner)
             out[name] = (variant_key, table, schema.TABLES[name])

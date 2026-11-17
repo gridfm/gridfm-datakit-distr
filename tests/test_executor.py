@@ -134,6 +134,7 @@ def test_a_dataset(tmp_path: Path) -> None:
     out = tmp_path / "out"
     manifest = generate(config(), out, catalog=catalog(tmp_path), root=tmp_path)
     assert {u.status for u in manifest.units.values()} == {"done"}
+    assert all(u.peak_rss_mib is not None and u.peak_rss_mib > 50 for u in manifest.units.values())
     meta = pq.read_table(out / "scenarios" / "scenario_meta")
     ids = meta.column("scenario_id").to_pylist()
     assert len(ids) == len(set(ids)) == 2 * 2 * 5  # networks x variants x scenarios

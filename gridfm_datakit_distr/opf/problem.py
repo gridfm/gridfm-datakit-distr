@@ -36,7 +36,7 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.typing import ArrayLike, NDArray
 
-from gridfm_datakit_distr.engine.context import DssContext
+from gridfm_datakit_distr.extract.source import Source
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 from gridfm_datakit_distr.opf.support import unit_branches, unsupported_reason
 
@@ -49,40 +49,6 @@ SOLVED = "Solve_Succeeded"
 """The only Ipopt status that counts as solved."""
 
 FloatArray = NDArray[np.float64]
-
-
-@dataclass(frozen=True, slots=True, eq=False)
-class Source:
-    """The voltage source: ideal voltages behind an admittance, at its terminal's nodes."""
-
-    nodes: NDArray[np.int64]
-    """Model nodes of the source terminal, in conductor order."""
-    y_s: NDArray[np.complex128]
-    """Admittance (S) between the ideal source and :attr:`nodes`."""
-    e_v: NDArray[np.complex128]
-    """Ideal source voltages (V) at 1 pu; a scenario's are ``source_v_pu * e_v``."""
-
-
-def read_source(ctx: DssContext, model: ElectricalModel) -> Source:
-    """The source of ``model`` from its compiled circuit in ``ctx``.
-
-    :class:`ElectricalModel` keeps neither the Vsource's Yprim (it is not a PD element) nor its
-    base voltage and angle, so they are read from the engine: ``Y_s`` is the Yprim block of the
-    first terminal (the second is ground, :func:`unsupported_reason`), ``E`` has the magnitude
-    ``BasekV`` (line-to-neutral) and the angles ``AngleDeg - 120°·k`` per conductor ``k``.
-    """
-    (vs,) = [e for e in model.elements if e.enabled and e.element_class == "vsource"]
-    keep = [k for k, node in enumerate(vs.terminals[0]) if node != GROUND]
-    y_s = ctx.element_yprim(vs.name)[np.ix_(keep, keep)]
-    api = ctx.api
-    with ctx.engine_call(f"Vsources {vs.name}"):
-        api.Vsources.Name(vs.name.split(".", 1)[1])
-        base_kv, angle_deg = float(api.Vsources.BasekV()), float(api.Vsources.AngleDeg())
-        phases = int(api.Vsources.Phases())
-    v_ln = base_kv * 1e3 / (np.sqrt(3.0) if phases > 1 else 1.0)
-    angles = np.deg2rad(angle_deg) - 2.0 * np.pi / 3.0 * np.array(keep)
-    nodes = np.array([vs.terminals[0][k] for k in keep], dtype=np.int64)
-    return Source(nodes=nodes, y_s=y_s, e_v=v_ln * np.exp(1j * angles))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -321,8 +287,11 @@ def power_base(load_va: ArrayLike) -> float:
     """Power base (VA) of the NLP's scaling: the power of ten at or below a tenth of the total
     nominal load, at least 1 kVA. Measured in T3.4: with the median load, MV networks of small
     loads (IEEE 34: 10 kVA, EDP industrial: 1 kVA) ended class-A scenarios in restoration
-    failures; with the total load itself, IEEE 123 (4 MVA, base 10 MVA) solved dispatches that
-    OpenDSS did not reproduce within 1e-6 pu. A tenth of the total gives 100 kVA on both."""
+    failures. The total load itself (rounded to a power of ten) verifies as well on every network
+    still supported (IEEE 13, 34, EULV, a CSIRO feeder, EDP industrial: 65 of 65 solved dispatches
+    within 1e-6 pu); its failures were on IEEE 123, refused since for its floating bus. Neither was
+    better on that survey (it moves one IEEE 13 scenario from the iteration limit to infeasible),
+    so the tenth stays."""
     total = float(np.sum(np.abs(np.asarray(load_va, dtype=np.float64))))
     if total <= 0:
         return S_BASE_VA

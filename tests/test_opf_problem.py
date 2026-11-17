@@ -11,6 +11,7 @@ import pytest
 pytest.importorskip("casadi")
 
 from gridfm_datakit_distr.engine.context import complex_from_interleaved
+from gridfm_datakit_distr.extract.source import Source, read_source
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.opf.problem import (
@@ -18,9 +19,7 @@ from gridfm_datakit_distr.opf.problem import (
     Costs,
     OPFProblem,
     OPFResult,
-    Source,
     economic,
-    read_source,
 )
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 from tests.circuits import ALL_CLASSES, OPF_FEEDER, write_circuit

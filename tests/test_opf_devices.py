@@ -11,6 +11,7 @@ import pytest
 
 pytest.importorskip("casadi")
 
+from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.opf.problem import (
@@ -20,7 +21,6 @@ from gridfm_datakit_distr.opf.problem import (
     PowerFlowStart,
     economic,
     power_base,
-    read_source,
     winding_va,
 )
 from gridfm_datakit_distr.opf.support import unsupported_reason

@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("casadi")
 
 from gridfm_datakit_distr.engine.context import DssContext
+from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.networks.catalog import load_catalog
 from gridfm_datakit_distr.networks.compile import compile_network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
@@ -18,7 +19,6 @@ from gridfm_datakit_distr.opf.problem import (
     OPFProblem,
     OPFResult,
     economic,
-    read_source,
 )
 from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify
 from gridfm_datakit_distr.scenarios.profiles import customers_of

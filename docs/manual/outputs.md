@@ -45,6 +45,7 @@ This document is the contract between the generator and its consumers (a future 
 ```
 <data_dir>/<dataset_name>/
   manifest.json                    # config (resolved), config_hash, seeds, versions, chunk list + status
+                                   # and peak memory of the process that ran each chunk (MiB)
   README.md                        # dataset card (generated)
   croissant.json                   # Croissant metadata (generated)
   catalog/
@@ -56,6 +57,8 @@ This document is the contract between the generator and its consumers (a future 
     elements/part-*.parquet
     element_terminals/part-*.parquet
     yprim/part-*.parquet           # tap-independent PD elements only
+    source/part-*.parquet          # the voltage source: ideal voltages ...
+    source_yprim/part-*.parquet    # ... behind its admittance
     semantic/<variant_id>.json     # semantic layer (PMD-ENGINEERING-aligned)
   states/
     states.parquet
@@ -182,6 +185,35 @@ Non-zero entries of the primitive admittance matrix of each tap-independent PD e
 | `row`, `col` | int16 | local indices |
 | `g`, `b` | float64 | S |
 
+### `variants/source/part-*.parquet`
+
+The voltage source (the Vsource) as ideal voltages behind an admittance: the source draws
+`I = Y_s (source_v_pu · E - V)` into the network at its nodes, `V` the node voltages, `E` the
+voltages below and `source_v_pu` the scenario's (`scenarios/scenario_meta`). One row per conductor
+of its first terminal; its second terminal is ground (a network whose Vsource is not grounded
+there, or with more than one, fails generation). With these and `states/ybus`, the setpoints of
+`scenarios/loads` and `scenarios/der` determine the voltages of `scenarios/node_results`: the
+reference loader `gridfm_datakit_distr.io.reader` and the power flow of
+`gridfm_datakit_distr.validate.closed_loop` reproduce them without OpenDSS.
+
+| Column | Type | Description |
+|---|---|---|
+| `variant_id` | string | |
+| `element_idx` | int32 | the Vsource element |
+| `position` | int8 | 0-based conductor position within its first terminal |
+| `node_idx` | int32 | |
+| `e_re`, `e_im` | float64 | ideal source voltage at 1 pu (V): `BasekV` line-to-neutral, at `AngleDeg - 120°·position` |
+
+### `variants/source_yprim/part-*.parquet`
+
+Non-zero entries of `Y_s`, the block of the Vsource's Yprim at its first terminal.
+
+| Column | Type | Description |
+|---|---|---|
+| `variant_id` | string | |
+| `row`, `col` | int16 | `position` values of `variants/source` |
+| `g`, `b` | float64 | S |
+
 ### `variants/semantic/<variant_id>.json`
 
 Semantic layer aligned with the PMD ENGINEERING data model (field names as in PMD: `bus.terminals`, `bus.grounded`, `bus.rg`, `bus.xg`, `line.f_bus`, `line.t_bus`, `line.f_connections`, `line.t_connections`, `line.rs`, `line.xs`, `line.g_fr`, `line.b_fr`, `line.g_to`, `line.b_to`, `line.length`, `line.cm_ub`, `transformer.bus`, `transformer.connections`, `transformer.configuration`, `transformer.vm_nom`, `transformer.sm_nom`, `transformer.xsc`, `transformer.rw`, `transformer.tm_set`, `transformer.tm_lb`, `transformer.tm_ub`, `load.bus`, `load.connections`, `load.configuration`, `load.model`, `load.pd_nom`, `load.qd_nom`, `load.vm_nom`, `solar/generator/storage` fields, `shunt.gs`, `shunt.bs`, `switch.state`, `voltage_source.vm`, `voltage_source.va`, `settings.sbase_default`, `settings.vbases_default`, `settings.voltage_scale_factor`, `settings.power_scale_factor`). Units as in PMD (scale factors stated in `settings`). This file is the input of the PMD exporter.
@@ -286,7 +318,13 @@ Currents of PD elements per terminal and conductor position, written only with `
 | `p_w`, `q_var` | float32/64 | setpoint at nominal voltage |
 | `zip` | string (JSON), nullable | ZIP coefficients if not constant power |
 
-Connection (bus, phases, wye/delta) is static and lives in the semantic layer.
+Connection (bus, phases, wye/delta) is static and lives in the semantic layer. The power divides
+equally between the branches of the element's terminal (`variants/element_terminals`): wye, when
+the last conductor is a neutral or ground, one branch from each other conductor to it; delta on
+three phases, between the pairs (a, b), (b, c), (c, a); one branch between two phases. The same
+holds for `scenarios/der`. With the default `loads.model: constant_power` a converged scenario's
+loads draw exactly their setpoints (`n_off_setpoint = 0`); with `as_is` the `zip` column is not
+filled yet, and the stored tables do not determine the voltages.
 
 ### `scenarios/der`
 

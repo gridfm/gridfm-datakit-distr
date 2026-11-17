@@ -20,10 +20,11 @@ import pytest
 pytest.importorskip("casadi")
 
 from gridfm_datakit_distr.engine.context import DssContext
+from gridfm_datakit_distr.extract.source import Source, read_source
 from gridfm_datakit_distr.networks.catalog import load_catalog
 from gridfm_datakit_distr.networks.compile import compile_network
 from gridfm_datakit_distr.networks.prepare import prepare_network
-from gridfm_datakit_distr.opf.problem import SOLVED, OPFProblem, Source, economic, read_source
+from gridfm_datakit_distr.opf.problem import SOLVED, OPFProblem, economic
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 
 pytestmark = [pytest.mark.julia, pytest.mark.network_data, pytest.mark.slow]

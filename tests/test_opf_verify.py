@@ -11,9 +11,10 @@ pytest.importorskip("casadi")
 
 from pathlib import Path
 
+from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
-from gridfm_datakit_distr.opf.problem import OPFProblem, economic, read_source
+from gridfm_datakit_distr.opf.problem import OPFProblem, economic
 from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, Verification, verify
 from gridfm_datakit_distr.scenarios.controls import model_at_state, read_state, settle
 from gridfm_datakit_distr.scenarios.profiles import customers_of

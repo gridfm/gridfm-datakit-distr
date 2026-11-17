@@ -26,6 +26,7 @@ import pyarrow as pa
 from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND
 from gridfm_datakit_distr.model.ids import split_scenario_id
@@ -37,7 +38,6 @@ from gridfm_datakit_distr.opf.problem import (
     PowerFlowStart,
     economic,
     power_base,
-    read_source,
     vpn_bounds,
     winding_va,
 )

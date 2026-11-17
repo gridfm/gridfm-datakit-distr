@@ -79,6 +79,30 @@ YPRIM = pa.schema(
     ]
 )
 
+SOURCE = pa.schema(
+    [
+        _required("variant_id", pa.string()),
+        _required("element_idx", pa.int32()),
+        _required("position", pa.int8()),
+        _required("node_idx", pa.int32()),
+        _required("e_re", pa.float64()),
+        _required("e_im", pa.float64()),
+    ]
+)
+"""``variants/source``: the Vsource's ideal voltage (V, at 1 pu) per conductor of its terminal 1."""
+
+SOURCE_YPRIM = pa.schema(
+    [
+        _required("variant_id", pa.string()),
+        _required("row", pa.int16()),
+        _required("col", pa.int16()),
+        _required("g", pa.float64()),
+        _required("b", pa.float64()),
+    ]
+)
+"""``variants/source_yprim``: the Vsource's admittance (S) between the ideal voltages and its
+nodes, non-zero entries; ``row``/``col`` are ``position`` values of ``variants/source``."""
+
 VARIANTS = pa.schema(
     [
         _required("variant_id", pa.string()),
@@ -475,6 +499,8 @@ TABLES: dict[str, pa.Schema] = {
     "variants/elements": ELEMENTS,
     "variants/element_terminals": ELEMENT_TERMINALS,
     "variants/yprim": YPRIM,
+    "variants/source": SOURCE,
+    "variants/source_yprim": SOURCE_YPRIM,
     "states/yprim_state": YPRIM_STATE,
     "states/states": STATES,
 }

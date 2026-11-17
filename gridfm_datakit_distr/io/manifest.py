@@ -53,6 +53,8 @@ class Unit:
     stop: int
     status: UnitStatus = "pending"
     message: str | None = None
+    peak_rss_mib: float | None = None
+    """Peak resident memory of the process that ran the unit, up to its end (MiB)."""
 
     @property
     def key(self) -> str:
@@ -105,8 +107,14 @@ class Manifest:
             self.units.setdefault(u.key, u)
         self.save()
 
-    def finish(self, unit: Unit, status: UnitStatus, message: str | None = None) -> None:
+    def finish(
+        self,
+        unit: Unit,
+        status: UnitStatus,
+        message: str | None = None,
+        peak_rss_mib: float | None = None,
+    ) -> None:
         """Record a unit's outcome and save (after its files were renamed into place)."""
-        unit.status, unit.message = status, message
+        unit.status, unit.message, unit.peak_rss_mib = status, message, peak_rss_mib
         self.units[unit.key] = unit
         self.save()
