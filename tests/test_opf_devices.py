@@ -17,6 +17,7 @@ from gridfm_datakit_distr.opf.problem import (
     SOLVED,
     OPFProblem,
     OPFResult,
+    PowerFlowStart,
     economic,
     power_base,
     read_source,
@@ -119,3 +120,28 @@ def test_a_medium_voltage_feeder_solves_on_its_power_base(tmp_path: Path) -> Non
     assert result.status == SOLVED
     check = verify(case.prepared.ctx, case.prepared.model, case.problem, result)
     assert check.verified, check.reason
+
+
+def test_a_start_at_the_power_flow_reaches_the_same_optimum(devices: Case) -> None:
+    """The second start of the labeller: at the power flow of the same scenario."""
+    ctx = devices.prepared.ctx
+    p_avail = [10e3, 3e3, 10e3]  # the units' compiled outputs: the power flow ctx holds
+    order = {name: j for j, name in enumerate(ctx.ynode_order())}
+    v = ctx.ynode_voltages()[[order[n.opendss_node.lower()] for n in devices.prepared.model.nodes]]
+    start = PowerFlowStart(v=v, pv_p_w=np.array(p_avail), pv_q_var=np.zeros(3))
+    flat = solve(devices, p_avail)
+    customers = customers_of(devices.prepared)
+    ctx.api.Vsources.First()
+    warm = devices.problem.solve(
+        source_v_pu=float(ctx.api.Vsources.PU()),
+        load_p_w=[c.p_w for c in customers],
+        load_q_var=[c.q_var for c in customers],
+        pv_p_avail_w=p_avail,
+        pv_s_rated_va=[1e6] * 3,
+        costs=economic(3),
+        pv_q_max_var=[0.0] * 3,
+        start=start,
+    )
+    assert (flat.status, warm.status) == (SOLVED, SOLVED)
+    assert warm.objective == pytest.approx(flat.objective, rel=1e-9)
+    assert warm.iterations < flat.iterations

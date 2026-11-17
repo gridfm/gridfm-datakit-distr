@@ -19,7 +19,7 @@ power-flow label. The bounds are
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pyarrow as pa
@@ -34,6 +34,7 @@ from gridfm_datakit_distr.opf.problem import (
     FloatArray,
     OPFProblem,
     OPFResult,
+    PowerFlowStart,
     economic,
     power_base,
     read_source,
@@ -69,6 +70,9 @@ class OPFRow:
     active: tuple[int, int, int] | None = None
     """Limits active at the solution: voltages at their lower and upper bounds, transformers at
     their rating (within :data:`ACTIVE_REL` of the bound)."""
+    start: str | None = None
+    """``flat``, or ``power_flow`` when the flat start did not solve and the label comes from a
+    second solve started at the scenario's power flow."""
 
 
 class OPFLabeller:
@@ -110,15 +114,30 @@ class OPFLabeller:
         q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
         try:
             problem = self._problem(str(o.state_id))
-            result = problem.solve(
-                source_v_pu=o.source_v_pu,
-                load_p_w=o.load_p_w,
-                load_q_var=o.load_q_var,
-                pv_p_avail_w=p_avail,
-                pv_s_rated_va=self.s_rated_va,
-                costs=costs,
-                pv_q_max_var=q_max,
-            )
+
+            def solve(start: PowerFlowStart | None = None) -> OPFResult:
+                return problem.solve(
+                    source_v_pu=o.source_v_pu, load_p_w=o.load_p_w, load_q_var=o.load_q_var,
+                    pv_p_avail_w=p_avail, pv_s_rated_va=self.s_rated_va, costs=costs,
+                    pv_q_max_var=q_max, start=start,
+                )  # fmt: skip
+
+            result = solve()
+            start = "flat"
+            if not result.solved:
+                # A second solve from the power-flow solution, a feasible point when the scenario
+                # is of class A: from the flat start Ipopt can end such a scenario infeasible or
+                # unfinished (T3.4: IEEE 13, 34, 123).
+                assert o.v is not None
+                empty = np.zeros(len(self.units))
+                pf = PowerFlowStart(
+                    v=o.v,
+                    pv_p_w=o.pv_p_w if o.pv_p_w is not None else empty,
+                    pv_q_var=o.pv_q_var if o.pv_q_var is not None else empty,
+                )
+                retry = solve(pf)
+                result = replace(retry, t_solve_s=result.t_solve_s + retry.t_solve_s)
+                start = "power_flow"
             check = None
             if result.solved:
                 check = verify(self.runner.ctx, self.runner.model, problem, result)
@@ -131,7 +150,7 @@ class OPFLabeller:
         active = self._active(problem, result, str(o.state_id)) if result.solved else None
         return OPFRow(
             o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs,
-            q_max, active,
+            q_max, active, start,
         )  # fmt: skip
 
     def _active(
@@ -220,6 +239,7 @@ class OPFLabeller:
                 "n_vmin_active": None if r.active is None else r.active[0],
                 "n_vmax_active": None if r.active is None else r.active[1],
                 "n_rating_active": None if r.active is None else r.active[2],
+                "opf_start": r.start,
             }
             for r in rows
         ]

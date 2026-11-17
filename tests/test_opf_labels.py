@@ -244,6 +244,7 @@ def test_active_limits_are_counted(dataset: Path) -> None:
     # PV curtailed for an overvoltage: an upper voltage bound (or a rating) binds
     assert all(r["n_vmax_active"] + r["n_rating_active"] >= 1 for r in curtailing)
     assert all(r["controls_hold"] is None for r in solved)  # no regulator in these networks
+    assert {r["opf_start"] for r in solved} == {"flat"}  # no second start needed here
 
 
 def test_controls_hold_is_reported_on_a_regulated_network(tmp_path: Path) -> None:

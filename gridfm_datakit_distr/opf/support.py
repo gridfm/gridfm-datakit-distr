@@ -10,6 +10,8 @@ yet. No CasADi here: the check runs without the ``opf`` extra.
 
 from __future__ import annotations
 
+import numpy as np
+
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 
 PV_PREFIX = "generator.pv_"
@@ -87,15 +89,33 @@ def floating_buses(model: ElectricalModel) -> list[str]:
     for e in model.elements:
         if not (e.enabled and e.is_pd):
             continue
-        groups = e.terminals if e.element_class == "transformer" else [e.local_nodes()]
-        for group in groups:
-            nodes = [n for n in group if n != GROUND]
-            if len(nodes) < len(group):
+        local = e.local_nodes()
+        tied = _tied_to_ground(e)
+        groups = (
+            [
+                list(range(k * e.n_conductors, (k + 1) * e.n_conductors))
+                for k in range(e.n_terminals)
+            ]
+            if e.element_class == "transformer"
+            else [list(range(len(local)))]
+        )
+        for positions in groups:
+            nodes = [local[k] for k in positions if local[k] != GROUND]
+            if any(local[k] == GROUND and tied[k] for k in positions):
                 grounded.update(nodes)
             for n in nodes[1:]:
                 parent[find(n)] = find(nodes[0])
     roots = {find(i) for i in grounded}
     return sorted({n.bus for n in model.nodes if find(n.idx) not in roots})
+
+
+def _tied_to_ground(element: Element) -> list[bool]:
+    """Per local position: whether the Yprim couples it (a delta winding lists an unused fourth
+    position at node 0, with an empty row)."""
+    if element.yprim is None:
+        return [False] * element.n_positions
+    rows = np.abs(element.yprim).max(axis=1)
+    return [bool(r >= 1e-3 * rows.max()) for r in rows]
 
 
 def _listed(why: str, names: list[str]) -> str:

@@ -388,6 +388,7 @@ One row per scenario of the dataset.
 | `controls_hold` | bool, nullable | on a network with regulators or switched capacitors: whether a solve with the controls on (`ControlMode=STATIC`) at the solved dispatch keeps the scenario's taps and steps; null without controls or without a verification. Not part of `verified`: the label is the optimum at the frozen state |
 | `n_vmin_active`, `n_vmax_active` | int32, nullable | phase-to-neutral voltages at their lower and upper bounds at the solution (within 1e-6 relative); null unless `Solve_Succeeded` |
 | `n_rating_active` | int32, nullable | transformers at their rating at the solution (within 1e-6 relative); null unless `Solve_Succeeded` |
+| `opf_start` | string, nullable | `flat`, or `power_flow` when the flat start did not end `Solve_Succeeded` and the row comes from a second solve started at the scenario's power-flow solution (`t_solve_s` then counts both, `iterations` the second); null without a solve |
 
 ### `opf/opf_der`
 

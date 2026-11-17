@@ -159,6 +159,7 @@ class OPFProblem:
         """Transformers whose apparent power at winding 1 is bounded by their rating."""
         n, nl, ng, nt = model.n_nodes, len(loads), len(pvs), len(rated)
         lb, gb = _branches(model, loads), _branches(model, pvs)
+        self._lb, self._gb = lb, gb
         self._n, self._nl, self._ng = n, nl, ng
         self._load_share = _shares(lb, nl)  # (branches, loads): 1 / n_branches
         pv_share = _shares(gb, ng)
@@ -236,6 +237,15 @@ class OPFProblem:
         base_p = vb[self.pairs[:, 0]]
         self._vpn2 = ((self.vpn_lo_v / base_p) ** 2, (self.vpn_hi_v / base_p) ** 2)
 
+    def _start_from(self, start: PowerFlowStart, load_pu: NDArray[np.complex128]) -> FloatArray:
+        """The NLP's variables at a power-flow solution, per unit as the problem scales them."""
+        v = start.v / self._vb
+        il = _branch_currents(v, self._vb, self._lb, load_pu)
+        g = (np.asarray(start.pv_p_w) + 1j * np.asarray(start.pv_q_var)) / self._s_base
+        ig = _branch_currents(v, self._vb, self._gb, g)
+        parts = [v.real, v.imag, il.real, il.imag, ig.real, ig.imag, g.real, g.imag]
+        return np.asarray(np.concatenate(parts), dtype=np.float64)
+
     def solve(
         self,
         *,
@@ -246,8 +256,10 @@ class OPFProblem:
         pv_s_rated_va: ArrayLike,
         costs: Costs,
         pv_q_max_var: ArrayLike | None = None,
+        start: PowerFlowStart | None = None,
     ) -> OPFResult:
-        """Solve one scenario from a flat start: source voltages ``source_v_pu · E``, neutral 0.
+        """Solve one scenario from a flat start (source voltages ``source_v_pu · E``, neutral 0),
+        or from ``start``, a power-flow solution of the same scenario.
 
         Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA), each
         drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
@@ -271,12 +283,15 @@ class OPFProblem:
             "lbg": np.r_[zeros, plb, qlb, pv_rows, lo, np.full(ng + self._nt, -np.inf)],
             "ubg": np.r_[zeros, plb, qlb, pv_rows, hi, s_rated**2, t_hi],
         }
-        v0 = source_v_pu * self._e_node
-        x0 = np.r_[v0.real, v0.imag, np.zeros(2 * self._nlb + 2 * self._ngb + 2 * ng)]
+        if start is None:
+            v0 = source_v_pu * self._e_node
+            x0 = np.r_[v0.real, v0.imag, np.zeros(2 * self._nlb + 2 * self._ngb + 2 * ng)]
+        else:
+            x0 = self._start_from(start, pl + 1j * ql)
         par = np.r_[source_v_pu, c1, c2]
-        start = time.perf_counter()
+        t0 = time.perf_counter()
         sol = self._solver(x0=x0, p=par, **bounds)
-        t_solve = time.perf_counter() - start
+        t_solve = time.perf_counter() - t0
         stats = self._solver.stats()
         x = np.asarray(sol["x"], dtype=np.float64).ravel()
         o = 2 * n + 2 * self._nlb + 2 * self._ngb
@@ -292,6 +307,16 @@ class OPFProblem:
         )
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class PowerFlowStart:
+    """A power-flow solution of the scenario as the NLP's start: node voltages (V) and the PV
+    units' outputs (W, var), in the problem's orders."""
+
+    v: NDArray[np.complex128]
+    pv_p_w: FloatArray
+    pv_q_var: FloatArray
+
+
 def power_base(load_va: ArrayLike) -> float:
     """Power base (VA) of the NLP's scaling: the power of ten at or below a tenth of the total
     nominal load, at least 1 kVA. Measured in T3.4: with the median load, MV networks of small
@@ -302,6 +327,21 @@ def power_base(load_va: ArrayLike) -> float:
     if total <= 0:
         return S_BASE_VA
     return max(S_BASE_VA, 10.0 ** np.floor(np.log10(total / 10.0)))
+
+
+def _branch_currents(
+    v: NDArray[np.complex128], vb: FloatArray, branches: NDArray[np.int64], power: ArrayLike
+) -> NDArray[np.complex128]:
+    """Per-unit branch currents at per-unit node voltages ``v`` for devices of per-unit powers
+    ``power`` (an equal share per branch), as the NLP defines them."""
+    s = np.asarray(power, dtype=np.complex128)
+    owner = branches[:, 2]
+    counts = np.bincount(owner, minlength=s.size)
+    a, b = branches[:, 0], branches[:, 1]
+    ground = b == GROUND
+    vb_b = np.where(ground, 1.0, vb[np.maximum(b, 0)])
+    dv = v[a] - np.where(ground, 0.0, vb_b / vb[a] * v[np.maximum(b, 0)])
+    return np.asarray(np.conj(s[owner] / counts[owner] / dv), dtype=np.complex128)
 
 
 def _devices(model: ElectricalModel, element_class: str) -> list[Element]:

@@ -262,6 +262,7 @@ def opf_meta(precision: Precision) -> pa.Schema:
             _nullable("n_vmin_active", pa.int32()),
             _nullable("n_vmax_active", pa.int32()),
             _nullable("n_rating_active", pa.int32()),
+            _nullable("opf_start", pa.string()),
         ]
     )
 
