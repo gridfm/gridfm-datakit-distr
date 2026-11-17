@@ -112,7 +112,7 @@ Rooftop PV: placed per variant, output per scenario.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `0.0` | Share of customers with PV, drawn per variant. |
+| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 0.8}` | Share of customers with PV, drawn per variant. The default puts a voltage violation in about 6 % of the scenarios of a dataset of the whole catalog; 0 places no PV. |
 | `der.pv.kwp` | value spec, > 0 | `{distribution: uniform, low: 2.0, high: 6.0}` | Peak power (kW) of each PV system. |
 | `der.pv.power_factor` | value spec, > 0 and ≤ 1 | `1.0` | Power factor of each inverter, drawn per variant; below 1 the inverter absorbs reactive power, within its rating. |
 | `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp of PV. |

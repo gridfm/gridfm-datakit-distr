@@ -3,7 +3,8 @@
 A *variant* is a perturbed copy of a catalog network: its structure changes once, then many
 scenarios are solved on it. Variant `k` of a network draws from its own random streams of
 `settings.seed`, so it is the same whatever else the dataset contains. With the defaults
-(`variants.n_variants: 1`, no perturbation, no PV) the variant is the source network.
+(`variants.n_variants: 1`, no perturbation) and `der.pv.penetration: 0` the variant is the
+source network; the default places PV at a share of customers drawn uniformly in 0–0.8.
 
 | Perturbation | Config | What changes |
 |---|---|---|

@@ -65,6 +65,7 @@ def test_the_view_per_scenario(network_master: Callable[[str], Path], network_id
         {
             "dataset_name": "t",
             "networks": {"include": [network_id]},
+            "der": {"pv": {"penetration": 0.0}},  # as before PV entered the defaults
             "scenarios": {"n_scenarios_per_variant": 3},
             "settings": {"seed": 2},
         }

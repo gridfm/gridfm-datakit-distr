@@ -271,7 +271,10 @@ class PV(_Config):
     """Rooftop PV: placed per variant, output per scenario."""
 
     penetration: FractionSpec = Field(
-        default=Fixed(0.0), description="Share of customers with PV, drawn per variant."
+        default=Uniform(0.0, 0.8),
+        description="Share of customers with PV, drawn per variant. The default puts a "
+        "voltage violation in about 6 % of the scenarios of a dataset of the whole catalog; "
+        "0 places no PV.",
     )
     kwp: PositiveSpec = Field(
         default=Uniform(2.0, 6.0), description="Peak power (kW) of each PV system."

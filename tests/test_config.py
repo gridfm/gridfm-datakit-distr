@@ -81,7 +81,7 @@ def test_a_minimal_config_takes_the_documented_defaults() -> None:
     assert config.variants.admittance.line_length_scale == Fixed(1.0)
     assert config.variants.admittance.grounding_resistance_ohm is None
     assert not config.variants.phase_reallocation.enabled
-    assert config.der.pv.penetration == Fixed(0.0)
+    assert config.der.pv.penetration == Uniform(0.0, 0.8)
     assert config.scenarios.profiles.synthetic.global_scale == Uniform(0.2, 1.2)
     assert config.scenarios.source_voltage_pu == Uniform(0.98, 1.05)
     assert config.settings.num_processes is None  # all cores
@@ -454,7 +454,8 @@ def test_reference_doc_is_current() -> None:
 def test_every_field_is_documented() -> None:
     text = reference_markdown()
     assert "| `settings.seed` | integer ≥ 0 | required |" in text
-    assert "| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `0.0` |" in text
+    expected = "`{distribution: uniform, low: 0.0, high: 0.8}`"
+    assert f"| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | {expected} |" in text
     assert "TODO" not in text
 
 

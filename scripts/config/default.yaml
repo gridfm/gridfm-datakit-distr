@@ -1,4 +1,5 @@
-# A commented starting point; every key and its default is in docs/manual/config.md.
+# A commented starting point; every value set here is the default (a test checks it);
+# every key and its default is in docs/manual/config.md.
 dataset_name: my_dataset # directory under settings.data_dir
 
 networks:
@@ -6,18 +7,18 @@ networks:
   neutral_representation: explicit # explicit | kron | as_is
 
 variants:
-  n_variants: 4 # perturbed copies of each network
+  n_variants: 1 # perturbed copies of each network
   admittance:
-    line_length_scale: {distribution: uniform, low: 0.9, high: 1.1} # one factor per line
+    line_length_scale: 1.0 # one factor per line, e.g. {distribution: uniform, low: 0.9, high: 1.1}
     neutral_impedance_scale: 1.0 # factor on the neutral impedances of four-wire lines
     grounding_resistance_ohm: null # null keeps the source's earthing resistances
   phase_reallocation:
-    enabled: true
+    enabled: false # true moves a share of single-phase customers
     fraction: 0.2 # share of single-phase customers moved to another phase
 
 der:
   pv:
-    penetration: {distribution: uniform, low: 0.0, high: 0.4} # share of customers with PV, per variant
+    penetration: {distribution: uniform, low: 0.0, high: 0.8} # share of customers with PV, per variant
     kwp: {distribution: uniform, low: 2.0, high: 6.0} # peak power of each system (kW)
     power_factor: 1.0
 
