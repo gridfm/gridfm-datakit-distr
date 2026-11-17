@@ -63,6 +63,16 @@ def targets(base: tuple[Network, Path, PreparedNetwork]) -> VariantTargets:
 # ------------------------------------------------------------------- targets
 
 
+UNPERTURBED = Variants.model_validate(
+    {
+        "n_variants": 1,
+        "admittance": {"line_length_scale": 1.0},
+        "phase_reallocation": {"enabled": False},
+    }
+)
+"""Variants as the defaults were before they perturbed: the source network."""
+
+
 def test_targets(targets: VariantTargets) -> None:
     lines = {t.name: t.neutral for t in targets.lines}
     assert lines == {"a": (3,), "b": (3,), "lat": (1,)}  # the switch keeps its impedance
@@ -117,12 +127,12 @@ def test_quantities_draw_from_their_own_streams(targets: VariantTargets) -> None
     assert (off.line_length, off.neutral_impedance) == (on.line_length, on.neutral_impedance)
 
 
-def test_defaults_change_nothing(base: tuple[Network, Path, PreparedNetwork]) -> None:
+def test_an_unperturbed_config_changes_nothing(base: tuple[Network, Path, PreparedNetwork]) -> None:
     network, root, prepared = base
     targets = collect_targets(prepared)
-    p = sample_perturbation(Variants(), targets, SEED, 0, 0)
+    p = sample_perturbation(UNPERTURBED, targets, SEED, 0, 0)
     assert edit_script(p, targets) == []
-    result = generate_variant(network, targets, Variants(), SEED, 0, root=root)
+    result = generate_variant(network, targets, UNPERTURBED, SEED, 0, root=root)
     assert result.status == "ok"
     assert result.model is not None
     assert json.loads(result.record()["perturbation"]) == {"attempt": 0}

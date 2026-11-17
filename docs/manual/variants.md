@@ -2,9 +2,11 @@
 
 A *variant* is a perturbed copy of a catalog network: its structure changes once, then many
 scenarios are solved on it. Variant `k` of a network draws from its own random streams of
-`settings.seed`, so it is the same whatever else the dataset contains. With the defaults
-(`variants.n_variants: 1`, no perturbation) and `der.pv.penetration: 0` the variant is the
-source network; the default places PV at a share of customers drawn uniformly in 0–0.8.
+`settings.seed`, so it is the same whatever else the dataset contains. The defaults draw 4
+variants per network, each with line lengths scaled uniformly in 0.9–1.1, a share of single-phase
+customers moved to another phase, and PV at a share of customers drawn uniformly in 0–0.8. With
+`n_variants: 1`, `line_length_scale: 1.0`, `phase_reallocation: {enabled: false}` and
+`der.pv.penetration: 0` the variant is the source network.
 
 | Perturbation | Config | What changes |
 |---|---|---|

@@ -8,6 +8,9 @@ networks:
     vmax_pu: 1.10
 variants:
   n_variants: 4
+  # unperturbed, as before perturbations entered the defaults
+  admittance: {line_length_scale: 1.0}
+  phase_reallocation: {enabled: false}
 scenarios:
   n_scenarios_per_variant: 500
   profiles:

@@ -7,13 +7,13 @@ networks:
   neutral_representation: explicit # explicit | kron | as_is
 
 variants:
-  n_variants: 1 # perturbed copies of each network
+  n_variants: 4 # perturbed copies of each network
   admittance:
-    line_length_scale: 1.0 # one factor per line, e.g. {distribution: uniform, low: 0.9, high: 1.1}
+    line_length_scale: {distribution: uniform, low: 0.9, high: 1.1} # one factor per line
     neutral_impedance_scale: 1.0 # factor on the neutral impedances of four-wire lines
     grounding_resistance_ohm: null # null keeps the source's earthing resistances
   phase_reallocation:
-    enabled: false # true moves a share of single-phase customers
+    enabled: true # moves a share of single-phase customers to another phase
     fraction: 0.2 # share of single-phase customers moved to another phase
 
 der:

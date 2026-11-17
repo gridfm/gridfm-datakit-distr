@@ -225,7 +225,7 @@ class Admittance(_Config):
     """Parameter perturbations of a variant; one draw per element."""
 
     line_length_scale: PositiveSpec = Field(
-        default=Fixed(1.0), description="Factor on each line's length."
+        default=Uniform(0.9, 1.1), description="Factor on each line's length."
     )
     neutral_impedance_scale: PositiveSpec = Field(
         default=Fixed(1.0),
@@ -240,7 +240,7 @@ class Admittance(_Config):
 class PhaseReallocation(_Config):
     """Moves single-phase customers to another phase available at their bus."""
 
-    enabled: bool = Field(default=False, description="Reallocate phases in each variant.")
+    enabled: bool = Field(default=True, description="Reallocate phases in each variant.")
     fraction: float = Field(
         default=0.2, ge=0, le=1, description="Share of single-phase customers moved."
     )
@@ -257,7 +257,7 @@ class Variants(_Config):
     check."""
 
     n_variants: int = Field(
-        default=1,
+        default=4,
         ge=1,
         le=MAX_VARIANTS,
         description="Variants per network (variant ids have four digits).",

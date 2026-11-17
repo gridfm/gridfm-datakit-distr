@@ -76,11 +76,11 @@ def test_a_minimal_config_takes_the_documented_defaults() -> None:
     )
     assert config.normalisation.loads.model == "constant_power"
     assert config.normalisation.s_base_va == "auto"
-    # defaults leave the source network unchanged
-    assert config.variants.n_variants == 1
-    assert config.variants.admittance.line_length_scale == Fixed(1.0)
+    # defaults perturb the variants (four per network)
+    assert config.variants.n_variants == 4
+    assert config.variants.admittance.line_length_scale == Uniform(0.9, 1.1)
     assert config.variants.admittance.grounding_resistance_ohm is None
-    assert not config.variants.phase_reallocation.enabled
+    assert config.variants.phase_reallocation.enabled
     assert config.der.pv.penetration == Uniform(0.0, 0.8)
     assert config.scenarios.profiles.synthetic.global_scale == Uniform(0.2, 1.2)
     assert config.scenarios.source_voltage_pu == Uniform(0.98, 1.05)

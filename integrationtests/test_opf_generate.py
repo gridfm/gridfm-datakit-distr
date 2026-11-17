@@ -23,6 +23,11 @@ pytestmark = [pytest.mark.network_data]
 CONFIG: dict[str, Any] = {
     "dataset_name": "opf",
     "networks": {"include": ["csiro_enwl/n02_f5", "ieee13"]},
+    "variants": {
+        "n_variants": 1,
+        "admittance": {"line_length_scale": 1.0},
+        "phase_reallocation": {"enabled": False},
+    },  # unperturbed, as before the defaults
     # 40 kWp at every customer, inverters rated at their kWp: some scenarios curtail
     "der": {"pv": {"penetration": 1.0, "kwp": 40.0, "inverter_kva_per_kwp": 1.0}},
     "scenarios": {"n_scenarios_per_variant": 6, "pv_profile": {"cloudiness": 0.0}},

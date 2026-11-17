@@ -13,6 +13,9 @@ networks:
   voltage_limits: {preset: uk_esqcr}
 variants:
   n_variants: 2
+  # unperturbed, as before perturbations entered the defaults
+  admittance: {line_length_scale: 1.0}
+  phase_reallocation: {enabled: false}
 der:
   pv:
     penetration: 0.4

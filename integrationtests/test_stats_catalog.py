@@ -22,6 +22,11 @@ def test_a_csiro_dataset(network_master: Callable[[str], Path], tmp_path: Path) 
         {
             "dataset_name": "csiro",
             "networks": {"include": ["csiro_enwl/n01_f1"]},
+            "variants": {
+                "n_variants": 1,
+                "admittance": {"line_length_scale": 1.0},
+                "phase_reallocation": {"enabled": False},
+            },  # unperturbed, as before the defaults
             "der": {"pv": {"penetration": 0.3}},
             "views": {"kron": False},
             "scenarios": {"n_scenarios_per_variant": 12},

@@ -9,6 +9,7 @@ variants:
   n_variants: 4
   admittance:
     line_length_scale: {distribution: uniform, low: 0.9, high: 1.1}
+  phase_reallocation: {enabled: false} # as before perturbations entered the defaults
 der:
   pv:
     penetration: {distribution: uniform, low: 0.0, high: 0.4}

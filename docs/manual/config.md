@@ -73,7 +73,7 @@ check.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `variants.n_variants` | integer ≥ 1 and ≤ 10000 | `1` | Variants per network (variant ids have four digits). |
+| `variants.n_variants` | integer ≥ 1 and ≤ 10000 | `4` | Variants per network (variant ids have four digits). |
 
 ## `variants.admittance`
 
@@ -81,7 +81,7 @@ Parameter perturbations of a variant; one draw per element.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `variants.admittance.line_length_scale` | value spec, > 0 | `1.0` | Factor on each line's length. |
+| `variants.admittance.line_length_scale` | value spec, > 0 | `{distribution: uniform, low: 0.9, high: 1.1}` | Factor on each line's length. |
 | `variants.admittance.neutral_impedance_scale` | value spec, > 0 | `1.0` | Factor on the neutral self and mutual impedances of explicit-neutral lines. |
 | `variants.admittance.grounding_resistance_ohm` | value spec, > 0 or null | null | Resistance (Ω) of the existing grounding points; null keeps the source's. |
 
@@ -91,7 +91,7 @@ Moves single-phase customers to another phase available at their bus.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `variants.phase_reallocation.enabled` | boolean | `false` | Reallocate phases in each variant. |
+| `variants.phase_reallocation.enabled` | boolean | `true` | Reallocate phases in each variant. |
 | `variants.phase_reallocation.fraction` | number ≥ 0 and ≤ 1 | `0.2` | Share of single-phase customers moved. |
 
 ## `variants.reconfiguration`

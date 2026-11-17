@@ -5,6 +5,10 @@ networks:
   include: [csiro_enwl/n02_f5]
   # UK ESQCR: 216.2 to 253.0 V phase-to-neutral on the feeder's nominal 230 V
   voltage_limits: {preset: uk_esqcr}
+variants: # one unperturbed variant, as before perturbations entered the defaults
+  n_variants: 1
+  admittance: {line_length_scale: 1.0}
+  phase_reallocation: {enabled: false}
 der:
   pv:
     penetration: 1.0

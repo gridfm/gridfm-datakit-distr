@@ -53,6 +53,16 @@ def pv(**changes: Any) -> PV:
 # ------------------------------------------------------------------- placement
 
 
+UNPERTURBED = Variants.model_validate(
+    {
+        "n_variants": 1,
+        "admittance": {"line_length_scale": 1.0},
+        "phase_reallocation": {"enabled": False},
+    }
+)
+"""Variants as the defaults were before they perturbed: the source network."""
+
+
 def test_customers_are_every_enabled_load(targets: VariantTargets) -> None:
     by = {c.element: c for c in targets.customers}
     assert sorted(by) == [f"Load.{n}" for n in ("h1", "h2", "h3", "h4", "h5", "pp")]
@@ -113,10 +123,10 @@ def test_zero_penetration_reproduces_the_base_case(
     base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
 ) -> None:
     network, root, prepared = base
-    p = sample_perturbation(Variants(), targets, SEED, 0, 0, der=pv(penetration=0.0))
+    p = sample_perturbation(UNPERTURBED, targets, SEED, 0, 0, der=pv(penetration=0.0))
     assert edit_script(p, targets) == []
     result = generate_variant(
-        network, targets, Variants(), SEED, 0, root=root, der=pv(penetration=0.0)
+        network, targets, UNPERTURBED, SEED, 0, root=root, der=pv(penetration=0.0)
     )
     assert result.model is not None
     assert [e.name for e in result.model.elements] == [e.name for e in prepared.model.elements]

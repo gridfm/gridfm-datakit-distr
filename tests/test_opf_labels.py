@@ -30,6 +30,11 @@ from tests.test_executor import same_dataset
 CONFIG: dict[str, Any] = {
     "dataset_name": "opf",
     "networks": {"include": ["t/*"]},
+    "variants": {
+        "n_variants": 1,
+        "admittance": {"line_length_scale": 1.0},
+        "phase_reallocation": {"enabled": False},
+    },  # unperturbed, as before the defaults
     # inverters rated at their kWp: with headroom the reactive power alone clears the overvoltage
     "der": {"pv": {"penetration": 1.0, "kwp": 30.0, "inverter_kva_per_kwp": 1.0}},
     "scenarios": {
