@@ -49,7 +49,8 @@ uv run gridfm_datakit_distr stats data/ieee13_small
 The dataset is in `data/ieee13_small`. Running the same command again *resumes*: finished units
 are kept, missing ones are computed (an interrupted run loses nothing). A different config with
 the same `dataset_name` is refused unless you pass `--overwrite`. `--processes N` sets the number
-of worker processes; the dataset is the same bit for bit whatever `N`.
+of worker processes; on one machine the dataset is the same bit for bit whatever `N`
+([reproducibility](opf.md#reproducibility)).
 
 ## 3. Three larger examples
 

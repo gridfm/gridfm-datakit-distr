@@ -36,6 +36,22 @@ The OPF covers networks of lines, switches, transformers, capacitors and reactor
 
 `opf_class` says what the OPF had to do: `A` when the uncontrolled power flow already keeps the voltages within the limits and the transformers within their ratings (with `economic` the OPF then keeps the PV at its available power and moves the reactive power to reduce the losses), `B` when it does not, `C` without a power-flow label.
 
+## Reproducibility
+
+The same config, seed and library versions give the same dataset bit for bit on one machine,
+whatever the number of processes or the thread count of the linear algebra (OpenBLAS at 1 or 6
+threads: identical voltages and dispatches, measured on two machines).
+
+Across machines the numbers agree within the solvers' accuracy, not bit for bit. Measured between
+a desktop (Intel i5-9400F) and a cluster node (Intel Xeon Gold 6530) with identical library
+versions: power-flow voltages within 1e-9 pu (the golden-file check); OPF dispatches that both
+machines solve within 2e-8 of the largest voltage, 1e-5 W in the objective and 3e-7 W per PV unit,
+well inside the 1e-6 pu verification. Rare borderline OPF solves end with a different status: on 3
+of 11 hard EDP rural scenarios one machine returned `Solve_Succeeded` and the other
+`Infeasible_Problem_Detected` or `Solved_To_Acceptable_Level`. Such rows are recorded with their
+status and never become labels unless solved and verified, so a regenerated dataset can differ
+from the original in which of those scenarios carry OPF labels.
+
 ## Enabling it
 
 Install the `opf` extra (CasADi, which bundles Ipopt):
