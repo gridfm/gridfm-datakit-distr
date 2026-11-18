@@ -20,7 +20,7 @@ Networks that fail the suite are not used.
 
 ## Networks
 
-| Network | Source | Licence | Buses / nodes | Loads | Neutral | Levels (kV LL) | Recipe | Conformance | v0.1 |
+| Network | Source | Licence | Buses / nodes | Loads | Neutral | Levels (kV LL) | Recipe | Conformance | Included |
 |---|---|---|---|---|---|---|---|---|---|
 | `ieee13` | `epri_ieee` | IEEE PES test feeder; scripts BSD-3-Clause | 16 / 41 | 15 | kron | 115, 4.16, 0.48 | — | C1–C7 pass | yes |
 | `ieee34` | `epri_ieee` | as above | 37 / 95 | 68 | kron | 69, 24.9, 4.16 | six 832–858 delta loads connected phase to phase | C1–C7 pass | yes |
@@ -47,9 +47,10 @@ loadshape means, the European LV's keep their own loadshapes (profile provider `
   IEEE 37 0.87 pu; datasets settle the control states per scenario (`controls`).
 - **CSIRO `n13_f4`:** at its nominal loads (148 kW on 785 buses) OpenDSS converges only up to 34 %
   of them under constant power; the published model converges because its loads become constant
-  impedances below 0.95 pu. Excluded from v0.1.
+  impedances below 0.95 pu. Excluded.
 - **PMD's own parser** differs from OpenDSS on these sources (mile = 1609.3 m, dropped grounding
-  reactors): PMD inputs come from our semantic layer; engine agreement (C8) is
-  checked with the OPF labels (next version).
+  reactors), so the conformance suite has no cross-engine check (C8). Engine agreement is checked
+  through the OPF labels: each dispatch is verified in OpenDSS ([OPF labels](opf.md)), and the OPF
+  is cross-checked against PMD on small CSIRO feeders (`integrationtests/test_opf_pmd.py`, Julia).
 - **Not yet validated:** the CSIRO Kron and phase-to-neutral representations, the unbalanced-load
   representation of IEEE 8500 (selected through configuration).

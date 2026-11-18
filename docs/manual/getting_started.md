@@ -230,7 +230,7 @@ assert (s_from + s_to).real > -1e-9 * abs(s_from)  # a passive line dissipates
 
 The tables determine the voltages: the network admittance, the source (`variants/source`: ideal
 voltages behind an admittance), the setpoints of the loads and DER and the way each divides its
-power between its branches (equal shares, SCHEMA §6). The reference loader reads them into arrays
+power between its branches (equal shares, [Outputs](outputs.md), `scenarios/loads` in §6). The reference loader reads them into arrays
 and a fixed-point power flow in NumPy solves them; neither imports OpenDSS. It is also the place of
 two baselines a learned model has to beat: the no-load voltage and one linearised step from it.
 
@@ -252,7 +252,7 @@ assert loop.max_dv_pu < 1e-6  # float32 setpoints (settings.float_precision: mix
 
 `export-posseq` builds the positive-sequence equivalent of every scenario from the stored
 solutions: the three-phase backbone, the demand each of its buses carries, re-solved in OpenDSS
-(SCHEMA §7.2). It writes it in gridfm-datakit's format, units and layout (MW, MVAr, degrees, per
+([Outputs](outputs.md), §7.2). It writes it in gridfm-datakit's format, units and layout (MW, MVAr, degrees, per
 unit on 100 MVA; `bus_data.parquet`, `branch_data.parquet`, `gen_data.parquet`,
 `y_bus_data.parquet`, `n_scenarios.txt`), one directory per network: point graphkit's
 `data_path` at `<out>/<network_id>/raw`. `--processes N` builds variants in parallel;

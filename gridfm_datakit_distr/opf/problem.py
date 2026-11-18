@@ -10,7 +10,8 @@ PV unit, and the active and reactive power of each PV unit. Constraints:
 - each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.opf.support.unit_branches`: wye,
   delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's constant
   power, the PV unit's ``p + jq``;
-- PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max`` (D-067);
+- PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max``
+  (the unit's reactive limit);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
   has no neutral node), per unit of the node's nominal voltage;
 - ``|S| <= rating`` into winding 1 of every transformer with a rating.

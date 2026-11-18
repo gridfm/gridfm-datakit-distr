@@ -58,6 +58,11 @@ of 11 hard EDP rural scenarios one machine returned `Solve_Succeeded` and the ot
 status and never become labels unless solved and verified, so a regenerated dataset can differ
 from the original in which of those scenarios carry OPF labels.
 
+`labels.opf.time_limit_s` is a wall-clock limit, so a solve that ends with
+`Maximum_WallTime_Exceeded` depends on the machine and its load. Such scenarios carry that status
+and no label. The iteration limit (3000 Ipopt iterations, not configurable) is the deterministic
+bound.
+
 ## Enabling it
 
 Install the `opf` extra (CasADi, which bundles Ipopt):

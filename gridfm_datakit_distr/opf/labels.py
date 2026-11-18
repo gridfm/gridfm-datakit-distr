@@ -70,7 +70,7 @@ class OPFRow:
     costs: Costs | None = None
     """The scenario's cost coefficients (source first)."""
     q_max_var: FloatArray | None = None
-    """The largest |q| each PV unit could dispatch (var, D-067)."""
+    """The largest |q| each PV unit could dispatch (var)."""
     active: tuple[int, int, int] | None = None
     """Limits active at the solution: voltages at their lower and upper bounds, transformers at
     their rating (within :data:`ACTIVE_REL` of the bound)."""

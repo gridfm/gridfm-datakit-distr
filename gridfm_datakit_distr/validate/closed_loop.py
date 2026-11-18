@@ -1,4 +1,4 @@
-"""Power flow from the stored tables alone (PLAN §8.15) and the baselines built on it (§8.11).
+"""Power flow from the stored tables alone and the baselines built on it.
 
 The network is ``A V = Y_s E + I(V)`` with ``A = Y_state + Y_s`` (the source admittance embedded at
 its nodes), ``E = source_v_pu · e`` and ``I(V)`` the currents the constant-power loads and DER
