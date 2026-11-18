@@ -21,7 +21,9 @@ der:
 scenarios:
   n_scenarios_per_variant: 200
 labels:
-  opf: {enabled: true}
+  opf:
+    enabled: true
+    time_limit_s: 14400 # above any solve here: the wall-clock limit must not decide a label
 settings:
   seed: 2026
   chunk_size: 100
