@@ -36,6 +36,12 @@ The OPF covers networks of lines, switches, transformers, capacitors and reactor
 
 `opf_class` says what the OPF had to do: `A` when the uncontrolled power flow already keeps the voltages within the limits and the transformers within their ratings (with `economic` the OPF then keeps the PV at its available power and moves the reactive power to reduce the losses), `B` when it does not, `C` without a power-flow label.
 
+A class-A scenario has a feasible point by construction (its power flow), yet a few end unsolved:
+in the campaign on the default configuration, 9 of about 6 900 class-A scenarios ended infeasible, at
+an acceptable level or at the iteration limit, all on hard MV networks (EDP rural, IEEE 123, IEEE
+8500). They are recorded with their status and carry no OPF label; the stiff admittance of the
+voltage source is the main cause found so far.
+
 ## Reproducibility
 
 The same config, seed and library versions give the same dataset bit for bit on one machine,
