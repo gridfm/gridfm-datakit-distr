@@ -146,9 +146,13 @@ def plan_tasks(units: Sequence[Unit], jobs: Sequence[Job], width: int) -> list[T
     return tasks
 
 
-def versions() -> dict[str, str]:
-    """Generator and engine versions (they are part of a dataset's identity)."""
-    return {"generator": __version__, "opendss": DssContext.new().engine_version()}
+def versions(config: GenerationConfig) -> dict[str, str]:
+    """Generator and engine versions (they are part of a dataset's identity); CasADi's, read from
+    the package metadata and never imported here, only with OPF labels."""
+    found = {"generator": __version__, "opendss": DssContext.new().engine_version()}
+    if config.labels.opf.enabled:
+        found["casadi"] = version("casadi")
+    return found
 
 
 # -------------------------------------------------------------------------------------- driver
@@ -196,7 +200,7 @@ def generate(
 def _open(config: GenerationConfig, out: Path, jobs: Sequence[Job]) -> Manifest:
     """The manifest of a new dataset or of the one to resume in ``out``."""
     resolved = config.model_dump(mode="json")
-    current = versions()
+    current = versions(config)
     if (out / MANIFEST).exists():
         manifest = Manifest.load(out)
         same = manifest.config_hash == config_hash(resolved) and manifest.versions == current

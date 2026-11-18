@@ -132,6 +132,19 @@ def test_zero_penetration_reproduces_the_base_case(
     assert [e.name for e in result.model.elements] == [e.name for e in prepared.model.elements]
 
 
+def test_a_drawn_reactive_limit_is_used(targets: VariantTargets) -> None:
+    spec = pv(
+        reactive_fraction={"distribution": "uniform", "low": 0.3, "high": 0.5},
+        reactive_threshold={"distribution": "uniform", "low": 0.0, "high": 0.1},
+    )
+    p = sample_perturbation(UNPERTURBED, targets, SEED, 0, 0, der=spec)
+    units = pv_units(p, spec)  # does not raise
+    assert len(units) == 6
+    assert [u.reactive_fraction for u in units] == [p.pv_reactive_fraction[u.load] for u in units]
+    assert [u.reactive_threshold for u in units] == [p.pv_reactive_threshold[u.load] for u in units]
+    assert len({u.reactive_fraction for u in units}) > 1  # drawn per unit, not the default 0.44
+
+
 # ------------------------------------------------------------------- outputs
 
 

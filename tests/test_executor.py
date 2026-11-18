@@ -265,6 +265,25 @@ def test_another_config_needs_overwrite(tmp_path: Path) -> None:
     assert (stray / "notes.txt").read_text() == "mine"
 
 
+def test_the_identity_holds_casadi_only_with_opf_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another CasADi refuses a resume, like another OpenDSS; without OPF labels it is not read."""
+    cat = catalog(tmp_path)
+    on = GenerationConfig.model_validate({**CONFIG, "labels": {"opf": {"enabled": True}}})
+    monkeypatch.setattr(executor, "version", lambda name: "1.0")
+    assert executor.versions(on)["casadi"] == "1.0"
+    monkeypatch.setattr(executor, "version", lambda name: 1 / 0)  # any read would fail
+    assert "casadi" not in executor.versions(config())
+    out, jobs = tmp_path / "out", jobs_of(on, cat)
+    monkeypatch.setattr(executor, "version", lambda name: "1.0")
+    executor._open(on, out, jobs)
+    executor._open(on, out, jobs)  # the same versions resume
+    monkeypatch.setattr(executor, "version", lambda name: "2.0")
+    with pytest.raises(GenerationError, match="another config or version"):
+        executor._open(on, out, jobs)
+
+
 def test_failed_units_are_recorded_without_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

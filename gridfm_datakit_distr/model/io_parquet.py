@@ -171,7 +171,8 @@ def _yprims(table: pa.Table, sizes: Mapping[int, int]) -> dict[int, ComplexMatri
 def from_tables(
     tables: Mapping[str, pa.Table], variant_id: str, state_id: str | None = None
 ) -> ElectricalModel:
-    """Rebuild the model of ``variant_id`` (and ``state_id`` for tap-dependent Yprims)."""
+    """Rebuild the model of ``variant_id`` (and ``state_id`` for tap-dependent Yprims; a state
+    without stored rows is an error unless all its tap-dependent Yprims can be zero)."""
     for name, table in tables.items():
         schema.check_schema(table, schema.TABLES[name], name)
     nodes_t = _select(tables[NODES], "variant_id", variant_id).sort_by("node_idx")
@@ -210,6 +211,11 @@ def from_tables(
         state = _select(tables[YPRIM_STATE], "state_id", state_id)
         state = _select(state, "variant_id", variant_id)
         yprims.update(_yprims(state, sizes))
+        if not state.num_rows and any(
+            r["element_class"] == "transformer" and r["is_tap_dependent"] and r["enabled"]
+            for r in rows
+        ):  # a transformer's Yprim is never all zero: the state is not in the tables
+            raise ValueError(f"{variant_id}: no stored Yprim for state {state_id!r}")
 
     def yprim_of(r: dict[str, Any]) -> ComplexMatrix | None:
         k = r["element_idx"]

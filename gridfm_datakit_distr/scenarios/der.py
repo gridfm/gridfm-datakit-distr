@@ -54,7 +54,7 @@ class PVUnit:
     s_rated_va: float
     power_factor: float
     reactive_fraction: float
-    """Largest |q| in the OPF, as a fraction of ``s_rated_va`` (D-067)."""
+    """Largest |q| in the OPF, as a fraction of ``s_rated_va``."""
     reactive_threshold: float
     """No reactive power in the OPF below this available power (fraction of ``s_rated_va``)."""
 
@@ -72,6 +72,12 @@ def _fixed(spec: ValueSpec) -> float:
     return spec.value
 
 
+def _per_unit(drawn: dict[str, float], load: str, spec: ValueSpec) -> float:
+    """The unit's drawn value, else the value of a fixed spec (looked up first: a drawn spec has
+    no fixed value)."""
+    return drawn[load] if load in drawn else _fixed(spec)
+
+
 def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
     """The PV units a variant's perturbation placed, ordered by customer."""
     return tuple(
@@ -81,8 +87,8 @@ def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
             kwp=kwp,
             s_rated_va=spec.inverter_kva_per_kwp * kwp * 1e3,
             power_factor=p.pv_power_factor.get(load, 1.0),
-            reactive_fraction=p.pv_reactive_fraction.get(load, _fixed(spec.reactive_fraction)),
-            reactive_threshold=p.pv_reactive_threshold.get(load, _fixed(spec.reactive_threshold)),
+            reactive_fraction=_per_unit(p.pv_reactive_fraction, load, spec.reactive_fraction),
+            reactive_threshold=_per_unit(p.pv_reactive_threshold, load, spec.reactive_threshold),
         )
         for load, kwp in sorted(p.pv_kwp.items())
     )
