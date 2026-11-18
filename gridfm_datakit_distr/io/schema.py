@@ -12,7 +12,7 @@ import pyarrow as pa
 
 from gridfm_datakit_distr.views import datakit_columns as datakit
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 
 def _required(name: str, type_: pa.DataType) -> pa.Field[Any]:

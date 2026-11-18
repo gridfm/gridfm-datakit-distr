@@ -32,6 +32,15 @@ varies the taps across scenarios, and every state is one the controls hold. The 
 flow at that fixed state, which the dataset stores (`states/`). With `as_is` the taps and capacitor
 states stay as compiled.
 
+Settling starts from the variant's initial taps, and OpenDSS moves a control only after a converged
+solve. When the scenario's load cannot be carried at those taps, settling fails twice (the second
+time with more iterations) and the scenario is reached by a load ramp instead: every load and PV
+setpoint is raised from a tenth of its value to its value in ten steps with the controls active, the
+taps carried from step to step, and then the controls settle, jitter and freeze as above. Such
+scenarios have `origin` `static_settle+ramp` (or `static_settle+ramp+jitter`). If the ramp fails
+too, the scenario is `not_converged` and its `pf_message` says how far the ramp got. A scenario that
+settles directly never enters the ramp.
+
 **Labels.** A scenario counts as converged only if every load and generator delivers its
 setpoint (within 1e-6 relative); otherwise it is `off_setpoint`. Scenarios that do not converge
 keep their metadata row (`pf_status`, `pf_message`) and get no results. A sample of scenarios

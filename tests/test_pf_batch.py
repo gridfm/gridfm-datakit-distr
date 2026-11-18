@@ -157,6 +157,47 @@ def test_each_scenario_records_its_own_origin(
     assert (settled.origin, again.origin) == ("static_settle", "static_settle+jitter")
 
 
+def test_a_failed_settling_falls_back_to_a_load_ramp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When both settling attempts fail at the initial taps, the scenario is reached by raising its
+    setpoints in steps with the controls active, then settled as usual; its origin says so."""
+    import gridfm_datakit_distr.solve.pf_batch as pf_batch
+
+    r = runner(tmp_path, CONTROLLED, config())
+    direct = r.run(0)
+    real, calls = pf_batch.settle, []
+
+    def failing_twice(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        state, status = real(*args, **kwargs)
+        return (state, SolveStatus(False, 99)) if len(calls) <= 2 else (state, status)
+
+    monkeypatch.setattr(pf_batch, "settle", failing_twice)
+    ramped = r.run(0)
+    assert len(calls) == 3  # two settling attempts, then the one after the ramp
+    assert ramped.pf_status == "converged"
+    assert ramped.origin in ("static_settle+ramp", "static_settle+ramp+jitter")
+    assert ramped.message is None
+    np.testing.assert_allclose(ramped.load_p_w, direct.load_p_w)  # the drawn setpoints
+
+
+def test_a_failed_ramp_is_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If settling still fails after the ramp, the scenario fails as before, and its message says
+    the ramp was tried."""
+    import gridfm_datakit_distr.solve.pf_batch as pf_batch
+
+    r = runner(tmp_path, CONTROLLED, config())
+    real = pf_batch.settle
+    monkeypatch.setattr(
+        pf_batch, "settle", lambda *a, **k: (real(*a, **k)[0], SolveStatus(False, 99))
+    )
+    failed = r.run(0)
+    assert (failed.pf_status, failed.state_id, failed.origin) == ("not_converged", None, None)
+    assert failed.message is not None
+    assert "load ramp" in failed.message
+
+
 def test_an_off_setpoint_scenario_has_no_results(tmp_path: Path) -> None:
     narrow = config(
         normalisation={"loads": {"vminpu": 0.995, "vmaxpu": 1.5}},

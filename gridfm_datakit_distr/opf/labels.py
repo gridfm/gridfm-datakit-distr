@@ -49,6 +49,10 @@ from gridfm_datakit_distr.solve.tables import concat_cast
 
 ACTIVE_REL = 1e-6
 """A limit is counted active when the solution is within this relative distance of it."""
+NO_FREE_VARIABLE = "no_free_variable"
+"""Status of a class-B scenario whose PV units are all fixed: none placed, or none with available
+power or a reactive range. Not solved: nothing can move to remove the violation."""
+NO_FREE_MESSAGE = "PV units all fixed (none, or no power or reactive range): nothing can move"
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -112,6 +116,10 @@ class OPFLabeller:
             return OPFRow(o.scenario_id, "no_pf_label", opf_class, costs=costs)
         p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else np.zeros(0)
         q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
+        if opf_class == "B" and not np.any((p_avail > 0) | (q_max > 0)):
+            # No free variable: the NLP is the power flow's square system, which Ipopt solves while
+            # ignoring the bounds (`Feasible_Point_Found`); the violation stands by construction.
+            return OPFRow(o.scenario_id, NO_FREE_VARIABLE, opf_class, NO_FREE_MESSAGE, costs=costs)
         try:
             problem = self._problem(str(o.state_id))
 

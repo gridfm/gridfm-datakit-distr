@@ -36,6 +36,7 @@ from gridfm_datakit_distr.model.state import NetworkState, Origin
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PrepareOptions, prepare_network
 from gridfm_datakit_distr.scenarios.controls import (
+    MAX_CONTROL_ITER,
     StateRegistry,
     apply_state,
     has_controls,
@@ -59,6 +60,8 @@ from gridfm_datakit_distr.variants.generate import VariantResult
 PFStatus = Literal["converged", "off_setpoint", "not_converged", "error"]
 RETRY_FACTOR = 5
 MAX_CACHED_STATES = 64
+RAMP_STEPS = 10
+"""Load-ramp fallback (``VariantRunner._ramp``): setpoints raised in this many equal steps."""
 
 
 def prepare_options(config: GenerationConfig) -> PrepareOptions:
@@ -156,6 +159,10 @@ class VariantRunner:
         self._to_model = np.array([order[n.opendss_node.lower()] for n in self.model.nodes])
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
+        self._draws: _Draws | None = None
+        """The current scenario's draws (the load-ramp fallback scales them)."""
+        self._note: str | None = None
+        """Why the current scenario's controls did not settle, when the fallback was tried."""
 
     def run(self, s: int) -> ScenarioOutcome:
         """Scenario ``s`` of the variant."""
@@ -169,9 +176,12 @@ class VariantRunner:
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
             draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src)
             self._set(draws)
+            self._draws, self._note = draws, None
             state, status = self._controls(s)
             if status is not None and not status.converged:
-                return self._outcome(s, draws, start, "not_converged", None, status.iterations)
+                return self._outcome(
+                    s, draws, start, "not_converged", None, status.iterations, note=self._note
+                )
             status = self._solve()
             self._at_state(state.state_id)  # the state's Yprims, rebuilt by this solve
             state_id = self.registry.add(state)  # once it reaches the dataset
@@ -269,7 +279,45 @@ class VariantRunner:
                 self.ctx.command("Set Mode=Snap")
                 rng = scenario_rng(seed, self.net, self.k, s, ScenarioStream.TAP_JITTER)
                 state, status = settle(*args, jitter_steps=controls.tap_jitter_steps, rng=rng)
+        if status is not None and not status.converged:
+            return self._ramp(s)
         return state, status
+
+    def _ramp(self, s: int) -> tuple[NetworkState, SolveStatus | None]:
+        """Fallback when settling fails at the initial taps: OpenDSS moves the controls only after a
+        converged solve, so a load the initial taps cannot carry never lets them move. The
+        scenario's setpoints are raised from the initial state in :data:`RAMP_STEPS` equal steps
+        with the controls active, the taps carried from step to step; then the controls settle
+        as usual from the taps reached. Only the scenario's own draws enter: order-independent.
+        A failure sets ``self._note`` (the scenario's ``pf_message``)."""
+        controls, seed, ctx = self.config.controls, self.config.settings.seed, self.ctx
+        draws = self._draws
+        assert draws is not None
+        apply_state(ctx, self.initial_state)
+        ctx.command("Set Mode=Snap")
+        ctx.command(f"Set ControlMode=STATIC MaxControlIter={MAX_CONTROL_ITER}")
+        for step in range(1, RAMP_STEPS + 1):
+            self._set(_scaled(draws, step / RAMP_STEPS))
+            step_status = ctx.solve()
+            if not step_status.converged:
+                ctx.command("Set ControlMode=OFF")
+                self._set(draws)
+                self._note = (
+                    "settling failed at the initial taps; load ramp stopped at "
+                    f"{step}/{RAMP_STEPS} of the setpoints"
+                )
+                return self.initial_state, step_status
+        rng = scenario_rng(seed, self.net, self.k, s, ScenarioStream.TAP_JITTER)
+        args = (ctx, controls.mode, self.variant_id)
+        state, status = settle(*args, jitter_steps=controls.tap_jitter_steps, rng=rng)
+        if status is not None and not status.converged:
+            self._note = "settling failed at the initial taps; after the load ramp too"
+        ramped: Origin = (
+            "static_settle+ramp+jitter"
+            if state.origin == "static_settle+jitter"
+            else "static_settle+ramp"
+        )
+        return replace(state, origin=ramped), status
 
     def _solve(self) -> SolveStatus:
         self.ctx.command("Set Mode=Snap")
@@ -299,8 +347,9 @@ class VariantRunner:
         t_solve_s: float | None = None,
         t_extract_s: float = 0.0,
         error: Exception | None = None,
+        note: str | None = None,
     ) -> ScenarioOutcome:
-        message = None
+        message = note
         if error is not None:
             first = str(error).splitlines()[0] if str(error) else ""
             message = f"{type(error).__name__}: {first}"
@@ -340,6 +389,14 @@ class _Draws:
     pv: PVDraw | None
     time_s: int | None
     v_src: float
+
+
+def _scaled(draws: _Draws, factor: float) -> _Draws:
+    """``draws`` with every load and PV setpoint times ``factor`` (source voltage unchanged)."""
+    pv = draws.pv
+    if pv is not None:
+        pv = replace(pv, p_w=factor * pv.p_w, q_var=factor * pv.q_var)
+    return replace(draws, p_w=factor * draws.p_w, q_var=factor * draws.q_var, pv=pv)
 
 
 class _Iterations:

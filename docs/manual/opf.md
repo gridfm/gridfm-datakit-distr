@@ -31,6 +31,7 @@ The OPF covers networks of lines, switches, transformers, capacitors and reactor
 | another Ipopt status | e.g. `Infeasible_Problem_Detected` (no dispatch meets the limits: a violation the PV units cannot remove), `Maximum_WallTime_Exceeded` (`labels.opf.time_limit_s`), `Solved_To_Acceptable_Level`: not a label |
 | `not_supported` | the network is outside the scope above |
 | `no_pf_label` | the scenario's power flow gave no label (not converged, or off its set points); not solved |
+| `no_free_variable` | class B with every PV unit fixed (none placed, or no available power and no reactive range): nothing can move to remove the violation; not solved. A class-A scenario in that case is solved as before (its label is the power flow) |
 | `error` | building, solving or verifying raised; the message is in `opf_message` |
 
 `opf_class` says what the OPF had to do: `A` when the uncontrolled power flow already keeps the voltages within the limits and the transformers within their ratings (with `economic` the OPF then keeps the PV at its available power and moves the reactive power to reduce the losses), `B` when it does not, `C` without a power-flow label.

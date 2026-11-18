@@ -68,7 +68,12 @@ def test_generate_writes_verified_opf_labels(
     # IEEE 13: transformers, regulators at the scenario's taps, delta and phase-to-phase loads
     rows, ids = rows_of(out, "ieee13")
     assert len(rows) == len(ids) == 6
-    assert {r["opf_status"] for r in rows} <= {SOLVED, "Infeasible_Problem_Detected"}
+    # no_free_variable: a class-B scenario at night, every PV unit without available power
+    assert {r["opf_status"] for r in rows} <= {
+        SOLVED,
+        "Infeasible_Problem_Detected",
+        "no_free_variable",
+    }
     assert all(r["verified"] for r in rows if r["opf_status"] == SOLVED)
     assert sum(r["opf_status"] == SOLVED for r in rows) >= 4
     nodes = DatasetWriter(out).read("scenarios/node_results", columns=["scenario_id"])

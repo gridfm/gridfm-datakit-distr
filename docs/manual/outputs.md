@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.4.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.5.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (a future multiphase GENCO in gridfm-graphkit, baselines, benchmark users).
 
@@ -268,14 +268,14 @@ Network admittance matrix of the state, at node level (node indices of the varia
 | `scenario_id` | int64 | `(network_idx << 47) \| (variant_idx << 31) \| s` |
 | `network_id`, `variant_id` | string | |
 | `state_id` | string, nullable | network state of the label solve; null if the controls did not settle or the scenario failed before |
-| `origin` | string, nullable | how this scenario's controls reached its state: `static_settle` (settled on the scenario's setpoints), `static_settle+jitter` (the tap jitter moved the settled taps and the controls settled again, to another state), `as_is` (controls off, taps and capacitors as compiled); null when `state_id` is null. Scenarios sharing a state can have different origins |
+| `origin` | string, nullable | how this scenario's controls reached its state: `static_settle` (settled on the scenario's setpoints), `static_settle+jitter` (the tap jitter moved the settled taps and the controls settled again, to another state), `static_settle+ramp` and `static_settle+ramp+jitter` (the same, reached by a load ramp because settling at the variant's initial taps did not converge: [scenarios](scenarios.md)), `as_is` (controls off, taps and capacitors as compiled); null when `state_id` is null. Scenarios sharing a state can have different origins |
 | `seed` | uint64 | 64-bit fingerprint of the scenario's seed sequence (keyed by `settings.seed`, the network's id, the variant and scenario indices) |
 | `profile_time_s` | int64, nullable | time of the load profile drawn, seconds since the start of the source's profile (no source is dated); null for synthetic profiles or one time per customer |
 | `profile_source` | string | provider name |
 | `der_penetration` | float32/64 | share of customers with PV in the variant |
 | `source_v_pu` | float32/64, nullable | sampled source voltage magnitude |
 | `pf_status` | string | `converged`, `off_setpoint` (converged, but a load or generator did not deliver its setpoint), `not_converged`, `error` |
-| `pf_message` | string, nullable | exception type and message when `pf_status = error` |
+| `pf_message` | string, nullable | exception type and message when `pf_status = error`; with `not_converged`, when the load-ramp fallback was tried, how far it got |
 | `n_off_setpoint` | int32 | loads and generators whose delivered power differs from the setpoint by more than 1e-6 relative |
 | `pf_iterations` | int16 | |
 | `residual_rel` | float32/64, nullable | power-balance residual of the stored solution, on the sampled scenarios only |
@@ -410,7 +410,7 @@ One row per scenario of the dataset.
 | Column | Type | Description |
 |---|---|---|
 | `scenario_id` | int64 | |
-| `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `error` |
+| `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `no_free_variable` (class B with every PV unit fixed: nothing can move; not solved); `error` |
 | `opf_message` | string, nullable | the reason with `not_supported`, the exception with `error` |
 | `opf_class` | string | `A`: the uncontrolled power flow keeps every phase-to-neutral voltage within the OPF's bounds and every rated transformer within its rating; `B`: it does not; `C`: no power-flow label |
 | `cost_preset` | string | `economic` (source 1 per W, PV units 0) or `sampled` (drawn per scenario, `labels.opf.sampled`) |

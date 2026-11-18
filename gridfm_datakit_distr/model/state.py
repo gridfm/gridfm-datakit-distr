@@ -16,7 +16,13 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-Origin = Literal["static_settle", "static_settle+jitter", "as_is"]
+Origin = Literal[
+    "static_settle",
+    "static_settle+jitter",
+    "static_settle+ramp",
+    "static_settle+ramp+jitter",
+    "as_is",
+]
 TAP_DECIMALS = 9
 
 

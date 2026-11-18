@@ -191,6 +191,21 @@ def test_the_opf_tables_do_not_depend_on_the_process_count(tmp_path: Path) -> No
     same_dataset(one, four)  # every table bit for bit, but the timing columns
 
 
+def test_a_class_b_scenario_with_nothing_to_dispatch_is_not_solved(tmp_path: Path) -> None:
+    """Without a PV unit nothing can remove a violation: a class-B scenario gets its own status,
+    and no solve (Ipopt would solve the square power-flow equations and ignore the bounds)."""
+    out = tmp_path / "out"
+    data = config(**{
+        "der.pv.penetration": 0.0, "networks.include": ["t/lv"],
+        "networks.voltage_limits": {"vmin_pu": 0.80, "vmax_pu": 0.95},  # every scenario above
+    })  # fmt: skip
+    generate(data, out, catalog=catalog(tmp_path), root=tmp_path)
+    opf = read(out, "opf/opf_meta").to_pylist()
+    assert {(r["opf_class"], r["opf_status"]) for r in opf} == {("B", "no_free_variable")}
+    assert all(r["iterations"] is None and r["verified"] is None for r in opf)
+    assert all("nothing can move" in r["opf_message"] for r in opf)
+
+
 def test_without_violations_every_scenario_is_class_a_at_full_output(tmp_path: Path) -> None:
     out = tmp_path / "out"
     data = config(**{
