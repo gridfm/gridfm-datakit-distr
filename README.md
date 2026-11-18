@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="docs/figs/gridfm-datakit-distr-logo.png" alt="gridfm-datakit-distr logo" width="40%"/>
+  <br/>
+</p>
+
 <p align="center" style="font-size: 25px;">
     <b>gridfm-datakit-distr</b>
 </p>
