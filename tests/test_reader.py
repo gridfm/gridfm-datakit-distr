@@ -43,10 +43,9 @@ def test_the_closed_loop_reproduces_the_stored_voltages(dataset: Path) -> None:
     meta = reader.meta.to_pylist()
     ids = [r["scenario_id"] for r in meta if r["pf_status"] == "converged"]
     assert len(ids) >= len(meta) // 2
-    tol = 1e-9 if dataset.parent.name.startswith("full") else 1e-6  # float32 setpoints
     for sc in reader.scenarios(ids):
         result = closed_loop(sc)
-        assert result.max_dv_pu <= tol, (sc.variant.variant_id, result)
+        assert result.max_dv_pu <= 1e-6, (sc.variant.variant_id, result)
         assert sc.v is not None
         base = sc.variant.base_v
         err_lin = np.max(np.abs(linearised(sc) - sc.v) / base)

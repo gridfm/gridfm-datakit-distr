@@ -195,7 +195,12 @@ of its first terminal; its second terminal is ground (a network whose Vsource is
 there, or with more than one, fails generation). With these and `states/ybus`, the setpoints of
 `scenarios/loads` and `scenarios/der` determine the voltages of `scenarios/node_results`: the
 reference loader `gridfm_datakit_distr.io.reader` and the power flow of
-`gridfm_datakit_distr.validate.closed_loop` reproduce them without OpenDSS.
+`gridfm_datakit_distr.validate.closed_loop` reproduce them without OpenDSS. The tests require
+agreement within 1e-6 pu at either float precision. Measured on ten catalog networks: 2.5e-8 to
+9.0e-8 pu with `mixed`; with `full`, below 4e-10 pu on six of them and 3.6e-9 to 1.7e-8 pu on
+IEEE 13, 37, 123 and EDP industrial. On those four the limit is the stored OpenDSS solution, which
+satisfies the stored equations less exactly than the re-solved one (near-ideal switches on IEEE 13
+and 123, a zone tied to ground only by cable capacitance on IEEE 37).
 
 | Column | Type | Description |
 |---|---|---|
