@@ -7,7 +7,7 @@ package.
 ## From the repository
 
 ```bash
-pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.1.0"
+pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
 gridfm_datakit_distr version
 ```
 

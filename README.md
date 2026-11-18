@@ -3,7 +3,7 @@
 </p>
 
 ![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.12-blue)
-![Data schema](https://img.shields.io/badge/data%20schema-0.4.0-blue)
+![Data schema](https://img.shields.io/badge/data%20schema-0.5.0-blue)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 ---
@@ -11,10 +11,10 @@
 # gridfm-datakit-distr
 
 **gridfm-datakit-distr** is a Python library for generating machine-learning datasets of power
-flows in **three-phase unbalanced distribution networks**: MV and LV, including European four-wire
-LV feeders with an explicit neutral. It is the distribution counterpart of
-[gridfm-datakit](https://github.com/gridfm/gridfm-datakit) and is meant for multiphase neural
-solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
+flows and optimal power flows in **three-phase unbalanced distribution networks**: MV and LV,
+including European four-wire LV feeders with an explicit neutral. It is the distribution
+counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit) and is meant for
+multiphase neural solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
 
 > Developed by Carmine Delle Femine ([@cardef](https://github.com/cardef)) at
 > [Vicomtech](https://www.vicomtech.org). Copyright 2026 Vicomtech, released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
@@ -37,6 +37,9 @@ solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
 * **Physics-checked labels**: a power flow counts as converged only if every load and generator
   delivers its setpoint; a sample gets the full Kirchhoff residual check; failures are recorded,
   never dropped.
+* **OPF labels**: optionally, the minimum-cost unbalanced AC OPF of every scenario, with the PV
+  units as controls, solved with Ipopt (through CasADi) on the stored admittances; each dispatch
+  is verified in OpenDSS.
 * **Compact, reproducible outputs**: Parquet tables per variant, network state and scenario, with
   Croissant metadata. The same config and seed give the same bytes, whatever the number of
   processes. 10⁶ snapshots of CSIRO LV feeders: about 0.3 h on 32 cores and 60 GB
@@ -53,13 +56,19 @@ solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
 2. Install gridfm-datakit-distr (the repository is private for now: you need access to it)
 
     ```bash
-    pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.1.0"
+    pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     ```
 
-3. Optional: Julia with PowerModelsDistribution, for the OPF labels of the next version
+3. Optional: OPF labels (CasADi with its bundled Ipopt)
 
     ```bash
-    pip install "gridfm-datakit-distr[julia] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.1.0"
+    pip install "gridfm-datakit-distr[opf] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
+    ```
+
+4. Optional: Julia with PowerModelsDistribution, used only to cross-check the OPF
+
+    ```bash
+    pip install "gridfm-datakit-distr[julia] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     gridfm_datakit_distr setup-julia
     ```
 
@@ -101,6 +110,9 @@ gridfm_datakit_distr generate scripts/config/ieee13_small.yaml --data-dir data
 
 Running the same command again resumes an interrupted dataset.
 
+With the `opf` extra, `scripts/config/opf_small.yaml` also labels every scenario with its optimal
+power flow: see [OPF labels](docs/manual/opf.md).
+
 ### Validate Networks
 
 Run the conformance suite on catalog networks:
@@ -133,7 +145,8 @@ The [configuration reference](docs/manual/config.md) lists every key with its de
 configurations are in `scripts/config`, e.g. `default.yaml`:
 
 ```yaml
-# A commented starting point; every key and its default is in docs/manual/config.md.
+# A commented starting point; every value set here is the default (a test checks it);
+# every key and its default is in docs/manual/config.md.
 dataset_name: my_dataset # directory under settings.data_dir
 
 networks:
@@ -147,12 +160,12 @@ variants:
     neutral_impedance_scale: 1.0 # factor on the neutral impedances of four-wire lines
     grounding_resistance_ohm: null # null keeps the source's earthing resistances
   phase_reallocation:
-    enabled: true
+    enabled: true # moves a share of single-phase customers to another phase
     fraction: 0.2 # share of single-phase customers moved to another phase
 
 der:
   pv:
-    penetration: {distribution: uniform, low: 0.0, high: 0.4} # share of customers with PV, per variant
+    penetration: {distribution: uniform, low: 0.0, high: 0.8} # share of customers with PV, per variant
     kwp: {distribution: uniform, low: 2.0, high: 6.0} # peak power of each system (kW)
     power_factor: 1.0
 
@@ -203,4 +216,6 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - **scenarios/**: per scenario, the metadata and status, the node voltages, the load and DER
   setpoints (and, if asked, every element's current).
 - **views/kron/**: if asked, the network without its neutral, re-solved per scenario.
+- **opf/**: with `labels.opf.enabled`, per scenario the OPF status, the PV dispatch and the node
+  voltages.
 - **stats/**: the statistics written by `stats`.
