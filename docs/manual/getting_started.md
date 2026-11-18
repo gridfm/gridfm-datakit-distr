@@ -242,7 +242,9 @@ reader = DatasetReader(DATASET)
 (scenario,) = reader.scenarios([sid])
 base = scenario.variant.base_v
 loop = closed_loop(scenario)
-print(f"fixed point in {loop.iterations} iterations: {loop.max_dv_pu:.1e} pu from the stored voltages")
+print(
+    f"fixed point in {loop.iterations} iterations: {loop.max_dv_pu:.1e} pu from the stored voltages"
+)
 for name, baseline in (("no load", no_load), ("linearised", linearised)):
     print(f"{name}: {(np.abs(baseline(scenario) - v) / base).max():.1e} pu at most")
 assert loop.max_dv_pu < 1e-6  # float32 setpoints (settings.float_precision: mixed)
