@@ -1,9 +1,9 @@
 """OPF labels of a variant's scenarios, right after each scenario's power flow.
 
 An :class:`OPFLabeller` serves one :class:`VariantRunner`. For a scenario whose power flow gave a
-label it builds the :class:`OPFProblem` of the scenario's network state (once per state), solves it
-from a flat start and, if solved, verifies the dispatch in OpenDSS in the runner's context, which
-still holds the scenario. Every scenario gets a row (outputs.md §8):
+label it builds the :class:`OPFProblem` of the scenario's network state (kept for the last few
+states), solves it from a flat start and, if solved, verifies the dispatch in OpenDSS in the
+runner's context, which still holds the scenario. Every scenario gets a row (outputs.md §8):
 
 - the Ipopt status of the solve (only ``Solve_Succeeded`` is a label);
 - ``not_supported`` with the reason, for a network outside the OPF's scope (opf.md);
@@ -53,6 +53,9 @@ NO_FREE_VARIABLE = "no_free_variable"
 """Status of a class-B scenario whose PV units are all fixed: none placed, or none with available
 power or a reactive range. Not solved: nothing can move to remove the violation."""
 NO_FREE_MESSAGE = "PV units all fixed (none, or no power or reactive range): nothing can move"
+MAX_CACHED_PROBLEMS = 4
+"""OPF problems kept, those of the most recent states (about 6.5 MiB each on IEEE 13): with
+regulators nearly every scenario meets a new state."""
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -203,6 +206,8 @@ class OPFLabeller:
                 u.generator for u in units
             ):
                 raise ValueError("the OPF's loads or PV units differ from the scenario's")
+            if len(self._problems) >= MAX_CACHED_PROBLEMS:
+                self._problems.pop(next(iter(self._problems)))  # the oldest
             self._problems[state_id] = problem
         return self._problems[state_id]
 

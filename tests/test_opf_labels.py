@@ -282,3 +282,37 @@ def test_controls_hold_is_reported_on_a_regulated_network(tmp_path: Path) -> Non
     assert solved
     assert all(r["verified"] for r in solved)
     assert all(isinstance(r["controls_hold"], bool) for r in solved)
+
+
+def test_the_problem_cache_stays_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A regulated network meets a new state in most scenarios: the labeller keeps only the most
+    recent states' problems, and a rebuilt problem gives the same labels."""
+    from gridfm_datakit_distr.opf import labels
+    from gridfm_datakit_distr.solve import executor
+    from tests.test_executor import CONFIG as EXECUTOR_CONFIG
+    from tests.test_executor import catalog as executor_catalog
+
+    data = copy.deepcopy(EXECUTOR_CONFIG)
+    data["labels"] = {"opf": {"enabled": True}}
+    data["networks"] = {"include": ["t/reg"]}
+    data["variants"]["n_variants"] = 1
+    cfg = GenerationConfig.model_validate(data)
+    cat = executor_catalog(tmp_path)
+    generate(cfg, tmp_path / "a", catalog=cat, root=tmp_path)
+    sizes: list[int] = []
+    real = labels.OPFLabeller._problem
+
+    def recording(self: Any, state_id: str) -> Any:
+        problem = real(self, state_id)
+        sizes.append(len(self._problems))
+        return problem
+
+    monkeypatch.setattr(executor, "_SLOTS", {})  # a new labeller, not the first run's
+    monkeypatch.setattr(labels, "MAX_CACHED_PROBLEMS", 1, raising=False)
+    monkeypatch.setattr(labels.OPFLabeller, "_problem", recording)
+    generate(cfg, tmp_path / "b", catalog=cat, root=tmp_path)
+    states = read(tmp_path / "b", "scenarios/scenario_meta").column("state_id").to_pylist()
+    assert len(set(states) - {None}) > 1  # the cap is exercised
+    assert sizes
+    assert max(sizes) == 1
+    same_dataset(tmp_path / "a", tmp_path / "b")
