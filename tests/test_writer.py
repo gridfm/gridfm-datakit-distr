@@ -103,6 +103,26 @@ def test_writes_are_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         writer.write_part("states/ybus", "x", pa.table({"a": [1]}), schema.YBUS_STATE)
 
 
+def test_encodings(tmp_path: Path) -> None:
+    """Dictionaries only for strings (most floats are distinct), delta for the integer keys."""
+    table = pa.table(
+        {
+            "scenario_id": pa.array([5, 5, 6, 6], pa.int64()),
+            "node_idx": pa.array([0, 1, 0, 1], pa.int32()),
+            "v_re": [1.0, 2.0, 3.0, 4.0],
+            "bus": ["a", "b", "a", "b"],
+        }
+    )
+    DatasetWriter(tmp_path).write_table("t", table, table.schema)
+    meta = pq.ParquetFile(tmp_path / "t.parquet").metadata.row_group(0)
+    encodings = {meta.column(i).path_in_schema: meta.column(i).encodings for i in range(4)}
+    assert "DELTA_BINARY_PACKED" in encodings["scenario_id"]
+    assert "DELTA_BINARY_PACKED" in encodings["node_idx"]
+    assert "RLE_DICTIONARY" not in encodings["v_re"]
+    assert "RLE_DICTIONARY" in encodings["bus"]
+    assert pq.read_table(tmp_path / "t.parquet").equals(table)
+
+
 def test_manifest(tmp_path: Path) -> None:
     config = GenerationConfig.model_validate(CONFIG).model_dump(mode="json")
     manifest = Manifest.create(tmp_path, config, {"generator": __version__, "opendss": "x"})

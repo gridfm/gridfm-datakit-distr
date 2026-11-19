@@ -30,12 +30,34 @@ from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import atomic_write_text
 
 COMPRESSION: Literal["zstd"] = "zstd"
+COMPRESSION_LEVEL = 1
 STATE_TABLES = (
     "states/states",
     "states/yprim_state",
     "states/ybus",
     "views/kron/ybus",
 )
+
+
+def parquet_options(table_schema: pa.Schema) -> dict[str, Any]:
+    """How every table is encoded: dictionaries only for string and bool columns (most float
+    values are distinct: a dictionary only adds its pages), DELTA_BINARY_PACKED for the integer
+    keys (``scenario_id``, ``*_idx``: sorted runs), the rest plain; zstd."""
+    keys = [
+        f.name
+        for f in table_schema
+        if pa.types.is_integer(f.type) and (f.name == "scenario_id" or f.name.endswith("_idx"))
+    ]
+    return {
+        "compression": COMPRESSION,
+        "compression_level": COMPRESSION_LEVEL,
+        "use_dictionary": [
+            f.name
+            for f in table_schema
+            if pa.types.is_string(f.type) or pa.types.is_boolean(f.type)
+        ],
+        "column_encoding": dict.fromkeys(keys, "DELTA_BINARY_PACKED") or None,
+    }
 
 
 def part_key(i: int, k: int, chunk: int | None = None) -> str:
@@ -75,7 +97,7 @@ class DatasetWriter:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.tmp")
         try:
-            pq.write_table(data, tmp, compression=COMPRESSION)
+            pq.write_table(data, tmp, **parquet_options(data.schema))
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
