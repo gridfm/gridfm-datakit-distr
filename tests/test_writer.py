@@ -123,6 +123,19 @@ def test_encodings(tmp_path: Path) -> None:
     assert pq.read_table(tmp_path / "t.parquet").equals(table)
 
 
+def test_row_groups_of_sixteen_scenarios(tmp_path: Path) -> None:
+    writer = DatasetWriter(tmp_path)
+    sids = [s for s in range(40) for _ in range(3)]  # 40 scenarios of 3 rows
+    table = pa.table({"scenario_id": pa.array(sids, pa.int64()), "x": [0.5] * len(sids)})
+    writer.write_part("scenarios/t", "k", table, table.schema)
+    meta = pq.ParquetFile(tmp_path / "scenarios" / "t" / "part-k.parquet").metadata
+    assert [meta.row_group(i).num_rows for i in range(meta.num_row_groups)] == [48, 48, 24]
+    writer.write_table(
+        "states/t", table.drop_columns(["scenario_id"]), pa.schema([("x", pa.float64())])
+    )
+    assert pq.ParquetFile(tmp_path / "states" / "t.parquet").metadata.num_row_groups == 1
+
+
 def test_manifest(tmp_path: Path) -> None:
     config = GenerationConfig.model_validate(CONFIG).model_dump(mode="json")
     manifest = Manifest.create(tmp_path, config, {"generator": __version__, "opendss": "x"})

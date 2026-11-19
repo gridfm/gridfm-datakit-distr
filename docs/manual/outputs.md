@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.5.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.6.0` · Status: in progress for v0.3. Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (models, baselines, benchmark users).
 
@@ -34,7 +34,7 @@ This document is the contract between the generator and its consumers (models, b
 - `float32` (with `settings.float_precision: mixed`, the default): currents, powers, setpoints.
 - `float_precision: full` → `float64` everywhere.
 
-**Files.** Apache Parquet, zstd compression, row groups ≤ 128 MB, each written to a temporary name and renamed into place. Tables are written in parts, one per work unit: variant-level tables `part-{network_idx:05d}-{variant_idx:04d}.parquet`, scenario-level tables `part-{network_idx:05d}-{variant_idx:04d}-{chunk:05d}.parquet` (`network_idx`: the network's index in the dataset, `catalog/networks`). State-level tables are written in chunk parts during generation and merged into single files when the dataset is complete (a state met by several chunks is stored once).
+**Files.** Apache Parquet, zstd compression (dictionaries only for string columns; integer keys `scenario_id`, `*_idx` delta-encoded), each written to a temporary name and renamed into place. A table with a `scenario_id` column is written in row groups of 16 scenarios each (every scenario of a part has as many rows), so a reader filtering on `scenario_id` decodes 16 scenarios, not the whole part; other tables in one row group up to 2^20 rows. Tables are written in parts, one per work unit: variant-level tables `part-{network_idx:05d}-{variant_idx:04d}.parquet`, scenario-level tables `part-{network_idx:05d}-{variant_idx:04d}-{chunk:05d}.parquet` (`network_idx`: the network's index in the dataset, `catalog/networks`). State-level tables are written in chunk parts during generation and merged into single files when the dataset is complete (a state met by several chunks is stored once).
 
 **Conductor labels.** `a`, `b`, `c` for phases, `n` for neutral; North-American split-phase secondaries use `s1`, `s2`, `n`. OpenDSS conductor numbers are kept in `opendss_node`.
 

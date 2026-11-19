@@ -31,6 +31,9 @@ from gridfm_datakit_distr.io.manifest import atomic_write_text
 
 COMPRESSION: Literal["zstd"] = "zstd"
 COMPRESSION_LEVEL = 1
+SCENARIOS_PER_ROW_GROUP = 16
+"""Row groups of a scenario-level table: the rows of this many scenarios (a reader of one scenario
+decodes one group; smaller groups cost more than 1 % in bytes on CSIRO n01_f1 and EDP rural)."""
 STATE_TABLES = (
     "states/states",
     "states/yprim_state",
@@ -58,6 +61,16 @@ def parquet_options(table_schema: pa.Schema) -> dict[str, Any]:
         ],
         "column_encoding": dict.fromkeys(keys, "DELTA_BINARY_PACKED") or None,
     }
+
+
+def row_group_size(data: pa.Table) -> int | None:
+    """Rows per row group: :data:`SCENARIOS_PER_ROW_GROUP` scenarios' for a table with
+    ``scenario_id`` (every scenario has as many rows); pyarrow's default (one group up to 2^20
+    rows) for the others."""
+    if "scenario_id" not in data.column_names or data.num_rows == 0:
+        return None
+    scenarios = len(pc.unique(data.column("scenario_id")))
+    return SCENARIOS_PER_ROW_GROUP * (data.num_rows // scenarios)
 
 
 def part_key(i: int, k: int, chunk: int | None = None) -> str:
@@ -97,7 +110,9 @@ class DatasetWriter:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f".{path.name}.tmp")
         try:
-            pq.write_table(data, tmp, **parquet_options(data.schema))
+            pq.write_table(
+                data, tmp, row_group_size=row_group_size(data), **parquet_options(data.schema)
+            )
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
