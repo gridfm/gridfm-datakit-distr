@@ -20,8 +20,8 @@ flows and optimal power flows in **three-phase unbalanced distribution networks*
 including European four-wire LV feeders with an explicit neutral. It is the distribution
 counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
 
-> Developed by Carmine Delle Femine ([@cardef](https://github.com/cardef)) at
-> [Vicomtech](https://www.vicomtech.org). Copyright 2026 Vicomtech, released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
+> Developed by the Energy and Environment department of [Vicomtech](https://www.vicomtech.org),
+> maintained by Carmine Delle Femine ([@cardef](https://github.com/cardef)). Copyright 2026 Vicomtech, released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
 
 ## Unique Features
 

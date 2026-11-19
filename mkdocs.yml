@@ -1,7 +1,7 @@
 site_name: gridfm-datakit-distr
 site_description: Machine-learning datasets of power flows in three-phase unbalanced distribution networks
 repo_url: https://github.com/gridfm/gridfm-datakit-distr
-copyright: Copyright 2026 <a href="https://www.vicomtech.org">Vicomtech</a> · developed by Carmine Delle Femine (<a href="https://github.com/cardef">@cardef</a>) · Apache License 2.0
+copyright: Copyright 2026 <a href="https://www.vicomtech.org">Vicomtech</a> · developed by the Energy and Environment department of Vicomtech, maintained by Carmine Delle Femine (<a href="https://github.com/cardef">@cardef</a>) · Apache License 2.0
 theme:
   name: material
   features:
