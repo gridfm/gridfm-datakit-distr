@@ -321,8 +321,7 @@ def _dry_run(config: GenerationConfig, jobs: list[Job], cache: Path | None, out:
             f"  {job.network.id}: {e.nodes} nodes, {e.customers} customers; "
             f"{e.seconds_per_scenario * 1e3:.1f} ms, {e.bytes_per_scenario / 1e3:.1f} kB{flag}"
         )
-    # one task per variant: more processes than variants stay idle
-    processes = min(config.settings.num_processes or os.cpu_count() or 1, len(jobs) * n_variants)
+    processes = config.settings.num_processes or os.cpu_count() or 1
     lines += [
         f"estimated CPU time {_duration(seconds)}, about {_duration(seconds / processes)} of wall "
         f"time on {processes} process(es); storage {_size(size)}",
