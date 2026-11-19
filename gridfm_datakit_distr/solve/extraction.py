@@ -20,7 +20,7 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.typing import NDArray
 
-from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
+from gridfm_datakit_distr.model.electrical import ElectricalModel, Element
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -60,26 +60,20 @@ class ExtractionPlan:
 
 
 def build_plan(model: ElectricalModel) -> ExtractionPlan:
-    """The extraction plan of a model (its tap-dependent elements at the model's state)."""
+    """The extraction plan of a model (its tap-dependent elements at the model's state); its rows
+    are those of the model's selection matrix."""
     rows_element, rows_terminal, rows_position = [], [], []
-    select_rows, select_cols = [], []
     offsets: dict[int, int] = {}
     row = 0
     for e in model.pd_elements():
         offsets[e.idx] = row
-        for t, terminal in enumerate(e.terminals):
-            for p, node in enumerate(terminal):
+        for t in range(e.n_terminals):
+            for p in range(e.n_conductors):
                 rows_element.append(e.idx)
                 rows_terminal.append(t)
                 rows_position.append(p)
-                if node != GROUND:
-                    select_rows.append(row)
-                    select_cols.append(node)
-                row += 1
-    select = sp.csr_matrix(
-        (np.ones(len(select_rows), dtype=np.complex128), (select_rows, select_cols)),
-        shape=(row, model.n_nodes),
-    )
+        row += e.n_positions
+    select = model.selection().astype(np.complex128)
     return ExtractionPlan(
         element_idx=np.array(rows_element, dtype=np.int32),
         terminal=np.array(rows_terminal, dtype=np.int8),

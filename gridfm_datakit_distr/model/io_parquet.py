@@ -134,18 +134,27 @@ def variant_level_tables(model: ElectricalModel) -> dict[str, pa.Table]:
     }
 
 
+def state_table(model: ElectricalModel, state_id: str) -> pa.Table | None:
+    """``states/yprim_state`` rows of ``model`` at ``state_id``: the Yprims of its tap-dependent
+    PD elements; None if it has none."""
+    dependent = [e for e in model.elements if e.is_pd and e.is_tap_dependent]
+    if not dependent:
+        return None
+    columns = _yprim_columns(model.variant_id, dependent)
+    return pa.table(
+        {"state_id": [state_id] * len(columns["g"]), **columns}, schema=schema.YPRIM_STATE
+    )
+
+
 def to_tables(model: ElectricalModel, state_id: str | None = None) -> dict[str, pa.Table]:
     """Variant-level tables of ``model``, plus ``states/yprim_state`` if it has tap-dependent
     elements (then ``state_id`` is required)."""
     tables = variant_level_tables(model)
-    dependent = [e for e in model.elements if e.is_pd and e.is_tap_dependent]
-    if dependent:
+    state = state_table(model, "" if state_id is None else state_id)
+    if state is not None:
         if state_id is None:
             raise ValueError("the model has tap-dependent elements: a state_id is required")
-        columns = _yprim_columns(model.variant_id, dependent)
-        tables[YPRIM_STATE] = pa.table(
-            {"state_id": [state_id] * len(columns["g"]), **columns}, schema=schema.YPRIM_STATE
-        )
+        tables[YPRIM_STATE] = state
     return tables
 
 

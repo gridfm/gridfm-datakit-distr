@@ -170,33 +170,47 @@ class ElectricalModel:
             raise ValueError(f"enabled PD elements without Yprim: {missing[:5]}")
         return elements
 
-    def element_blocks(self) -> tuple[sp.csr_matrix, sp.csr_matrix]:
-        """``(Yblk, S)``: block diagonal of the PD Yprims and the selection matrix local ← nodes.
-
-        Rows of ``S`` follow the local orderings of :meth:`pd_elements` one after the other;
-        ground positions have zero rows. Element currents are ``Yblk @ (S @ v)``
-        and the network admittance is ``Sᵀ Yblk S``.
-        """
-        elements = self.pd_elements()
+    def selection(self) -> sp.csr_matrix:
+        """``S``, local positions ← nodes: rows follow the local orderings of
+        :meth:`pd_elements` one after the other (the rows of the element results); ground
+        positions have zero rows."""
         rows: list[int] = []
         cols: list[int] = []
         offset = 0
-        for element in elements:
+        for element in self.pd_elements():
             for k, node in enumerate(element.local_nodes()):
                 if node != GROUND:
                     rows.append(offset + k)
                     cols.append(node)
             offset += element.n_positions
-        selection = sp.csr_matrix(
+        return sp.csr_matrix(
             (np.ones(len(rows)), (np.array(rows, dtype=np.int64), np.array(cols, dtype=np.int64))),
             shape=(offset, self.n_nodes),
         )
+
+    def element_blocks(self) -> tuple[sp.csr_matrix, sp.csr_matrix]:
+        """``(Yblk, S)``: block diagonal of the PD Yprims and :meth:`selection`. Element currents
+        are ``Yblk @ (S @ v)`` and the network admittance is ``Sᵀ Yblk S``."""
+        elements = self.pd_elements()
+        selection = self.selection()
         if not elements:
             return sp.csr_matrix(np.zeros((0, 0), dtype=np.complex128)), selection
-        # sparse-matrix blocks: from numpy blocks, scipy >= 1.18 warns that block_diag will return a
-        # sparse array (spmatrix-to-sparray migration)
-        blocks = [sp.coo_matrix(e.yprim) for e in elements if e.yprim is not None]
-        return sp.csr_matrix(sp.block_diag(blocks, format="csr")), selection
+        # one CSR from every block's non-zeros (row-major, as a COO of each block would list them)
+        rows, cols, values = [], [], []
+        offset = 0
+        for element in elements:
+            y = element.yprim
+            assert y is not None  # pd_elements checked it
+            r, c = np.nonzero(y)
+            rows.append(r + offset)
+            cols.append(c + offset)
+            values.append(y[r, c])
+            offset += y.shape[0]
+        yblk = sp.csr_matrix(
+            (np.concatenate(values), (np.concatenate(rows), np.concatenate(cols))),
+            shape=(offset, offset),
+        )
+        return yblk, selection
 
     def ground_admittance(self) -> NDArray[np.complex128]:
         """Admittance (S) from each node to ground through the PD elements: row sums of Y_state.

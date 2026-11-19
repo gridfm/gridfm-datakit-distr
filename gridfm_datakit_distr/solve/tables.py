@@ -47,9 +47,9 @@ def state_tables(states: dict[str, tuple[NetworkState, ElectricalModel]]) -> dic
                 "capacitor_states": state.capacitors_json(),
             }
         )
-        tables = io_parquet.to_tables(model, state_id=sid)
-        if "states/yprim_state" in tables:
-            yprims.append(tables["states/yprim_state"])
+        yprim = io_parquet.state_table(model, sid)
+        if yprim is not None:
+            yprims.append(yprim)
         y = model.ybus().tocoo()
         ybus.append(
             pa.table(
