@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
 
@@ -213,6 +214,46 @@ def test_states_are_consolidated_with_their_counts(tmp_path: Path) -> None:
     ybus = pq.read_table(tmp_path / "data" / "states" / "ybus.parquet")
     assert set(ybus.column("state_id").to_pylist()) == set(new)
     assert not (tmp_path / "data" / "states" / "ybus").exists()
+
+
+def test_consolidation_checks_each_part_against_its_own_states(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Many small parts, each meeting states of its neighbours: each state's rows from the first
+    part holding it, ordered by state; the membership test sees only each part's own states
+    (against every state seen so far it grows with the number of parts)."""
+    writer = DatasetWriter(tmp_path)
+    n_parts, expected = 60, {}
+    for c in range(n_parts):
+        sids = [f"{j:016x}" for j in range(2 * c, 2 * c + 4)]  # two states shared with the next
+        rows = [(s, r, float(c)) for s in sids for r in range(3)]
+        for s, r, g in rows:
+            expected.setdefault((s, r), g)
+        table = pa.table(
+            {
+                "state_id": [s for s, _, _ in rows],
+                "row": [r for _, r, _ in rows],
+                "col": [0] * len(rows),
+                "g": [g for _, _, g in rows],
+                "b": [0.0] * len(rows),
+            }
+        ).cast(schema.YBUS_STATE)
+        writer.write_part("states/ybus", part_key(0, 0, c), table, schema.YBUS_STATE)
+    sizes: list[int] = []
+    real = pc.is_in
+
+    def counting(values: Any, value_set: Any, **kwargs: Any) -> Any:
+        sizes.append(len(value_set))
+        return real(values, value_set=value_set, **kwargs)
+
+    monkeypatch.setattr(pc, "is_in", counting)
+    writer.consolidate_states()
+    got = pq.read_table(tmp_path / "states" / "ybus.parquet").to_pylist()
+    assert [(r["state_id"], r["row"], r["g"]) for r in got] == [
+        (s, r, g) for (s, r), g in sorted(expected.items())
+    ]
+    assert len(sizes) == n_parts
+    assert max(sizes) <= 4  # each part's own states, never all those seen before
 
 
 def test_dataset_card(tmp_path: Path) -> None:

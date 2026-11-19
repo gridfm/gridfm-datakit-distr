@@ -11,7 +11,7 @@ before they are written. Layout (outputs.md §2): one part per unit,
 with ``i`` the network index, ``k`` the variant index. :meth:`DatasetWriter.consolidate_states`
 merges the state parts (a state met by several chunks is stored once) into
 ``states/<table>.parquet`` with the number of scenarios of each state, counted in
-``scenario_meta``.
+``scenario_meta``; :func:`read_states` reads a state table by the same rule before that.
 """
 
 from __future__ import annotations
@@ -92,37 +92,21 @@ class DatasetWriter:
         return pa.concat_tables([pq.read_table(p, columns=columns) for p in parts])
 
     def consolidate_states(self) -> None:
-        """Merge the state parts into single tables, one row set per state, with its count of
-        scenarios from ``scenario_meta``; remove the parts. A part holds all rows of the states it
-        met, so a state's rows are taken from the first part that has it (they are equal in every
-        part); the table of an earlier consolidation (a resumed dataset) comes before the parts.
-        Rows are ordered by state."""
+        """Merge the state parts into single tables (:func:`read_states`: one row set per state,
+        that of the first file holding it), with each state's count of scenarios from
+        ``scenario_meta``; remove the parts. Rows are ordered by state."""
         meta = self.read("scenarios/scenario_meta", columns=["state_id"])
         counts: dict[str, int] = {}
         if meta is not None:
             for sid in meta.column("state_id").drop_null().to_pylist():
                 counts[str(sid)] = counts.get(str(sid), 0) + 1
         for table in STATE_TABLES:
-            parts = sorted((self.root / table).glob("part-*.parquet"))
-            if not parts:
+            if not any((self.root / table).glob("part-*.parquet")):
                 continue
-            seen: set[str] = set()
-            pieces = []
-            single = self.root / f"{table}.parquet"
-            sources: list[pa.Table | Path] = []
-            if single.exists():  # an earlier finalisation: its rows come first
-                earlier = pq.read_table(single)
-                if table == "states/states":
-                    earlier = earlier.drop_columns(["n_scenarios"])
-                sources.append(earlier)
-            sources += parts
-            for source in sources:
-                part = source if isinstance(source, pa.Table) else pq.read_table(source)
-                known = pa.array(sorted(seen), pa.string())
-                part = part.filter(pc.invert(pc.is_in(part.column("state_id"), value_set=known)))
-                seen.update(str(s) for s in part.column("state_id").to_pylist())
-                pieces.append(part)
-            data = pa.concat_tables(pieces)
+            # an earlier finalisation's count is recomputed below
+            columns = STATES_PART.names if table == "states/states" else None
+            data = read_states(self.root, table, columns=columns)
+            assert data is not None
             # by state, whatever the history of the parts (a resumed run); the sort is stable
             data = data.take(pc.sort_indices(data, sort_keys=[("state_id", "ascending")]))
             if table == "states/states":
@@ -134,6 +118,29 @@ class DatasetWriter:
                 expected = schema.TABLES[table]
             self.write_table(table, data, expected)
             shutil.rmtree(self.root / table)  # with any temporary file of a killed writer
+
+
+def read_states(
+    root: Path, table: str, filters: Any = None, columns: list[str] | None = None
+) -> pa.Table | None:
+    """A state table as :meth:`DatasetWriter.consolidate_states` merges it, from whatever is on
+    disk: the single file of an earlier consolidation, then the parts in name order, each state's
+    rows taken from the first of them that holds it (a part holds all rows of the states its chunk
+    met, equal in every part). Rows keep their file's order; ``filters`` (pyarrow's) and
+    ``columns`` apply to every file. None if the table has no file."""
+    single = root / f"{table}.parquet"
+    sources = [single] if single.exists() else []
+    sources += sorted((root / table).glob("part-*.parquet"))
+    seen: set[str] = set()
+    pieces = []
+    for path in sources:
+        part = pq.read_table(path, filters=filters, columns=columns)
+        ids = part.column("state_id")
+        # membership against the part's own ids: against all ids seen it grows with the parts
+        new = [str(s) for s in pc.unique(ids).to_pylist() if s not in seen]
+        pieces.append(part.filter(pc.is_in(ids, value_set=pa.array(new, pa.string()))))
+        seen.update(new)
+    return pa.concat_tables(pieces) if pieces else None
 
 
 STATES_PART = pa.schema([f for f in schema.STATES if f.name != "n_scenarios"])

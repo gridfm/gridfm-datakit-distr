@@ -28,19 +28,12 @@ import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
-from gridfm_datakit_distr.io.writer import DatasetWriter, part_key
+from gridfm_datakit_distr.io.reader import VariantTables
+from gridfm_datakit_distr.io.writer import part_key, read_states
 from gridfm_datakit_distr.model.electrical import ElectricalModel
-from gridfm_datakit_distr.model.io_parquet import (
-    ELEMENTS,
-    NODES,
-    TERMINALS,
-    YPRIM,
-    YPRIM_STATE,
-    from_tables,
-)
+from gridfm_datakit_distr.model.io_parquet import NODES, YPRIM_STATE
 from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
-
-VARIANT_TABLES = (NODES, ELEMENTS, TERMINALS, YPRIM)
+from gridfm_datakit_distr.solve.pf_batch import MAX_CACHED_STATES
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,16 +81,11 @@ class VariantStore:
     def __init__(self, root: Path, i: int, k: int, config: GenerationConfig) -> None:
         self.root, self.i, self.k = root, i, k
         key = part_key(i, k)
-        self.tables = {
-            name: pq.read_table(root / name / f"part-{key}.parquet") for name in VARIANT_TABLES
-        }
         variants = pq.read_table(root / "variants/variants" / f"part-{key}.parquet")
         self.variant_id = str(variants.column("variant_id")[0].as_py())
-        state_tables = DatasetWriter(root).read(YPRIM_STATE)
-        if state_tables is not None:
-            mine = pc.equal(state_tables["variant_id"], pa.scalar(self.variant_id))
-            self.tables[YPRIM_STATE] = state_tables.filter(mine)
+        self.stored = VariantTables(root, key, self.variant_id, read_states(root, YPRIM_STATE))
         self._models: dict[str, tuple[ElectricalModel, ExtractionPlan]] = {}
+        """Per state: the model and plan; the most recent ``MAX_CACHED_STATES``."""
         networks = pq.read_table(root / "catalog" / "networks.parquet")
         row = networks.filter(pc.equal(networks["network_idx"], pa.scalar(i, pa.int32())))
         if row.num_rows != 1:
@@ -114,7 +102,9 @@ class VariantStore:
     def at_state(self, state_id: str) -> tuple[ElectricalModel, ExtractionPlan]:
         """The model and the extraction plan at a network state (cached)."""
         if state_id not in self._models:
-            model = from_tables(self.tables, self.variant_id, state_id)
+            if len(self._models) >= MAX_CACHED_STATES:
+                self._models.pop(next(iter(self._models)))  # the oldest
+            model = self.stored.model(state_id)
             self._models[state_id] = (model, build_plan(model))
         return self._models[state_id]
 
@@ -186,7 +176,7 @@ class VariantStore:
         results = results.sort_by([("scenario_id", "ascending"), ("node_idx", "ascending")])
         sids = done.column("scenario_id").to_numpy()
         states = [str(s) for s in done.column("state_id").to_pylist()]
-        n_nodes = self.tables[NODES].num_rows
+        n_nodes = self.stored.tables[NODES].num_rows
         if results.num_rows != sids.size * n_nodes:
             raise ValueError(f"node_results/{name}: {results.num_rows} rows for {sids.size} "
                              f"converged scenarios of {n_nodes} nodes")  # fmt: skip

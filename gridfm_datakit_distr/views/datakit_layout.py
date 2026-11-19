@@ -24,6 +24,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from gridfm_datakit_distr.io import schema
+from gridfm_datakit_distr.io.reader import rows_by_key
 from gridfm_datakit_distr.io.writer import DatasetWriter
 from gridfm_datakit_distr.views import datakit_columns as datakit
 from gridfm_datakit_distr.views.posseq import BASE_MVA
@@ -32,21 +33,6 @@ from gridfm_datakit_distr.views.posseq import BASE_MVA
 def _parts(root: Path, table: str, i: int, columns: list[str] | None = None) -> pa.Table | None:
     parts = sorted((root / table).glob(f"part-{i:05d}-*.parquet"))
     return pa.concat_tables([pq.read_table(p, columns=columns) for p in parts]) if parts else None
-
-
-def rows_by_key(table: pa.Table, key: str) -> dict[str, pa.Table]:
-    """The rows of each value of ``key`` (one sort, then slices; rows keep their order)."""
-    if table.num_rows == 0:
-        return {}
-    keys = np.array([str(k) for k in table.column(key).to_pylist()])
-    order = np.argsort(keys, kind="stable")
-    table, keys = table.take(order), keys[order]
-    values, starts = np.unique(keys, return_index=True)
-    stops = np.r_[starts[1:], keys.size]
-    return {
-        str(v): table.slice(int(a), int(b - a))
-        for v, a, b in zip(values.tolist(), starts.tolist(), stops.tolist(), strict=True)
-    }
 
 
 @dataclass(frozen=True, slots=True)

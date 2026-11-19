@@ -9,11 +9,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from gridfm_datakit_distr.io.reader import rows_by_key
 from gridfm_datakit_distr.io.writer import DatasetWriter
 from gridfm_datakit_distr.solve.executor import generate
 from gridfm_datakit_distr.views import datakit_columns as datakit
 from gridfm_datakit_distr.views import posseq_export
-from gridfm_datakit_distr.views.datakit_layout import ViewNetwork, compose, rows_by_key
+from gridfm_datakit_distr.views.datakit_layout import ViewNetwork, compose
 from tests.test_executor import catalog, config
 
 

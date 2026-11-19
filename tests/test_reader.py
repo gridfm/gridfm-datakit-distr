@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import itertools
+import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyarrow.parquet as pq
 import pytest
 
+from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.reader import DatasetReader
+from gridfm_datakit_distr.io.writer import STATE_TABLES, DatasetWriter
 from gridfm_datakit_distr.solve.executor import generate
+from gridfm_datakit_distr.stats.physics import physics
 from gridfm_datakit_distr.validate.closed_loop import closed_loop, linearised, no_load
+from gridfm_datakit_distr.views.stored import VariantStore
 from tests.test_executor import catalog, config
 
 
@@ -61,3 +69,67 @@ def test_the_reader_imports_no_engine() -> None:
         "assert not bad, bad\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def _read_back(root: Path, cfg: GenerationConfig) -> dict[str, Any]:
+    """What the reader, the statistics and the stored view make of a dataset."""
+    reader = DatasetReader(root)
+    ids = reader.meta.column("scenario_id").to_pylist()
+    y = {
+        sc.scenario_id: sc.y_state.toarray()
+        for sc in reader.scenarios(ids)
+        if sc.y_state is not None
+    }
+    stats = {
+        nid: (s.summary(), {k: h.counts.tolist() for k, h in s.histograms.items()})
+        for nid, s in physics(root, 0.95, 1.05).items()
+    }
+    currents = {}
+    for i, k in itertools.product((0, 1), (0, 1)):
+        for _, scenarios in VariantStore(root, i, k, cfg).chunks():
+            currents.update({o.scenario_id: o.i_pd for o in scenarios})
+    return {"y": y, "stats": stats, "currents": currents}
+
+
+def test_an_unfinished_dataset_reads_as_the_finished_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before its state parts are merged a state can sit in several parts (every chunk of a
+    variant without controls holds the same one): read as merged, by the same rule. Two layouts:
+    parts only (a run killed before finalisation) and a merged file plus newer parts (a resumed
+    run killed again)."""
+    cfg, cat = config(), catalog(tmp_path)
+    parts = tmp_path / "parts"
+    with monkeypatch.context() as m:
+        m.setattr(DatasetWriter, "consolidate_states", lambda self: None)
+        generate(cfg, parts, catalog=cat, root=tmp_path)
+    holders = Counter(
+        s
+        for p in (parts / "states" / "ybus").glob("part-*.parquet")
+        for s in set(pq.read_table(p, columns=["state_id"]).column("state_id").to_pylist())
+    )
+    assert max(holders.values()) > 1
+    finished = tmp_path / "finished"
+    shutil.copytree(parts, finished)
+    DatasetWriter(finished).consolidate_states()
+    mixed, held = tmp_path / "mixed", tmp_path / "held"
+    shutil.copytree(parts, mixed)
+    later = [p for t in STATE_TABLES for p in (mixed / t).glob("part-*-0000[12].parquet")]
+    assert later
+    for p in later:
+        (held / p.relative_to(mixed)).parent.mkdir(parents=True, exist_ok=True)
+        p.rename(held / p.relative_to(mixed))
+    DatasetWriter(mixed).consolidate_states()  # chunk 0's states only
+    for p in later:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        (held / p.relative_to(mixed)).rename(p)
+    expected = _read_back(finished, cfg)
+    assert expected["y"]
+    assert expected["currents"]
+    for root in (parts, mixed):
+        got = _read_back(root, cfg)
+        assert got["stats"] == expected["stats"], root.name
+        for name in ("y", "currents"):
+            assert got[name].keys() == expected[name].keys(), (root.name, name)
+            for sid, value in expected[name].items():
+                assert np.array_equal(got[name][sid], value), (root.name, name, sid)

@@ -33,11 +33,10 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from numpy.typing import NDArray
 
-from gridfm_datakit_distr.io import schema
-from gridfm_datakit_distr.model.io_parquet import from_tables
+from gridfm_datakit_distr.io.reader import VariantTables
+from gridfm_datakit_distr.io.writer import read_states
 from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
 from gridfm_datakit_distr.solve.pf_batch import MAX_CACHED_STATES
-from gridfm_datakit_distr.views.datakit_layout import rows_by_key
 
 ALPHA = np.exp(2j * np.pi / 3)
 PHASE_LABELS = ("a", "b", "c", "s1", "s2")
@@ -51,12 +50,6 @@ RANGES = {
 }
 """Histogram range and bins of each quantity: (low, high, bins); values outside are counted."""
 QUANTILES = (0.01, 0.05, 0.5, 0.95, 0.99)
-VARIANT_TABLES = (
-    "variants/nodes",
-    "variants/elements",
-    "variants/element_terminals",
-    "variants/yprim",
-)
 REPORTED = ("vm_a", "vm_b", "vm_c", "neutral_v", "vuf", "line_loading", "transformer_loading")
 
 
@@ -151,7 +144,7 @@ class NetworkStats:
 
 @dataclass(slots=True)
 class _Variant:
-    """Index arrays of one variant's model and the tables to rebuild it at a network state."""
+    """Index arrays of one variant's model and its tables, to rebuild it at a network state."""
 
     variant_id: str
     nominal_v: NDArray[np.float64]
@@ -163,9 +156,7 @@ class _Variant:
     element_class: NDArray[np.str_]
     rating_a: NDArray[np.float64]
     rating_va: NDArray[np.float64]
-    tables: dict[str, pa.Table]
-    state_rows: dict[str, pa.Table] | None
-    """Per state: its ``states/yprim_state`` rows (None: the dataset has no such table)."""
+    stored: VariantTables
     plans: dict[str, tuple[ExtractionPlan, _Rows]] = field(default_factory=dict)
     """Per state: the extraction plan (Yprim blocks at the state) and its row layout; the
     most recent ``MAX_CACHED_STATES``."""
@@ -182,12 +173,8 @@ class _Rows:
 
 
 def _variant(root: Path, key: str, variant_id: str, yprim_state: pa.Table | None) -> _Variant:
-    tables = {name: pq.read_table(root / name / f"part-{key}.parquet") for name in VARIANT_TABLES}
-    state_rows = None
-    if yprim_state is not None:  # cut once per variant: filtering per state is quadratic
-        mine = yprim_state.filter(pc.equal(yprim_state["variant_id"], pa.scalar(variant_id)))
-        state_rows = rows_by_key(mine, "state_id")
-    nodes, elements = tables["variants/nodes"], tables["variants/elements"]
+    stored = VariantTables(root, key, variant_id, yprim_state)
+    nodes, elements = stored.tables["variants/nodes"], stored.tables["variants/elements"]
     conductor = np.array([str(c) for c in nodes.column("conductor").to_pylist()])
     bus = [str(b) for b in nodes.column("bus").to_pylist()]
     by_bus: dict[str, dict[str, int]] = {}
@@ -206,22 +193,16 @@ def _variant(root: Path, key: str, variant_id: str, yprim_state: pa.Table | None
         element_class=np.array(elements.column("element_class").to_pylist())[order],
         rating_a=np.array(elements.column("rating_a").to_pylist(), dtype=np.float64)[order],
         rating_va=np.array(elements.column("rating_va").to_pylist(), dtype=np.float64)[order],
-        tables=tables,
-        state_rows=state_rows,
+        stored=stored,
     )
 
 
 def _plan(m: _Variant, state_id: str) -> tuple[ExtractionPlan, _Rows]:
     """The extraction plan of the variant at a state (rebuilt from the tables) and its rows."""
     if state_id not in m.plans:
-        tables = dict(m.tables)
-        if m.state_rows is not None:
-            empty = schema.YPRIM_STATE.empty_table()
-            tables["states/yprim_state"] = m.state_rows.get(state_id, empty)
         if len(m.plans) >= MAX_CACHED_STATES:
             m.plans.pop(next(iter(m.plans)))  # the oldest
-        model = from_tables(tables, m.variant_id, state_id)
-        plan = build_plan(model)
+        plan = build_plan(m.stored.model(state_id))
         select = plan.select.tocsr()
         node = np.full(plan.element_idx.size, -1, dtype=np.intp)
         filled = np.diff(select.indptr) > 0
@@ -272,8 +253,7 @@ def physics(root: Path, vmin: float, vmax: float) -> dict[str, NetworkStats]:
         int(r["network_idx"]): str(r["network_id"])
         for r in pq.read_table(root / "catalog" / "networks.parquet").to_pylist()
     }
-    single = root / "states" / "yprim_state.parquet"
-    yprim_state = pq.read_table(single) if single.exists() else None
+    yprim_state = read_states(root, "states/yprim_state")
     stats: dict[str, NetworkStats] = {}
     current: _Variant | None = None
     for part in sorted((root / "scenarios" / "node_results").glob("part-*.parquet")):
