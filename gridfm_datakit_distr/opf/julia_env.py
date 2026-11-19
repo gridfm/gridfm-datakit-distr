@@ -1,8 +1,8 @@
-"""Julia environment for OPF, baselines and cross-checks (juliacall + juliapkg).
+"""Julia environment for the OPF cross-checks (juliacall + juliapkg).
 
 The Julia side is declared in ``gridfm_datakit_distr/juliapkg.json`` and resolved by juliapkg on
 the first ``import juliacall`` (Julia itself is downloaded if no compatible one is found). Only
-``opf/``, ``baselines/`` and Julia tests import this module: the power-flow path never does.
+``opf/`` and the Julia tests import this module: the power-flow path never does.
 Requires the ``julia`` extra.
 """
 

@@ -80,11 +80,6 @@ This document is the contract between the generator and its consumers (models, b
     opf_meta/part-*.parquet
     opf_der/part-*.parquet
     opf_node_results/part-*.parquet
-  baselines/                       # not generated yet
-    lindist_pf/part-*.parquet
-    lindist_opf/part-*.parquet
-  measurements/                    # not generated yet
-    measurement_configs.parquet
   stats/
 ```
 
@@ -468,33 +463,3 @@ Node voltages of the OPF solution, for the scenarios with `opf_status = Solve_Su
 | `scenario_id` | int64 | |
 | `node_idx` | int32 | |
 | `v_re`, `v_im` | float64 | node voltage to ground (V) |
-
----
-
-## 9. Baselines (not generated yet)
-
-- `baselines/lindist_pf`: `scenario_id`, `node_idx_kron`, `vm_pu` per node (LinDist3Flow gives magnitudes), `t_solve_s`, `status`.
-- `baselines/lindist_opf`: reserved; this version does not write it, and its columns are not defined.
-
-The Kron and positive-sequence views (§7) are themselves the model-free baselines for PF.
-
----
-
-## 10. Measurement configurations (not generated yet)
-
-### `measurements/measurement_configs.parquet`
-
-| Column | Type | Description |
-|---|---|---|
-| `config_id` | string | |
-| `variant_id` | string | |
-| `sensor_idx` | int32 | |
-| `location_kind` | string | `node`, `element_terminal`, `customer` |
-| `node_idx` / `element_idx` / `terminal` | int32 / int32 / int8, nullable | |
-| `quantity` | string | `v_mag`, `v_phasor`, `p`, `q`, `i_mag`, `i_phasor` |
-| `sigma` | float32 | standard deviation in SI units (or relative, see `sigma_kind`) |
-| `sigma_kind` | string | `absolute`, `relative` |
-| `is_pseudo` | bool | pseudo-measurement (from profiles) |
-| `aggregation_s` | int32 | averaging window (e.g. 900 for 15-min smart-meter data) |
-
-Noisy measurement values are generated deterministically on demand from (`scenario_id`, `config_id`, seed) by `measurements.noise.sample(...)`; they are materialised only for released benchmark splits.

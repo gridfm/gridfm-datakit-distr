@@ -24,5 +24,3 @@ what was drawn (line admittances to 1e-12). A mismatch is an error and is never 
 variant's base case must converge and pass the Kirchhoff residual check. If it does not, the
 variant is redrawn from the next attempt's streams, three times at most, and then recorded as
 failed.
-
-**Not in this version:** switch reconfiguration.

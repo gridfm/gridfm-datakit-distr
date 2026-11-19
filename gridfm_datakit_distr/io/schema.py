@@ -473,42 +473,12 @@ POSSEQ_TABLES = {
     "views/posseq/mapping": POSSEQ_MAPPING,
 }
 
-# ---------------------------------------------- next version (outputs.md §9-§10), unused
-
-LINDIST_PF = pa.schema(
-    [
-        _required("scenario_id", pa.int64()),
-        _required("node_idx_kron", pa.int32()),
-        _required("vm_pu", pa.float64()),
-        _required("t_solve_s", pa.float32()),
-        _required("status", pa.string()),
-    ]
-)
-MEASUREMENT_CONFIGS = pa.schema(
-    [
-        _required("config_id", pa.string()),
-        _required("variant_id", pa.string()),
-        _required("sensor_idx", pa.int32()),
-        _required("location_kind", pa.string()),
-        _nullable("node_idx", pa.int32()),
-        _nullable("element_idx", pa.int32()),
-        _nullable("terminal", pa.int8()),
-        _required("quantity", pa.string()),
-        _required("sigma", pa.float32()),
-        _required("sigma_kind", pa.string()),
-        _required("is_pseudo", pa.bool_()),
-        _required("aggregation_s", pa.int32()),
-    ]
-)
-
 TABLES: dict[str, pa.Schema] = {
     "catalog/networks": CATALOG_NETWORKS,
     "views/kron/nodes": KRON_NODES,
     "views/kron/ybus": YBUS_STATE,
     "views/kron/node_results": KRON_NODE_RESULTS,
     "states/ybus": YBUS_STATE,
-    "baselines/lindist_pf": LINDIST_PF,
-    "measurements/measurement_configs": MEASUREMENT_CONFIGS,
     "variants/variants": VARIANTS,
     "variants/nodes": NODES,
     "variants/elements": ELEMENTS,

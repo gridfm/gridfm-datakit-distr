@@ -147,32 +147,6 @@ def _selection(networks: Networks, catalog: Catalog) -> tuple[list[SelectedNetwo
 # ------------------------------------------------------------------ rules of this version
 
 
-def _not_in_this_version(config: GenerationConfig) -> list[Issue]:
-    """Features the config describes but this version does not generate yet."""
-    m3 = "come with v1.0; this version generates power-flow labels"
-    issues: list[Issue] = []
-    if config.variants.reconfiguration.enabled:
-        issues.append(
-            (
-                "variants.reconfiguration.enabled",
-                "switch reconfiguration is not in v0.1",
-            )
-        )
-    for name in ("lindist_pf", "lindist_opf"):
-        if getattr(config.baselines, name):
-            issues.append((f"baselines.{name}", f"LinDist3Flow baselines {m3}"))
-    if config.measurements.enabled:
-        issues.append(("measurements.enabled", f"measurement configurations {m3}"))
-    if config.scenarios.profiles.provider == "fluvius":
-        issues.append(
-            (
-                "scenarios.profiles.provider",
-                "the Fluvius profiles wait for their licence to be confirmed",
-            )
-        )
-    return issues
-
-
 def _opf_requirements(config: GenerationConfig) -> list[Issue]:
     """OPF labels need CasADi (the ``opf`` extra) and constant-power loads (the problem's
     load model)."""
@@ -196,10 +170,7 @@ def _opf_requirements(config: GenerationConfig) -> list[Issue]:
     return issues
 
 
-_RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (
-    _not_in_this_version,
-    _opf_requirements,
-)
+_RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (_opf_requirements,)
 
 
 # ------------------------------------------------------------------ error formatting

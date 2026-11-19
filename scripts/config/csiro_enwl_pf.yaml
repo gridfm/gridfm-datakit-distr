@@ -23,8 +23,6 @@ variants:
   phase_reallocation:
     enabled: true
     fraction: 0.2
-  reconfiguration:
-    enabled: false
 der:
   pv:
     penetration: {distribution: uniform, low: 0.0, high: 0.6}
@@ -52,11 +50,6 @@ labels:
     enabled: false        # OPF labels: docs/manual/opf.md
 views:
   kron: true  # the positive-sequence equivalent: export-posseq after generation
-baselines:
-  lindist_pf: false       # next version
-  lindist_opf: false      # next version
-measurements:
-  enabled: false          # next version
 settings:
   data_dir: ./data
   seed: 42
