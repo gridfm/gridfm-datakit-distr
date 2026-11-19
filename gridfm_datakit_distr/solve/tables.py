@@ -1,7 +1,9 @@
 """Tables of a variant and of a chunk of its scenarios (outputs.md §4-§6).
 
 ``variant_tables``: the variant's row and its model (nodes, elements, terminals, tap-independent
-Yprims). ``state_tables``: the states a chunk met (row, tap-dependent Yprims, network admittance).
+Yprims). ``variant_ybus_table``: the variant's network admittance as compiled. ``state_tables``: the
+states a chunk met (row, tap-dependent Yprims, the entries of their network admittance that differ
+from the variant's).
 ``chunk_tables``: ``scenario_meta`` for every scenario; ``loads`` and ``der`` (setpoints) for every
 scenario with draws; ``node_results`` (and, when asked, ``element_results``) for converged
 scenarios only.
@@ -11,9 +13,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import pyarrow as pa
+import scipy.sparse as sp
 
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.writer import STATES_PART
@@ -33,8 +37,39 @@ def variant_tables(result: VariantResult) -> dict[str, pa.Table]:
     return tables
 
 
-def state_tables(states: dict[str, tuple[NetworkState, ElectricalModel]]) -> dict[str, pa.Table]:
-    """Rows of the states met by a chunk (``states/states`` without the count)."""
+def variant_ybus_table(variant_id: str, y: sp.csr_matrix) -> pa.Table:
+    """``variants/ybus``: the non-zero entries of ``y``, the variant's network admittance."""
+    coo = y.tocoo()
+    return pa.table(
+        {
+            "variant_id": [variant_id] * coo.nnz,
+            "row": coo.row.astype(np.int32),
+            "col": coo.col.astype(np.int32),
+            "g": coo.data.real,
+            "b": coo.data.imag,
+        },
+        schema=schema.VARIANT_YBUS,
+    )
+
+
+def ybus_changes(
+    y: sp.csr_matrix, base: sp.csr_matrix
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(rows, cols, values)`` of the entries of ``y`` that differ from ``base`` (an absent
+    entry is zero, so a vanished one comes back as a zero), in row-major order."""
+    changed = cast(sp.csr_matrix, y != base).tocoo()  # elementwise: a boolean sparse matrix
+    order = np.lexsort((changed.col, changed.row))
+    rows, cols = changed.row[order], changed.col[order]
+    if not rows.size:  # scipy returns a sparse matrix for an empty selection
+        return rows, cols, np.zeros(0, dtype=np.complex128)
+    return rows, cols, np.asarray(y[rows, cols], dtype=np.complex128).ravel()
+
+
+def state_tables(
+    states: dict[str, tuple[NetworkState, ElectricalModel]], base: sp.csr_matrix
+) -> dict[str, pa.Table]:
+    """Rows of the states met by a chunk (``states/states`` without the count); ``base``: the
+    variant's network admittance (:func:`variant_ybus_table`)."""
     if not states:
         return {}
     rows, yprims, ybus = [], [], []
@@ -50,15 +85,15 @@ def state_tables(states: dict[str, tuple[NetworkState, ElectricalModel]]) -> dic
         yprim = io_parquet.state_table(model, sid)
         if yprim is not None:
             yprims.append(yprim)
-        y = model.ybus().tocoo()
+        rows_y, cols_y, values = ybus_changes(model.ybus(), base)
         ybus.append(
             pa.table(
                 {
-                    "state_id": [sid] * y.nnz,
-                    "row": y.row.astype(np.int32),
-                    "col": y.col.astype(np.int32),
-                    "g": y.data.real,
-                    "b": y.data.imag,
+                    "state_id": [sid] * values.size,
+                    "row": rows_y.astype(np.int32),
+                    "col": cols_y.astype(np.int32),
+                    "g": values.real,
+                    "b": values.imag,
                 },
                 schema=schema.YBUS_STATE,
             )

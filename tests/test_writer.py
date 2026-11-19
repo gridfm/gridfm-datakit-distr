@@ -206,7 +206,7 @@ def test_states_are_consolidated_with_their_counts(tmp_path: Path) -> None:
     meta = chunk_tables(runner, outcomes, precision="mixed", config_hash="h", versions=versions)
 
     def write_chunk(writer: DatasetWriter, chunk: int, met: dict[str, Any]) -> None:
-        for name, table in state_tables(met).items():
+        for name, table in state_tables(met, runner.y_base).items():
             expected = STATES_PART if name == "states/states" else schema.TABLES[name]
             writer.write_part(name, part_key(0, 0, chunk), table, expected)
         if chunk == 0:

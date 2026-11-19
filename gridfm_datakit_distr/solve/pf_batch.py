@@ -160,6 +160,9 @@ class VariantRunner:
         self.registry = StateRegistry()
         self.plan = build_plan(self.model)
         """Rows of the element results (element, terminal, position)."""
+        self.y_base = self.model.ybus()
+        """Network admittance of the variant as compiled (S): ``variants/ybus``, the base of the
+        entries stored per state."""
         self._states: dict[str, tuple[ElectricalModel, ExtractionPlan]] = {}
         self._met: set[str] = set()
         self._new: dict[str, ElectricalModel] = {}

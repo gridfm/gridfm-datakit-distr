@@ -60,7 +60,12 @@ from gridfm_datakit_distr.networks.passport import build_passport
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.normalize.bases import s_base_va
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
-from gridfm_datakit_distr.solve.tables import chunk_tables, state_tables, variant_tables
+from gridfm_datakit_distr.solve.tables import (
+    chunk_tables,
+    state_tables,
+    variant_tables,
+    variant_ybus_table,
+)
 from gridfm_datakit_distr.variants.generate import VariantResult, generate_variant
 from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
 from gridfm_datakit_distr.views.kron import KronView
@@ -508,7 +513,7 @@ def _unit_tables(
         found.update(slot.opf.tables(opf_rows, precision))
     for name, table in found.items():
         out[name] = (chunk_key, table, schema.SCENARIO_TABLES[name](precision))
-    for name, table in state_tables(runner.new_states()).items():
+    for name, table in state_tables(runner.new_states(), runner.y_base).items():
         expected = STATES_PART if name == "states/states" else schema.TABLES[name]
         out[name] = (chunk_key, table, expected)
     if slot.kron is not None:
@@ -521,6 +526,7 @@ def _unit_tables(
     if unit.chunk == 0:  # the variant's own tables, once
         found_v = variant_tables(slot.variant)
         found_v.update(source_tables(runner.model, read_source(runner.ctx, runner.model)))
+        found_v["variants/ybus"] = variant_ybus_table(runner.variant_id, runner.y_base)
         for name, table in found_v.items():
             if name == "variants/nodes":
                 table = _with_backbone(table, slot.backbone_owner)

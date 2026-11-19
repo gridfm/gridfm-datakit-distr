@@ -1,9 +1,10 @@
 """Reference loader: a dataset's tables as the arrays of a power flow, without OpenDSS.
 
-Per variant (:class:`VariantData`): the model rebuilt from its tables, the source (ideal voltages
-behind an admittance) and, for every load and DER element, the branches it draws its power
-through. Per scenario (:class:`ScenarioData`): the network admittance of its state, the source
-voltage, the setpoints and the stored node voltages.
+Per variant (:class:`VariantData`): the model rebuilt from its tables, its network admittance as
+compiled, the source (ideal voltages behind an admittance) and, for every load and DER element, the
+branches it draws its power through. Per scenario (:class:`ScenarioData`): the network admittance
+of its state (the variant's with the state's changed entries), the source voltage, the setpoints
+and the stored node voltages.
 :mod:`gridfm_datakit_distr.validate.closed_loop` solves the power flow from these alone.
 Nothing here imports the engine (a test checks it).
 """
@@ -48,6 +49,8 @@ class VariantData:
     """Nodes, elements and tap-independent Yprims (tap-dependent ones are in each state's Y)."""
     base_v: NDArray[np.float64]
     """Line-to-neutral base voltage of each node (V)."""
+    y_base: sp.csr_matrix
+    """Network admittance (S) of the variant as compiled (``variants/ybus``)."""
     source_nodes: NDArray[np.int64]
     y_s: NDArray[np.complex128]
     """Source admittance (S) between its ideal voltages and :attr:`source_nodes`."""
@@ -115,6 +118,33 @@ class VariantTables:
         return from_tables(tables, self.variant_id, state_id)
 
 
+def admittance(table: pa.Table, n: int) -> sp.csr_matrix:
+    """The ``n`` x ``n`` matrix of the ``row``, ``col``, ``g``, ``b`` rows of ``table`` (S)."""
+    values = table.column("g").to_numpy() + 1j * table.column("b").to_numpy()
+    rows, cols = table.column("row").to_numpy(), table.column("col").to_numpy()
+    return sp.csr_matrix((values, (rows, cols)), shape=(n, n))
+
+
+def with_changes(base: sp.csr_matrix, changes: pa.Table) -> sp.csr_matrix:
+    """``base`` with the entries of ``changes`` (``row``, ``col``, ``g``, ``b``) in place of its
+    own; a changed entry that is zero is dropped: a state's admittance from its variant's."""
+    old = base.tocoo()
+    rows = changes.column("row").to_numpy().astype(np.int64)
+    cols = changes.column("col").to_numpy().astype(np.int64)
+    n = base.shape[1]
+    keep = ~np.isin(old.row.astype(np.int64) * n + old.col, rows * n + cols)
+    values = changes.column("g").to_numpy() + 1j * changes.column("b").to_numpy()
+    y = sp.csr_matrix(
+        (
+            np.concatenate([old.data[keep], values]),
+            (np.concatenate([old.row[keep], rows]), np.concatenate([old.col[keep], cols])),
+        ),
+        shape=base.shape,
+    )
+    y.eliminate_zeros()
+    return y
+
+
 def _read(path: Path, filters: Any = None, columns: list[str] | None = None) -> pa.Table:
     """A table stored as one file, as parts, or both (before finalisation)."""
     parts = []
@@ -151,7 +181,9 @@ class DatasetReader:
         where = [("variant_id", "=", variant_id)]
         mine = self.meta.filter(pc.equal(self.meta["variant_id"], pa.scalar(variant_id)))
         i, k, _ = split_scenario_id(int(mine.column("scenario_id")[0].as_py()))
-        model = VariantTables(self.root, part_key(i, k), variant_id).model()
+        key = part_key(i, k)
+        model = VariantTables(self.root, key, variant_id).model()
+        y_base = pq.read_table(self.root / "variants" / "ybus" / f"part-{key}.parquet")
         source = _read(self.root / "variants" / "source", where).sort_by("position")
         y_rows = _read(self.root / "variants" / "source_yprim", where)
         position = {p: k for k, p in enumerate(source.column("position").to_pylist())}
@@ -170,20 +202,19 @@ class DatasetReader:
             variant_id=variant_id,
             model=model,
             base_v=np.array([x.kv_base_ln for x in model.nodes]) * 1e3,
+            y_base=admittance(y_base, model.n_nodes),
             source_nodes=np.asarray(source.column("node_idx").to_numpy(), dtype=np.int64),
             y_s=y_s,
             e_v=source.column("e_re").to_numpy() + 1j * source.column("e_im").to_numpy(),
             branches=branches,
         )
 
-    def _state(self, state_id: str, n: int) -> sp.csr_matrix:
+    def _state(self, state_id: str, variant: VariantData) -> sp.csr_matrix:
         if state_id not in self._states:
             t = read_states(self.root, "states/ybus", [("state_id", "=", state_id)])
             if t is None:
                 raise FileNotFoundError(self.root / "states" / "ybus")
-            values = t.column("g").to_numpy() + 1j * t.column("b").to_numpy()
-            rows, cols = t.column("row").to_numpy(), t.column("col").to_numpy()
-            self._states[state_id] = sp.csr_matrix((values, (rows, cols)), shape=(n, n))
+            self._states[state_id] = with_changes(variant.y_base, t)
         return self._states[state_id]
 
     def scenarios(self, ids: Sequence[int]) -> Iterator[ScenarioData]:
@@ -212,14 +243,13 @@ class DatasetReader:
             m = meta[int(sid)]
             variant = self.variant(m["variant_id"])
             state = m["state_id"]
-            n = variant.model.n_nodes
             yield ScenarioData(
                 scenario_id=int(sid),
                 variant=variant,
                 state_id=state,
                 pf_status=m["pf_status"],
                 source_v_pu=m["source_v_pu"],
-                y_state=None if state is None else self._state(state, n),
+                y_state=None if state is None else self._state(state, variant),
                 s_drawn=drawn.get(int(sid), {}),
                 v=stored.get(int(sid)),
             )

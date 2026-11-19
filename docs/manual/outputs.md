@@ -59,11 +59,12 @@ This document is the contract between the generator and its consumers (models, b
     yprim/part-*.parquet           # tap-independent PD elements only
     source/part-*.parquet          # the voltage source: ideal voltages ...
     source_yprim/part-*.parquet    # ... behind its admittance
+    ybus/part-*.parquet            # network admittance matrix as compiled
     semantic/<variant_id>.json     # semantic layer (PMD-ENGINEERING-aligned)
   states/
     states.parquet
     yprim_state.parquet            # tap/state-dependent elements
-    ybus.parquet                   # network admittance matrix per state
+    ybus.parquet                   # per state, the entries that differ from the variant's
   scenarios/
     scenario_meta/part-*.parquet
     node_results/part-*.parquet
@@ -192,7 +193,7 @@ The voltage source (the Vsource) as ideal voltages behind an admittance: the sou
 `I = Y_s (source_v_pu · E - V)` into the network at its nodes, `V` the node voltages, `E` the
 voltages below and `source_v_pu` the scenario's (`scenarios/scenario_meta`). One row per conductor
 of its first terminal; its second terminal is ground (a network whose Vsource is not grounded
-there, or with more than one, fails generation). With these and `states/ybus`, the setpoints of
+there, or with more than one, fails generation). With these and `Y_state` (§5), the setpoints of
 `scenarios/loads` and `scenarios/der` determine the voltages of `scenarios/node_results`: the
 reference loader `gridfm_datakit_distr.io.reader` and the power flow of
 `gridfm_datakit_distr.validate.closed_loop` reproduce them without OpenDSS. The tests require
@@ -218,6 +219,18 @@ Non-zero entries of `Y_s`, the block of the Vsource's Yprim at its first termina
 |---|---|---|
 | `variant_id` | string | |
 | `row`, `col` | int16 | `position` values of `variants/source` |
+| `g`, `b` | float64 | S |
+
+### `variants/ybus/part-*.parquet`
+
+Network admittance matrix of the variant as compiled (its initial network state: the taps and
+capacitor steps of the network's files), at node level, non-zero entries. `states/ybus` stores,
+per network state, only the entries that differ from it (§5).
+
+| Column | Type | Description |
+|---|---|---|
+| `variant_id` | string | |
+| `row`, `col` | int32 | node indices |
 | `g`, `b` | float64 | S |
 
 ### `variants/semantic/<variant_id>.json`
@@ -254,7 +267,7 @@ Same columns as `variants/yprim` plus `state_id`, for elements with `is_tap_depe
 
 ### `states/ybus.parquet`
 
-Network admittance matrix of the state, at node level (node indices of the variant). Includes all PD elements (lines, transformers at their taps, switches, reactors, capacitors at their state). Excludes power-conversion elements (loads, generators, PV, storage) and the source's internal impedance.
+The network admittance matrix of a state, `Y_state`, at node level (node indices of the variant), stored as its changes: the entries that differ from the variant's matrix (`variants/ybus`), an entry that vanishes stored as zero. `Y_state` is `variants/ybus` of the state's variant (`states/states.variant_id`) with the state's rows here in place of the entries at the same (`row`, `col`): a join on (`row`, `col`) that takes the state's value where it has one. A state equal to its variant's matrix has no rows; networks without regulators or switched capacitors have one state per variant, mostly with none. `Y_state` includes all PD elements (lines, transformers at their taps, switches, reactors, capacitors at their state) and excludes power-conversion elements (loads, generators, PV, storage) and the source's internal impedance. `gridfm_datakit_distr.io.reader` rebuilds it.
 
 | Column | Type | Description |
 |---|---|---|
@@ -300,7 +313,7 @@ Rows exist for every attempted scenario; only scenarios with `pf_status = conver
 | `v_re`, `v_im` | float64 | node voltage to ground (V) |
 
 Injections are not stored: the net current injected into the network by the
-power-conversion elements and sources at each node is `I_inj = Y_state V` (`states/ybus`), and the
+power-conversion elements and sources at each node is `I_inj = Y_state V` (§5), and the
 injected power is `V · conj(I_inj)`. At a node without power-conversion elements `I_inj` is zero up to
 the power flow's residual (`scenario_meta.residual_rel`, on the sampled scenarios).
 

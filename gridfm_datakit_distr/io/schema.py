@@ -142,7 +142,21 @@ YBUS_STATE = pa.schema(
         _required("b", pa.float64()),
     ]
 )
-"""``states/ybus``: network admittance matrix of a state, node indices of the variant."""
+"""``states/ybus``: the entries of a state's network admittance matrix that differ from its
+variant's (``variants/ybus``; a zero where an entry vanishes), node indices of the variant;
+``views/kron/ybus``: the Kron view's whole matrix of a state."""
+
+VARIANT_YBUS = pa.schema(
+    [
+        _required("variant_id", pa.string()),
+        _required("row", pa.int32()),
+        _required("col", pa.int32()),
+        _required("g", pa.float64()),
+        _required("b", pa.float64()),
+    ]
+)
+"""``variants/ybus``: network admittance matrix of the variant as compiled (its initial network
+state), node indices of the variant."""
 
 # ---------------------------------------------------------------- network level (outputs.md §3)
 
@@ -502,6 +516,7 @@ TABLES: dict[str, pa.Schema] = {
     "variants/yprim": YPRIM,
     "variants/source": SOURCE,
     "variants/source_yprim": SOURCE_YPRIM,
+    "variants/ybus": VARIANT_YBUS,
     "states/yprim_state": YPRIM_STATE,
     "states/states": STATES,
 }

@@ -116,11 +116,13 @@ for bus, conductor, vm in list(
 
 ### The network admittance and Kirchhoff's current law
 
-`states/ybus` holds the network admittance `Y_state` of every state (siemens, `row`/`col` are
-`node_idx`). It maps the voltages to the currents that loads, generators and sources inject into
-the network, `I_inj = Y_state V` (not stored: one sparse product). At a node where only lines,
-transformers and other power-delivery elements meet, Kirchhoff's current law makes `I_inj` zero:
-a check of the stored solution, up to the power flow's tolerance.
+The network admittance `Y_state` of a state (siemens, `row`/`col` are `node_idx`) is the
+variant's matrix, `variants/ybus`, with the entries the state changes (its taps and capacitor
+steps), `states/ybus`, in their place. It maps the voltages to the currents that loads,
+generators and sources inject into the network, `I_inj = Y_state V` (not stored: one sparse
+product). At a node where only lines, transformers and other power-delivery elements meet,
+Kirchhoff's current law makes `I_inj` zero: a check of the stored solution, up to the power
+flow's tolerance.
 
 ```python
 def table(path, column, value):
@@ -128,15 +130,16 @@ def table(path, column, value):
     return t.filter(pc.equal(t[column], value))
 
 
-ybus = table(DATASET / "states" / "ybus.parquet", "state_id", state)
+entries = {}  # (row, col) -> admittance: the variant's, then the state's in their place
+for t in (
+    table(DATASET / "variants" / "ybus", "variant_id", variant),
+    table(DATASET / "states" / "ybus.parquet", "state_id", state),
+):
+    for r, c, g, b in zip(*(t[k].to_pylist() for k in ("row", "col", "g", "b"))):
+        entries[(r, c)] = complex(g, b)
 n = nodes.num_rows
-Y = sp.coo_matrix(
-    (
-        ybus["g"].to_numpy() + 1j * ybus["b"].to_numpy(),
-        (ybus["row"].to_numpy(), ybus["col"].to_numpy()),
-    ),
-    shape=(n, n),
-).tocsr()
+rows, cols = zip(*entries)
+Y = sp.coo_matrix((list(entries.values()), (rows, cols)), shape=(n, n)).tocsr()
 i_inj = Y @ v  # A
 
 elements = table(DATASET / "variants" / "elements", "variant_id", variant)
