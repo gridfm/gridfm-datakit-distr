@@ -482,7 +482,10 @@ class Settings(_Config):
     )
     seed: int = Field(ge=0, description="Root of the seed tree.")
     num_processes: int | None = Field(
-        default=None, ge=1, description="Worker processes; null: one per core."
+        default=None,
+        ge=1,
+        description="Worker processes; null: one per core. Each runs one variant at a time, so "
+        "at most networks x variants are busy.",
     )
     contexts_per_process: int = Field(
         default=1, ge=1, description="OpenDSS contexts (threads) per process."
