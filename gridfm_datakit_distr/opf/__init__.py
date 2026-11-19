@@ -1,1 +1,1 @@
-"""PMD export, OPF problem builder, Julia worker pool and OpenDSS verification."""
+"""OPF problem on the stored admittances (CasADi + Ipopt), workers and OpenDSS verification."""

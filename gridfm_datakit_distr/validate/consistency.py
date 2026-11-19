@@ -27,8 +27,6 @@ class AdmittanceReport:
 
     max_rel: float
     """max |a_ij - b_ij| / max(|a_ij|, |y_solver_ij|, |y_pc_ij|)."""
-    max_abs: float
-    """max |a_ij - b_ij| (S)."""
     worst: tuple[str, str]
     """OpenDSS node names (row, column) of the worst relative entry."""
     n_entries: int
@@ -54,7 +52,7 @@ def compare_admittance(
     pattern = sp.csr_matrix((abs(a) + abs(b)) > 0)
     rows, cols = pattern.nonzero()
     if rows.size == 0:
-        return AdmittanceReport(0.0, 0.0, ("", ""), 0)
+        return AdmittanceReport(0.0, ("", ""), 0)
     av = np.asarray(a[rows, cols]).ravel()
     bv = np.asarray(b[rows, cols]).ravel()
     solver = np.abs(np.asarray(sp.csr_matrix(y_solver)[rows, cols]).ravel())
@@ -65,7 +63,6 @@ def compare_admittance(
     names = [node.opendss_node for node in model.nodes]
     return AdmittanceReport(
         max_rel=float(rel[k]),
-        max_abs=float(diff.max()),
         worst=(names[int(rows[k])], names[int(cols[k])]),
         n_entries=int(rows.size),
     )

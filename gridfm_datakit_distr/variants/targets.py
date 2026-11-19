@@ -58,8 +58,6 @@ class GroundingTarget:
     """``Reactor.<name>`` or ``Transformer.<name>/w<winding>``."""
     command: str
     """Edit command up to the new resistance, e.g. ``Edit Transformer.t wdg=2 Rneut=``."""
-    r_ohm: float
-    x_ohm: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,10 +198,7 @@ def _groundings(prepared: PreparedNetwork) -> tuple[GroundingTarget, ...]:
         if e.element_class == "reactor" and e.enabled and is_grounding_reactor(e, model):
             if {model.nodes[k].bus for k in e.terminals[0] if k != GROUND} & bonds:
                 continue  # the neutral's bond to a source's star point, not an electrode
-            name = e.name.split(".", 1)[1]
-            api.Reactors.Name(name)
-            r, x = float(api.Reactors.R()), float(api.Reactors.X())
-            out.append(GroundingTarget(e.name, f"Edit {e.name} R=", r, x))
+            out.append(GroundingTarget(e.name, f"Edit {e.name} R="))
     i = api.Transformers.First()
     while i:
         name = api.Transformers.Name()
@@ -215,8 +210,6 @@ def _groundings(prepared: PreparedNetwork) -> tuple[GroundingTarget, ...]:
                         GroundingTarget(
                             f"Transformer.{name}/w{w}",
                             f"Edit Transformer.{name} wdg={w} Rneut=",
-                            float(api.Transformers.Rneut()),
-                            float(api.Transformers.Xneut()),
                         )
                     )
         i = api.Transformers.Next()

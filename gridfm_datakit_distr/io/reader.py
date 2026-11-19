@@ -169,9 +169,6 @@ class DatasetReader:
         self._variants: dict[str, VariantData] = {}
         self._states: dict[str, sp.csr_matrix] = {}
 
-    def scenario_ids(self) -> NDArray[np.int64]:
-        return np.asarray(self.meta.column("scenario_id").to_numpy(), dtype=np.int64)
-
     def variant(self, variant_id: str) -> VariantData:
         if variant_id not in self._variants:
             self._variants[variant_id] = self._variant(variant_id)

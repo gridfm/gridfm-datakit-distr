@@ -61,8 +61,6 @@ class PreparedNetwork:
     setpoints: SetpointReport
     excluded: tuple[str, ...]
     """Disabled elements, left out of the model."""
-    edits: tuple[str, ...] = ()
-    """The variant's edit script; empty for the network as loaded."""
 
 
 def with_nominal(model: ElectricalModel, levels: dict[float, float]) -> ElectricalModel:
@@ -132,5 +130,4 @@ def prepare_network(
         phases=phase_consistency(model),
         setpoints=setpoint_report(ctx),
         excluded=tuple(disabled_elements(ctx)),
-        edits=tuple(edits),
     )

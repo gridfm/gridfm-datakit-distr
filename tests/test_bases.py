@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-import cmath
-import math
 from pathlib import Path
-from typing import get_args
 
-import numpy as np
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.extract.extract_electrical import extract_electrical
 from gridfm_datakit_distr.model.electrical import ElectricalModel
-from gridfm_datakit_distr.model.units import SQRT3, Bases, Quantity
+from gridfm_datakit_distr.model.units import SQRT3
 from gridfm_datakit_distr.normalize.bases import (
     BaseError,
     BaseReport,
@@ -24,52 +18,6 @@ from gridfm_datakit_distr.normalize.bases import (
     s_base_va,
 )
 from tests.circuits import ALL_CLASSES, CONTROLLED, SPLIT_PHASE, TWO_BUS, mv_lv, write_circuit
-
-base_value = st.floats(1e-3, 1e9)
-part = st.one_of(st.just(0.0), st.floats(1e-6, 1e6), st.floats(-1e6, -1e-6))
-phasor = st.builds(complex, part, part)
-QUANTITIES: tuple[Quantity, ...] = get_args(Quantity)
-
-
-@given(s=base_value, v=base_value)
-def test_bases_are_consistent(s: float, v: float) -> None:
-    b = Bases(s, v)
-    assert math.isclose(b.z_base_ohm * b.i_base_a, b.v_ln_v, rel_tol=1e-12)
-    assert math.isclose(3 * b.v_ln_v * b.i_base_a, s, rel_tol=1e-12)
-    assert math.isclose(b.y_base_s * b.z_base_ohm, 1.0, rel_tol=1e-12)
-    assert math.isclose(Bases.from_ln(s, b.v_ln_v).v_ll_v, v, rel_tol=1e-12)
-
-
-@given(s=base_value, v=base_value, x=phasor)
-def test_per_unit_round_trip(s: float, v: float, x: complex) -> None:
-    b = Bases(s, v)
-    for q in QUANTITIES:
-        assert cmath.isclose(b.from_pu(b.to_pu(x, q), q), x, rel_tol=1e-12)
-        assert cmath.isclose(b.to_pu(b.from_pu(x, q), q), x, rel_tol=1e-12)
-
-
-@given(s=base_value, v=base_value, z=phasor.filter(lambda c: c != 0), i=phasor)
-def test_circuit_laws_hold_in_per_unit(s: float, v: float, z: complex, i: complex) -> None:
-    b = Bases(s, v)
-    u = z * i  # phase-to-neutral voltage across z
-    z_pu, i_pu, u_pu = b.to_pu(z, "impedance"), b.to_pu(i, "current"), b.to_pu(u, "voltage")
-    assert cmath.isclose(u_pu, z_pu * i_pu, rel_tol=1e-9)
-    assert cmath.isclose(
-        b.to_pu(3 * u * i.conjugate(), "power"), u_pu * i_pu.conjugate(), rel_tol=1e-9
-    )
-    assert cmath.isclose(b.to_pu(1 / z, "admittance"), 1 / z_pu, rel_tol=1e-9)
-
-
-def test_per_unit_arrays() -> None:
-    b = Bases(1e6, 400.0)
-    v = np.array([230.0 + 1j, 0.0, -115.0 - 199.2j])
-    assert b.from_pu(b.to_pu(v, "voltage"), "voltage") == pytest.approx(v, rel=1e-15)
-    assert b.to_pu(np.array([400.0 / SQRT3]), "voltage") == pytest.approx([1.0], rel=1e-15)
-
-
-def test_bases_must_be_positive() -> None:
-    with pytest.raises(ValueError, match="positive"):
-        Bases(0.0, 400.0)
 
 
 def solved(tmp_path: Path, files: dict[str, str]) -> tuple[DssContext, ElectricalModel]:

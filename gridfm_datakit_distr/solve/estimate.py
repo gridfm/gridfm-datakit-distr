@@ -50,7 +50,6 @@ class NetworkEstimate:
     network_id: str
     nodes: int
     customers: int
-    element_rows: int
     kron_nodes: int
     controls: bool
     """Regulator or capacitor controls: the time estimate may be several times low."""
@@ -83,6 +82,6 @@ def estimate_network(prepared: PreparedNetwork, config: GenerationConfig) -> Net
         size += VIEW_BYTES["kron"] * kron_nodes
     seconds = SECONDS[0] + SECONDS[1] * nodes + SECONDS[2] * customers
     return NetworkEstimate(
-        prepared.network.id, nodes, customers, element_rows, kron_nodes, controls, seconds,
+        prepared.network.id, nodes, customers, kron_nodes, controls, seconds,
         size, BYTES_PER_NODE_AND_VARIANT * nodes,
     )  # fmt: skip
