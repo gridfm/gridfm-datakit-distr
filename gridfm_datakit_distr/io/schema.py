@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import pyarrow as pa
 
-from gridfm_datakit_distr.views import datakit_columns as datakit
+from gridfm_datakit_distr.io import datakit_columns as datakit
 
 SCHEMA_VERSION = "0.6.0"
 

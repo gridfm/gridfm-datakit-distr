@@ -9,7 +9,7 @@ from __future__ import annotations
 import contextlib
 import math
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
@@ -206,6 +206,12 @@ class DssContext:
         """Node names ``bus.conductor`` (lower case) in the engine's Y-matrix order."""
         with self.engine_call("Circuit.YNodeOrder"):
             return [name.lower() for name in self._dss.Circuit.YNodeOrder()]
+
+    def ynode_positions(self, names: Iterable[str]) -> NDArray[np.intp]:
+        """Position of each node name (``bus.conductor``, any case) in :meth:`ynode_order`; a
+        name the engine does not have raises ``KeyError``."""
+        order = {name: j for j, name in enumerate(self.ynode_order())}
+        return np.array([order[name.lower()] for name in names], dtype=np.intp)
 
     def ynode_voltages(self) -> NDArray[np.complex128]:
         """Node voltages to ground (V), ordered as :meth:`ynode_order`."""

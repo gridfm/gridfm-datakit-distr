@@ -32,8 +32,7 @@ from gridfm_datakit_distr.io.reader import VariantTables
 from gridfm_datakit_distr.io.writer import part_key, read_states
 from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.model.io_parquet import NODES, YPRIM_STATE
-from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
-from gridfm_datakit_distr.solve.pf_batch import MAX_CACHED_STATES
+from gridfm_datakit_distr.solve.extraction import MAX_CACHED_STATES, ExtractionPlan, build_plan
 
 
 @dataclass(frozen=True, slots=True)

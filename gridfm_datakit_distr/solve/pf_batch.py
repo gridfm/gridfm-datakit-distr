@@ -21,9 +21,10 @@ runs it.
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -53,14 +54,13 @@ from gridfm_datakit_distr.scenarios.seeds import (
     scenario_rng,
     scenario_seed,
 )
-from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
+from gridfm_datakit_distr.solve.extraction import MAX_CACHED_STATES, ExtractionPlan, build_plan
 from gridfm_datakit_distr.validate.residual import check_this_scenario, residual
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
 from gridfm_datakit_distr.variants.generate import VariantResult
 
 PFStatus = Literal["converged", "off_setpoint", "not_converged", "error"]
 RETRY_FACTOR = 5
-MAX_CACHED_STATES = 64
 RAMP_STEPS = 10
 """Load-ramp fallback (``VariantRunner._ramp``): setpoints raised in this many equal steps."""
 
@@ -74,6 +74,39 @@ def prepare_options(config: GenerationConfig) -> PrepareOptions:
         vmaxpu=loads.vmaxpu,
         tolerance=config.settings.validation_tolerance,
     )
+
+
+def engine_indices(names: Iterable[str], elements: Iterable[str]) -> list[int]:
+    """Engine indices (1-based, for ``Loads.Idx`` and ``Generators.Idx``) of ``<Class>.<name>``
+    elements among the engine's ``AllNames()``."""
+    index = {n.lower(): j for j, n in enumerate(names, start=1)}
+    return [index[e.split(".", 1)[1].lower()] for e in elements]
+
+
+def set_setpoints(
+    api: Any,
+    load_idx: Sequence[int],
+    load_p_w: NDArray[np.float64],
+    load_q_var: NDArray[np.float64],
+    pv_idx: Sequence[int],
+    pv_p_w: NDArray[np.float64] | None,
+    pv_q_var: NDArray[np.float64] | None,
+    source: str,
+    v_src: float,
+) -> None:
+    """Set the customers' loads and the PV units' generators (W, var) and the source's voltage
+    (pu) in the engine; ``pv_p_w`` None leaves the generators as they are."""
+    for j, p, q in zip(load_idx, load_p_w, load_q_var, strict=True):
+        api.Loads.Idx(j)
+        api.Loads.kW(float(p) / 1e3)
+        api.Loads.kvar(float(q) / 1e3)
+    if pv_p_w is not None and pv_q_var is not None:
+        for j, p, q in zip(pv_idx, pv_p_w, pv_q_var, strict=True):
+            api.Generators.Idx(j)
+            api.Generators.kW(float(p) / 1e3)
+            api.Generators.kvar(float(q) / 1e3)
+    api.Vsources.Name(source)
+    api.Vsources.PU(v_src)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -152,10 +185,12 @@ class VariantRunner:
         """Without a control element the label solve is the power flow: no settling solves."""
         if not self._settles:
             self.ctx.command("Set ControlMode=OFF")
-        loads = {n.lower(): j for j, n in enumerate(self.ctx.api.Loads.AllNames(), start=1)}
-        self._load_idx = [loads[c.element.split(".", 1)[1].lower()] for c in self.customers]
-        gens = {n.lower(): j for j, n in enumerate(self.ctx.api.Generators.AllNames(), start=1)}
-        self._pv_idx = [gens[u.generator.split(".", 1)[1].lower()] for u in units]
+        self._load_idx = engine_indices(
+            self.ctx.api.Loads.AllNames(), (c.element for c in self.customers)
+        )
+        self._pv_idx = engine_indices(
+            self.ctx.api.Generators.AllNames(), (u.generator for u in units)
+        )
         """Engine indices (1-based) of the customers' loads and the PV units' generators."""
         self.registry = StateRegistry()
         self.plan = build_plan(self.model)
@@ -166,8 +201,7 @@ class VariantRunner:
         self._states: dict[str, tuple[ElectricalModel, ExtractionPlan]] = {}
         self._met: set[str] = set()
         self._new: dict[str, ElectricalModel] = {}
-        order = {name: j for j, name in enumerate(self.ctx.ynode_order())}
-        self._to_model = np.array([order[n.opendss_node.lower()] for n in self.model.nodes])
+        self._to_model = self.ctx.ynode_positions(n.opendss_node for n in self.model.nodes)
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
         self._draws: _Draws | None = None
@@ -220,18 +254,12 @@ class VariantRunner:
     # ------------------------------------------------------------------ steps
 
     def _set(self, draws: _Draws) -> None:
-        api = self.ctx.api
-        for j, p, q in zip(self._load_idx, draws.p_w, draws.q_var, strict=True):
-            api.Loads.Idx(j)
-            api.Loads.kW(float(p) / 1e3)
-            api.Loads.kvar(float(q) / 1e3)
-        if draws.pv is not None:
-            for j, p, q in zip(self._pv_idx, draws.pv.p_w, draws.pv.q_var, strict=True):
-                api.Generators.Idx(j)
-                api.Generators.kW(float(p) / 1e3)
-                api.Generators.kvar(float(q) / 1e3)
-        api.Vsources.Name(self._source)
-        api.Vsources.PU(draws.v_src)
+        pv = draws.pv
+        set_setpoints(
+            self.ctx.api, self._load_idx, draws.p_w, draws.q_var, self._pv_idx,
+            pv.p_w if pv is not None else None, pv.q_var if pv is not None else None,
+            self._source, draws.v_src,
+        )  # fmt: skip
 
     def _at_state(self, state_id: str) -> tuple[ElectricalModel, ExtractionPlan]:
         """The model and plan at the current (frozen, solved) state, kept for the last states; a

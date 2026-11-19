@@ -22,6 +22,9 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.model.electrical import ElectricalModel, Element
 
+MAX_CACHED_STATES = 64
+"""Network states whose model and plan a runner, the stored view or the statistics keep."""
+
 
 @dataclass(frozen=True, slots=True, eq=False)
 class ExtractionPlan:

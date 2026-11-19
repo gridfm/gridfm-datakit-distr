@@ -12,7 +12,7 @@ import pytest
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.solve.executor import generate
-from gridfm_datakit_distr.views.posseq import power_balance
+from gridfm_datakit_distr.validate.balance import power_balance
 from gridfm_datakit_distr.views.posseq_export import export_posseq
 
 pytestmark = [pytest.mark.conformance, pytest.mark.network_data]

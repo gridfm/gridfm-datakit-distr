@@ -93,3 +93,29 @@ def tied_to_ground(element: Element) -> list[bool]:
         return [False] * element.n_positions
     rows = np.abs(element.yprim).max(axis=1)
     return [bool(r >= 1e-3 * rows.max()) for r in rows]
+
+
+def unit_branches(model: ElectricalModel, element: Element) -> list[tuple[int, int]] | None:
+    """The branches (node pairs, :data:`GROUND` allowed in second place) a load or PV unit draws
+    its power through, each an equal share of it; None for a connection not covered.
+
+    One terminal of ``c`` conductors (OpenDSS ``NodeOrder``): wye when the last conductor is a
+    neutral node or ground, one branch from each other conductor to it (P/n per phase, checked in
+    spike s39); delta on three phases, ``(a, b), (b, c), (c, a)``; one branch between two phases.
+    """
+    if element.n_terminals != 1:
+        return None
+    nodes = element.local_nodes()
+
+    def ref(node: int) -> bool:
+        return node == GROUND or model.nodes[node].conductor == "n"
+
+    if len(nodes) >= 2 and ref(nodes[-1]) and not any(ref(n) for n in nodes[:-1]):
+        return [(n, nodes[-1]) for n in nodes[:-1]]
+    if any(ref(n) for n in nodes):
+        return None
+    if len(nodes) == 3:
+        return [(nodes[0], nodes[1]), (nodes[1], nodes[2]), (nodes[2], nodes[0])]
+    if len(nodes) == 2:
+        return [(nodes[0], nodes[1])]
+    return None

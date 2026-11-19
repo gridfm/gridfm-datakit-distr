@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.io import datakit_columns as datakit
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
 from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
@@ -25,8 +26,7 @@ from gridfm_datakit_distr.solve.executor import (
     plan_tasks,
     plan_units,
 )
-from gridfm_datakit_distr.views import datakit_columns as datakit
-from gridfm_datakit_distr.views.posseq import power_balance
+from gridfm_datakit_distr.validate.balance import power_balance
 from gridfm_datakit_distr.views.posseq_export import export_posseq
 from tests.circuits import VARIANT_FEEDER, write_circuit
 

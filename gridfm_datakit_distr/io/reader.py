@@ -26,6 +26,7 @@ from numpy.typing import NDArray
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.writer import part_key, read_states
 from gridfm_datakit_distr.model.electrical import ElectricalModel
+from gridfm_datakit_distr.model.ground import unit_branches
 from gridfm_datakit_distr.model.ids import split_scenario_id
 from gridfm_datakit_distr.model.io_parquet import (
     ELEMENTS,
@@ -35,7 +36,6 @@ from gridfm_datakit_distr.model.io_parquet import (
     YPRIM_STATE,
     from_tables,
 )
-from gridfm_datakit_distr.opf.support import unit_branches
 
 VARIANT_TABLES = (NODES, ELEMENTS, TERMINALS, YPRIM)
 """The tables of a variant's model (Yprims of the tap-independent elements)."""

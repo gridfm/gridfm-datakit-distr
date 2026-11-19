@@ -23,10 +23,10 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from gridfm_datakit_distr.io import datakit_columns as datakit
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.reader import rows_by_key
 from gridfm_datakit_distr.io.writer import DatasetWriter
-from gridfm_datakit_distr.views import datakit_columns as datakit
 from gridfm_datakit_distr.views.posseq import BASE_MVA
 
 

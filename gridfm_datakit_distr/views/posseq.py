@@ -30,7 +30,7 @@ per backbone bus with the bus's *equivalent demand* in the full model's solution
 the backbone elements deliver into the bus, i.e. everything that hangs from it (loads, DER,
 laterals with their losses and shunts, earthing).
 
-**Export.** datakit's columns (``views/datakit_columns.py``), per unit on ``BASE_MVA`` and the bus
+**Export.** datakit's columns (``io/datakit_columns.py``), per unit on ``BASE_MVA`` and the bus
 line-to-line base, computed from the realised elements' admittances read back from the engine, so
 that datakit's power balance holds on the view's own solution. DER enter the net demand ``Pd`` (a
 datakit PQ bus has no generation); their output is kept in ``x_`` columns.
@@ -681,8 +681,7 @@ class PosSeqView:
         """Bus voltages of the solved view (pu); the source's (OpenDSS's own power of the source
         across its 1e-9 ohm loses ~1e-3 to cancellation: the slack comes from the network side)."""
         if self._vidx is None:
-            order = {name: j for j, name in enumerate(self.ctx.ynode_order())}
-            self._vidx = np.array([order[f"{b.lower()}.1"] for b in self.backbone.buses])
+            self._vidx = self.ctx.ynode_positions(f"{b}.1" for b in self.backbone.buses)
         return np.asarray(self.ctx.ynode_voltages()[self._vidx] / self._v_ln)
 
     # ---------------------------------------------------------------------------------- tables
@@ -881,34 +880,3 @@ def branch_admittances(
     ysh = 1j * b / 2
     yff = np.asarray((ys + ysh) / tap**2, dtype=np.complex128)
     return yff, -ys / np.conj(t), -ys / t, np.asarray(ys + ysh, dtype=np.complex128)
-
-
-def power_balance(bus: pa.Table, branch: pa.Table, sn_mva: float = BASE_MVA) -> NDArray[np.float64]:
-    """Largest |P| or |Q| mismatch (MW, MVAr) of every scenario: datakit's
-    ``utils/power_balance.compute_bus_balance`` (injection - branch flows - shunt), per scenario
-    in the order of first appearance in ``bus``."""
-    sid = bus.column("load_scenario_idx").to_numpy()
-    scenarios, first = np.unique(sid, return_index=True)
-    scenarios = scenarios[np.argsort(first)]
-    out = np.zeros(len(scenarios))
-    bsid = branch.column("load_scenario_idx").to_numpy()
-    for k, s in enumerate(scenarios):
-        rows = sid == s
-        n = int(rows.sum())
-        col = {
-            c: bus.column(c).to_numpy()[rows] for c in ("Pd", "Qd", "Pg", "Qg", "Vm", "GS", "BS")
-        }
-        brows = bsid == s
-        f = branch.column("from_bus").to_numpy()[brows]
-        t = branch.column("to_bus").to_numpy()[brows]
-        p_out = np.bincount(f, branch.column("pf").to_numpy()[brows], n) + np.bincount(
-            t, branch.column("pt").to_numpy()[brows], n
-        )
-        q_out = np.bincount(f, branch.column("qf").to_numpy()[brows], n) + np.bincount(
-            t, branch.column("qt").to_numpy()[brows], n
-        )
-        v2 = col["Vm"] ** 2
-        p_mis = col["Pg"] - col["Pd"] - p_out - col["GS"] * v2 * sn_mva
-        q_mis = col["Qg"] - col["Qd"] - q_out + col["BS"] * v2 * sn_mva
-        out[k] = max(np.abs(p_mis).max(), np.abs(q_mis).max())
-    return out

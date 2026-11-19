@@ -374,7 +374,7 @@ For networks whose `neutral_representation` is already `kron`, the view equals t
 
 ### 7.2 Positive-sequence export (`export-posseq`; not stored in the dataset)
 
-A single-phase equivalent of the three-phase backbone, **re-solved** in OpenDSS, in **gridfm-datakit's tables, column names, units and layout** (`utils/column_names.py` and `save.py` at datakit commit 1b974c0, columns identical at d1aaa48; vendored in `views/datakit_columns.py`), so that today's balanced GENCO can read it. It is not part of the dataset: `export-posseq` builds it from the stored truth after generation, one directory per network:
+A single-phase equivalent of the three-phase backbone, **re-solved** in OpenDSS, in **gridfm-datakit's tables, column names, units and layout** (`utils/column_names.py` and `save.py` at datakit commit 1b974c0, columns identical at d1aaa48; vendored in `io/datakit_columns.py`), so that today's balanced GENCO can read it. It is not part of the dataset: `export-posseq` builds it from the stored truth after generation, one directory per network:
 
 ```
 <out>/<network_id>/

@@ -82,6 +82,13 @@ def test_ynode_order_is_lower_case_bus_dot_conductor(two_bus: Path) -> None:
     assert ctx.ynode_order() == ["src.1", "src.2", "src.3", "load.1", "load.2", "load.3"]
 
 
+def test_ynode_positions_are_looked_up_by_name_in_any_case(two_bus: Path) -> None:
+    ctx = _loaded(two_bus)
+    assert ctx.ynode_positions(["LOAD.2", "src.1"]).tolist() == [4, 0]
+    with pytest.raises(KeyError):
+        ctx.ynode_positions(["nowhere.1"])
+
+
 def test_line_yprim_matches_sequence_impedances(two_bus: Path) -> None:
     z1, z0 = 0.1 + 0.08j, 0.3 + 0.2j  # ohm (1 km)
     zs, zm = (2 * z1 + z0) / 3, (z0 - z1) / 3

@@ -7,9 +7,9 @@ PV unit, and the active and reactive power of each PV unit. Constraints:
   linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus` (lines,
   switches, transformers at their taps, capacitors, reactors), ``Y_s`` and ``E`` the source's
   admittance and ideal voltages (:class:`Source`);
-- each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.opf.support.unit_branches`: wye,
-  delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's constant
-  power, the PV unit's ``p + jq``;
+- each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.model.ground.unit_branches`:
+  wye, delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's
+  constant power, the PV unit's ``p + jq``;
 - PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max``
   (the unit's reactive limit);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
@@ -39,8 +39,8 @@ from numpy.typing import ArrayLike, NDArray
 
 from gridfm_datakit_distr.extract.source import Source
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
-from gridfm_datakit_distr.model.ground import conventional_zones
-from gridfm_datakit_distr.opf.support import unit_branches, unsupported_reason
+from gridfm_datakit_distr.model.ground import conventional_zones, unit_branches
+from gridfm_datakit_distr.opf.support import unsupported_reason
 
 S_BASE_VA = 1e3
 """Default and smallest power base of the NLP's scaling (VA): :func:`power_base`."""

@@ -12,14 +12,15 @@ import pytest
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.engine.context import complex_from_interleaved
+from gridfm_datakit_distr.io import datakit_columns as datakit
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.normalize.bases import s_base_va
 from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner, prepare_options
+from gridfm_datakit_distr.validate.balance import power_balance
 from gridfm_datakit_distr.variants.generate import generate_variant
 from gridfm_datakit_distr.variants.targets import collect_targets
-from gridfm_datakit_distr.views import datakit_columns as datakit
 from gridfm_datakit_distr.views import posseq
 from gridfm_datakit_distr.views.datakit_layout import ViewNetwork, compose
 from gridfm_datakit_distr.views.posseq import (
@@ -27,7 +28,6 @@ from gridfm_datakit_distr.views.posseq import (
     ModelIndex,
     PosSeqView,
     find_backbone,
-    power_balance,
     projection,
     transformer_params,
 )

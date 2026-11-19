@@ -35,7 +35,12 @@ from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.scenarios.controls import apply_state, model_at_state
 from gridfm_datakit_distr.scenarios.profiles import customers_of
-from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner
+from gridfm_datakit_distr.solve.pf_batch import (
+    ScenarioOutcome,
+    VariantRunner,
+    engine_indices,
+    set_setpoints,
+)
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
 from gridfm_datakit_distr.variants.generate import VariantResult, physics_failures
 
@@ -188,8 +193,11 @@ class KronView:
             raise KronError(f"{variant.variant_id}: the Kron view has other loads than the model")
         by_name = {n.opendss_node: n.idx for n in full.nodes}
         self.nodes = [(n.bus, n.conductor, by_name[n.opendss_node]) for n in self.model.nodes]
-        order = {name: j for j, name in enumerate(self.ctx.ynode_order())}
-        self._to_model = np.array([order[n.opendss_node.lower()] for n in self.model.nodes])
+        self._to_model = self.ctx.ynode_positions(n.opendss_node for n in self.model.nodes)
+        api = self.ctx.api
+        self._load_idx = engine_indices(api.Loads.AllNames(), (c.element for c in runner.customers))
+        units = runner.pv.units if runner.pv is not None else ()
+        self._pv_idx = engine_indices(api.Generators.AllNames(), (u.generator for u in units))
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
 
@@ -198,26 +206,10 @@ class KronView:
         if self.identity:
             return KronOutcome("converged", outcome.v)
         try:
-            api = self.ctx.api
-            for c, p, q in zip(
-                self.runner.customers, outcome.load_p_w, outcome.load_q_var, strict=True
-            ):
-                api.Loads.Name(c.element.split(".", 1)[1])
-                api.Loads.kW(float(p) / 1e3)
-                api.Loads.kvar(float(q) / 1e3)
-            if (
-                outcome.pv_p_w is not None
-                and outcome.pv_q_var is not None
-                and self.runner.pv is not None
-            ):
-                for u, p, q in zip(
-                    self.runner.pv.units, outcome.pv_p_w, outcome.pv_q_var, strict=True
-                ):
-                    api.Generators.Name(u.generator.split(".", 1)[1])
-                    api.Generators.kW(float(p) / 1e3)
-                    api.Generators.kvar(float(q) / 1e3)
-            api.Vsources.Name(self._source)
-            api.Vsources.PU(outcome.source_v_pu)
+            set_setpoints(
+                self.ctx.api, self._load_idx, outcome.load_p_w, outcome.load_q_var, self._pv_idx,
+                outcome.pv_p_w, outcome.pv_q_var, self._source, outcome.source_v_pu,
+            )  # fmt: skip
             self.ctx.command("Set ControlMode=OFF")
             if state is not None:
                 apply_state(self.ctx, state)

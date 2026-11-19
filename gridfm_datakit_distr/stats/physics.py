@@ -35,8 +35,7 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.io.reader import VariantTables
 from gridfm_datakit_distr.io.writer import read_states
-from gridfm_datakit_distr.solve.extraction import ExtractionPlan, build_plan
-from gridfm_datakit_distr.solve.pf_batch import MAX_CACHED_STATES
+from gridfm_datakit_distr.solve.extraction import MAX_CACHED_STATES, ExtractionPlan, build_plan
 
 ALPHA = np.exp(2j * np.pi / 3)
 PHASE_LABELS = ("a", "b", "c", "s1", "s2")

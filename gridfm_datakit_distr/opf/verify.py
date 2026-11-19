@@ -71,8 +71,7 @@ def verify(
         if not status.converged:
             return Verification(False, "power flow not converged", False, np.nan, np.nan, None)
         report = setpoint_report(ctx)
-        order = {name: j for j, name in enumerate(ctx.ynode_order())}
-        v = ctx.ynode_voltages()[[order[n.opendss_node.lower()] for n in model.nodes]]
+        v = ctx.ynode_voltages()[ctx.ynode_positions(n.opendss_node for n in model.nodes)]
         hold = _controls_hold(ctx, model.variant_id) if has_controls(ctx) else None
     finally:
         for name, (kw, kvar) in zip(problem.pv_names, before, strict=False):
