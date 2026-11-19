@@ -5,11 +5,10 @@ A **unit** is a chunk of scenarios of one variant: ``scenarios [c * chunk_size, 
 tree; order-independent scenarios), so the dataset is the same whatever the number
 of processes and contexts and whatever the order of the units.
 
-A **task** is every unit of one variant, run by one process: ``contexts_per_process`` threads,
-one OpenDSS context each, each running its share of the units in sequence. A thread slot keeps the
-runner and the views of its variant, so the variant is built once per slot, not once per unit.
-Only the main process writes the manifest: the status of each unit as it finishes (a worker sends
-it through a queue).
+A **task** is up to ``contexts_per_process`` units of the same variant, run by one process with
+one thread and one OpenDSS context per unit. A process keeps, per thread slot, the runner and the
+views of its last variant, so consecutive tasks of a variant do not rebuild them. Only the main
+process writes the manifest: after each task, the status of its units.
 
 **Resume.** A dataset directory with a manifest of the same ``config_hash`` and versions resumes:
 ``done`` units are skipped, the others (re)run; a unit's files are written atomically under fixed
@@ -23,19 +22,16 @@ from a dataset by ``export-posseq``: ``views/posseq_export``.)
 
 from __future__ import annotations
 
-import contextlib
 import os
-import queue
 import resource
 import shutil
 import threading
 from collections import Counter
-from collections.abc import Callable, Sequence
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
+from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from multiprocessing import get_context
-from multiprocessing.queues import Queue as MPQueue
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -142,13 +138,17 @@ def plan_units(config: GenerationConfig, jobs: Sequence[Job]) -> list[Unit]:
     ]
 
 
-def plan_tasks(units: Sequence[Unit], jobs: Sequence[Job]) -> list[Task]:
-    """One task per variant: its units, in key order."""
+def plan_tasks(units: Sequence[Unit], jobs: Sequence[Job], width: int) -> list[Task]:
+    """Units grouped by variant into tasks of at most ``width`` units, in key order."""
     by_idx = {job.network_idx: job for job in jobs}
     groups: dict[tuple[int, int], list[Unit]] = {}
     for u in sorted(units, key=lambda u: u.key):
         groups.setdefault((u.network_idx, u.variant_idx), []).append(u)
-    return [Task(by_idx[i], k, tuple(members)) for (i, k), members in groups.items()]
+    tasks = []
+    for (i, k), members in groups.items():
+        for start in range(0, len(members), width):
+            tasks.append(Task(by_idx[i], k, tuple(members[start : start + width])))
+    return tasks
 
 
 def versions(config: GenerationConfig) -> dict[str, str]:
@@ -178,20 +178,26 @@ def generate(
     passports = _network_tables(config, jobs, catalog, root, writer, manifest)
     manifest.add_units(plan_units(config, jobs))
     todo = [u for u in manifest.units.values() if u.status != "done"]
-    tasks = plan_tasks(todo, jobs)
+    width = config.settings.contexts_per_process
+    tasks = plan_tasks(todo, jobs, width)
     processes = config.settings.num_processes or os.cpu_count() or 1
     units = {u.key: u for u in todo}
-    lock = threading.Lock()
-
-    def record(result: UnitResult) -> None:
-        with lock:  # a task's threads finish units concurrently
-            _record(manifest, units, [result])
-
     if processes == 1 or not tasks:
         for task in tasks:
-            run_task(task, config, out, root, manifest.config_hash, record)
+            _record(manifest, units, run_task(task, config, out, root, manifest.config_hash))
     else:
-        _run_pool(tasks, config, out, root, manifest, processes, record)
+        context = get_context("spawn")
+        with ProcessPoolExecutor(max_workers=processes, mp_context=context) as pool:
+            futures = [
+                pool.submit(run_task, task, config, out, root, manifest.config_hash)
+                for task in tasks
+            ]
+            try:
+                for future in as_completed(futures):
+                    _record(manifest, units, future.result())
+            except BaseException:  # Ctrl-C or a dead worker: stop, the queued tasks never run
+                pool.shutdown(cancel_futures=True)
+                raise
     finalise(config, out, manifest, passports, jobs)
     return manifest
 
@@ -255,53 +261,6 @@ def _network_tables(
     return passports
 
 
-def _run_pool(
-    tasks: Sequence[Task],
-    config: GenerationConfig,
-    out: Path,
-    root: Path | None,
-    manifest: Manifest,
-    processes: int,
-    record: Callable[[UnitResult], None],
-) -> None:
-    """The tasks on a pool of worker processes; each unit recorded when its worker reports it
-    (through a queue) or, at the latest, when its task returns."""
-    context = get_context("spawn")
-    finished: MPQueue[UnitResult] = context.Queue()
-    recorded: set[str] = set()
-
-    def take(result: UnitResult) -> None:
-        if result.key not in recorded:
-            recorded.add(result.key)
-            record(result)
-
-    def drain() -> None:
-        while True:
-            try:
-                take(finished.get_nowait())
-            except queue.Empty:
-                return
-
-    with ProcessPoolExecutor(
-        max_workers=processes, mp_context=context, initializer=_worker, initargs=(finished,)
-    ) as pool:
-        pending = {
-            pool.submit(run_task, task, config, out, root, manifest.config_hash) for task in tasks
-        }
-        try:
-            while pending:
-                done, pending = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
-                drain()
-                for future in done:  # raises for a dead worker
-                    for result in future.result():
-                        take(result)
-        except BaseException:  # Ctrl-C or a dead worker: stop, the queued tasks never run
-            pool.shutdown(cancel_futures=True)
-            with contextlib.suppress(Exception):  # never hide the first error
-                drain()  # units finished meanwhile stay done
-            raise
-
-
 def _record(manifest: Manifest, units: dict[str, Unit], results: Sequence[UnitResult]) -> None:
     for r in results:
         manifest.finish(units[r.key], r.status, r.message, r.peak_rss_mib)
@@ -350,47 +309,20 @@ class _Slot:
 _SLOTS: dict[int, _Slot] = {}
 _TARGETS: dict[tuple[str, ...], VariantTargets] = {}
 _LOCK = threading.Lock()
-_FINISHED: MPQueue[UnitResult] | None = None
-"""A worker process's queue to the main process (:func:`_worker`)."""
-
-
-def _worker(finished: MPQueue[UnitResult]) -> None:
-    """Initialise a worker process: units are reported through ``finished`` as they end. A
-    report still unsent when the worker exits is dropped, never waited for (the main process
-    may have stopped reading): its task's return value carries it too."""
-    global _FINISHED
-    _FINISHED = finished
-    finished.cancel_join_thread()
 
 
 def run_task(
-    task: Task,
-    config: GenerationConfig,
-    out: Path,
-    root: Path | None,
-    digest: str,
-    report: Callable[[UnitResult], None] | None = None,
+    task: Task, config: GenerationConfig, out: Path, root: Path | None, digest: str
 ) -> list[UnitResult]:
-    """Run the units of a task (process entry point): ``contexts_per_process`` threads, one
-    context each, each running every ``width``-th unit in sequence. Each unit's result goes to
-    ``report`` as soon as it ends (in a worker process: to the main process's queue)."""
-    sink = report or (_FINISHED.put if _FINISHED is not None else None)
-    width = max(1, min(config.settings.contexts_per_process, len(task.units)))
-
-    def run_slot(slot: int) -> list[UnitResult]:
-        results = []
-        for unit in task.units[slot::width]:
-            result = _run_unit(slot, task, unit, config, out, root, digest)
-            if sink is not None:
-                sink(result)
-            results.append(result)
-        return results
-
-    if width == 1:
-        return run_slot(0)
-    with ThreadPoolExecutor(max_workers=width) as pool:
-        futures = [pool.submit(run_slot, slot) for slot in range(width)]
-        return [r for f in futures for r in f.result()]
+    """Run the units of a task, one thread and context each (process entry point)."""
+    if len(task.units) == 1:
+        return [_run_unit(0, task, task.units[0], config, out, root, digest)]
+    with ThreadPoolExecutor(max_workers=len(task.units)) as pool:
+        futures = [
+            pool.submit(_run_unit, slot, task, unit, config, out, root, digest)
+            for slot, unit in enumerate(task.units)
+        ]
+        return [f.result() for f in futures]
 
 
 def _run_unit(
