@@ -33,16 +33,20 @@ SECONDS = (3.7e-3, 0.03e-6, 22.4e-6)
 CONTROLS_FACTOR = 22.0
 """Measured on IEEE 8500 (12 regulators, 9 capacitor controls) against the estimate."""
 BYTES = {
-    "mixed": {"meta": 50.0, "node": 11.7, "element": 6.0, "load": 11.0, "der": 7.0},
-    "full": {"meta": 55.0, "node": 11.7, "element": 8.0, "load": 18.5, "der": 11.0},
+    "mixed": {"meta": 357.0, "node": 10.6, "element": 4.2, "load": 8.4, "der": 7.8},
+    "full": {"meta": 373.0, "node": 10.6, "element": 6.3, "load": 16.3, "der": 12.6},
 }
-"""Bytes per row of the scenario tables in chunks of hundreds of scenarios (CSIRO n21_f3, 2000
-scenarios; ``node``: voltages only, float64 in both precisions, 500 scenarios; ``element`` only
-with ``labels.element_currents``)."""
-VIEW_BYTES = {"kron": 12.5}
-"""Bytes per Kron phase node and scenario, its state tables included."""
-BYTES_PER_NODE_AND_VARIANT = 450.0
-"""Model tables and semantic layer of a variant (CSIRO n21_f3: 1.5 MB for 3376 nodes)."""
+"""Bytes per row of the scenario tables in chunks of hundreds of scenarios: the part files of
+CSIRO n21_f3, one variant of 2000 scenarios in chunks of 500, PV at 30 % of the customers, written
+by generator 0.3.0.dev1 (``node``: voltages only, float64 in both precisions; ``element`` only with
+``labels.element_currents``; ``meta`` is high because every row group of 16 scenarios carries its
+own dictionaries)."""
+VIEW_BYTES = {"kron": 11.3}
+"""Bytes per Kron phase node and scenario, its state tables included (CSIRO n21_f3, 500
+scenarios, 2532 phase nodes; the writer of ``BYTES``)."""
+BYTES_PER_NODE_AND_VARIANT = 500.0
+"""Model tables, admittance and semantic layer of a variant (CSIRO n21_f3: ``variants/``, 1.69 MB
+for 3376 nodes)."""
 
 
 @dataclass(frozen=True, slots=True)
