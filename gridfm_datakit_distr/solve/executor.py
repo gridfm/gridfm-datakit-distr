@@ -386,11 +386,11 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
     i, seed = task.job.network_idx, config.settings.seed
     variant = generate_variant(
         network, targets, config.variants, seed, k, options=options, root=root,
-        der=config.der.pv,
+        der=config.der.pv, keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":
-        runner = VariantRunner(network, variant, config, i, root=root)
+        runner = VariantRunner(network, variant, config, i, root=root, prepared=variant.prepared)
         s_base = s_base_va(runner.ctx, runner.model)[0]  # the loads are still the variant's
         semantic = extract_semantic(runner.ctx, runner.model, s_base_va=s_base)
         slot.semantic = semantic.model_dump_json()

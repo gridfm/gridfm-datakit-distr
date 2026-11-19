@@ -34,7 +34,7 @@ from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.model.ids import scenario_id
 from gridfm_datakit_distr.model.state import NetworkState, Origin
 from gridfm_datakit_distr.networks.catalog import Network
-from gridfm_datakit_distr.networks.prepare import PrepareOptions, prepare_network
+from gridfm_datakit_distr.networks.prepare import PreparedNetwork, PrepareOptions, prepare_network
 from gridfm_datakit_distr.scenarios.controls import (
     MAX_CONTROL_ITER,
     StateRegistry,
@@ -119,7 +119,10 @@ class VariantRunner:
         i: int,
         *,
         root: Path | None = None,
+        prepared: PreparedNetwork | None = None,
     ) -> None:
+        """``prepared``: the variant's compiled network (``generate_variant(keep_prepared=True)``),
+        taken over with its context; None compiles it again."""
         if variant.perturbation is None:
             raise ValueError(f"{variant.variant_id} failed: no scenarios to run")
         self.config = config
@@ -129,9 +132,12 @@ class VariantRunner:
         self.variant_id = variant.variant_id
         self.network_id = network.id
         self.options = prepare_options(config)
-        prepared = prepare_network(
-            network, self.options, root, variant_id=variant.variant_id, edits=variant.script
-        )
+        if prepared is None:
+            prepared = prepare_network(
+                network, self.options, root, variant_id=variant.variant_id, edits=variant.script
+            )
+        elif (prepared.model.variant_id, prepared.options) != (variant.variant_id, self.options):
+            raise ValueError(f"{variant.variant_id}: the compiled network is another variant's")
         self.ctx, self.model = prepared.ctx, prepared.model
         self.customers = customers_of(prepared)
         self.loads = make_provider(config.scenarios.profiles, self.customers, network, root)

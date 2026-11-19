@@ -85,6 +85,32 @@ def test_results_do_not_depend_on_the_order(tmp_path: Path) -> None:
         assert np.array_equal(a[s].v, b[s].v)  # bitwise
 
 
+def test_a_runner_takes_over_the_compiled_variant(tmp_path: Path) -> None:
+    """The variant's compiled network, taken over, gives the results of compiling it again;
+    another variant's is refused."""
+    cfg = config(controls={"tap_jitter_steps": 2})
+    write_circuit(tmp_path / "src", CONTROLLED)
+    network = Network(id="t/net", source="src", master="master.dss")
+    options = prepare_options(cfg)
+    targets = collect_targets(prepare_network(network, options, tmp_path))
+    kept = [
+        generate_variant(network, targets, cfg.variants, SEED, k, options=options, root=tmp_path,
+                         keep_prepared=True)
+        for k in (0, 1)
+    ]  # fmt: skip
+    assert kept[0].prepared is not None
+    fresh = VariantRunner(network, kept[0], cfg, 0, root=tmp_path)
+    taken = VariantRunner(network, kept[0], cfg, 0, root=tmp_path, prepared=kept[0].prepared)
+    for s in range(4):
+        a, b = fresh.run(s), taken.run(s)
+        assert a.state_id == b.state_id
+        assert a.v is not None
+        assert b.v is not None
+        assert np.array_equal(a.v, b.v)  # bitwise
+    with pytest.raises(ValueError, match="another variant's"):
+        VariantRunner(network, kept[0], cfg, 0, root=tmp_path, prepared=kept[1].prepared)
+
+
 def test_without_controls_the_label_solve_alone_gives_the_same_results(tmp_path: Path) -> None:
     cfg = config(der={"pv": {"penetration": 1.0}})  # PV generators are set too
     fast = runner(tmp_path / "a", VARIANT_FEEDER, cfg)

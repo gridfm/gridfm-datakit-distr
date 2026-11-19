@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -59,6 +59,9 @@ class VariantResult:
     """``attempt <a>: <check>: <reason>`` of every rejected attempt."""
     model: ElectricalModel | None
     edit_deviation: float
+    prepared: PreparedNetwork | None = field(default=None, repr=False, compare=False)
+    """The accepted attempt's compiled network, kept when asked for (``keep_prepared``) for a
+    :class:`~gridfm_datakit_distr.solve.pf_batch.VariantRunner` to take over."""
 
     @property
     def variant_id(self) -> str:
@@ -142,9 +145,11 @@ def generate_variant(
     options: PrepareOptions | None = None,
     root: Path | None = None,
     der: PV | None = None,
+    keep_prepared: bool = False,
 ) -> VariantResult:
     """Variant ``k`` of ``network``; with ``der``, the PV units of its customers. Its draws depend
-    on the network's id, not on its place in the dataset."""
+    on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
+    carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
     net = network_key(network.id)
     fingerprint = variant_seed(seed, net, k)
@@ -167,7 +172,7 @@ def generate_variant(
         if not reasons:
             return VariantResult(
                 network.id, k, fingerprint, "ok", p, tuple(script), tuple(failures),
-                prepared.model, deviation,
+                prepared.model, deviation, prepared if keep_prepared else None,
             )  # fmt: skip
         failures += [f"attempt {attempt}: {reason}" for reason in reasons]
     return VariantResult(
