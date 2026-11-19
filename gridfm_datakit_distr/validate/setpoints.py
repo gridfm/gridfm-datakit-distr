@@ -70,26 +70,22 @@ def setpoint_report(ctx: DssContext, *, rel_tol: float = 1e-6) -> SetpointReport
     """Check that every enabled load and generator of the solved circuit meets its setpoint."""
     _check_preconditions(ctx, rel_tol)
     api = ctx.api
-    n_visited = 0
-    names: list[str] = []
+    classes = ((api.Loads, "Load", False), (api.Generators, "Generator", True))
+    where: list[tuple[int, int]] = []  # (class, place in its First/Next walk)
     s_set: list[complex] = []  # consumed VA
     powers: list[NDArray[np.float64]] = []  # interleaved P, Q (kW, kvar) per conductor
     with ctx.engine_call("Loads/Generators"):
-        for cls, prefix, generator in (
-            (api.Loads, "Load", False),
-            (api.Generators, "Generator", True),
-        ):
-            i = cls.First()  # First and Next make the element the active circuit element
+        for c, (cls, _, generator) in enumerate(classes):
+            # First/Next skip disabled elements and make each the active circuit element
+            i, place = cls.First(), 0
             while i > 0:
-                n_visited += 1
-                if api.CktElement.Enabled():
-                    names.append(f"{prefix}.{cls.Name()}")
-                    s = complex(cls.kW(), cls.kvar())
-                    s_set.append((-s if generator else s) * 1e3)
-                    powers.append(np.asarray(api.CktElement.Powers(), dtype=np.float64))
-                i = cls.Next()
-    if not names:
-        return SetpointReport(n_checked=n_visited, off=(), max_rel=0.0, worst="")
+                where.append((c, place))
+                s = complex(cls.kW(), cls.kvar())
+                s_set.append((-s if generator else s) * 1e3)
+                powers.append(np.asarray(api.CktElement.Powers(), dtype=np.float64))
+                i, place = cls.Next(), place + 1
+    if not where:
+        return SetpointReport(n_checked=0, off=(), max_rel=0.0, worst="")
     delivered = np.empty(len(powers), dtype=np.complex128)
     sizes = np.array([p.size for p in powers])
     for size in np.unique(sizes):  # rows of one length, each summed as numpy sums one element
@@ -99,6 +95,20 @@ def setpoint_report(ctx: DssContext, *, rel_tol: float = 1e-6) -> SetpointReport
     target = np.array(s_set)
     d = delivered - target  # hypot as Python's abs(complex); np.abs differs in the last bit
     rel = np.hypot(d.real, d.imag) / np.maximum(np.hypot(target.real, target.imag), 1.0)
-    off = tuple(names[k] for k in np.flatnonzero(~(rel <= rel_tol)))  # NaN is off
+    off = np.flatnonzero(~(rel <= rel_tol))  # NaN is off
     k = int(np.argmax(np.where(np.isnan(rel), np.inf, rel)))  # NaN is the worst
-    return SetpointReport(n_checked=n_visited, off=off, max_rel=float(rel[k]), worst=names[k])
+    wanted = {where[j] for j in [*off.tolist(), k]}
+    names: dict[tuple[int, int], str] = {}
+    with ctx.engine_call("Loads/Generators names"):  # only those reported: a second walk
+        for c, (cls, prefix, _) in enumerate(classes):
+            i, place = cls.First(), 0
+            while i > 0 and len(names) < len(wanted):
+                if (c, place) in wanted:
+                    names[(c, place)] = f"{prefix}.{cls.Name()}"
+                i, place = cls.Next(), place + 1
+    return SetpointReport(
+        n_checked=len(where),
+        off=tuple(names[where[j]] for j in off.tolist()),
+        max_rel=float(rel[k]),
+        worst=names[where[k]],
+    )

@@ -39,6 +39,17 @@ def test_a_nan_setpoint_is_off(tmp_path: Path) -> None:
     assert not report.passes()
 
 
+def test_a_disabled_load_is_not_checked(tmp_path: Path) -> None:
+    ctx = solved(tmp_path, LATERAL)
+    ctx.command("Edit Load.l3 enabled=no")
+    assert ctx.solve().converged
+    ctx.api.Loads.Name("l3")
+    ctx.api.Loads.kW(float("nan"))  # off if it were checked
+    report = setpoint_report(ctx)
+    assert report.passes()
+    assert report.n_checked == 1
+
+
 def test_normalised_window_is_enforced(tmp_path: Path) -> None:
     # vminpu 0.9: the wye loads at bus b see 0.875 pu on phase 1; the delta load (phase to phase)
     # and the load at bus a (0.93 pu) stay inside.
