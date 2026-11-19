@@ -5,15 +5,11 @@ A **unit** is a chunk of scenarios of one variant: ``scenarios [c * chunk_size, 
 tree; order-independent scenarios), so the dataset is the same whatever the number
 of processes and contexts and whatever the order of the units.
 
-A **task** is the unit of work of one process: ``contexts_per_process`` threads, one OpenDSS
-context each, each running its share of the task's units in sequence. A thread slot keeps the
-runner and the views of its variant, so a task's variant is built once per slot, not once per
-unit. With at least as many variants (networks x variants) as processes, a task is every unit of
-one variant: every process has work and no variant is built twice. With fewer, a task is at most
-``contexts_per_process`` units of one variant, so that a variant's chunks run in different
-processes (a chunk with OPF labels takes far longer than building the variant). Only the main
-process writes the manifest: the status of each unit as it finishes (a worker sends it through a
-queue).
+A **task** is every unit of one variant, run by one process: ``contexts_per_process`` threads,
+one OpenDSS context each, each running its share of the units in sequence. A thread slot keeps the
+runner and the views of its variant, so the variant is built once per slot, not once per unit.
+Only the main process writes the manifest: the status of each unit as it finishes (a worker sends
+it through a queue).
 
 **Resume.** A dataset directory with a manifest of the same ``config_hash`` and versions resumes:
 ``done`` units are skipped, the others (re)run; a unit's files are written atomically under fixed
@@ -146,22 +142,13 @@ def plan_units(config: GenerationConfig, jobs: Sequence[Job]) -> list[Unit]:
     ]
 
 
-def plan_tasks(
-    units: Sequence[Unit], jobs: Sequence[Job], processes: int, width: int
-) -> list[Task]:
-    """The units grouped by variant, in key order, into tasks: one task per variant when there are
-    at least ``processes`` variants, else tasks of at most ``width`` units."""
+def plan_tasks(units: Sequence[Unit], jobs: Sequence[Job]) -> list[Task]:
+    """One task per variant: its units, in key order."""
     by_idx = {job.network_idx: job for job in jobs}
     groups: dict[tuple[int, int], list[Unit]] = {}
     for u in sorted(units, key=lambda u: u.key):
         groups.setdefault((u.network_idx, u.variant_idx), []).append(u)
-    if len(groups) >= processes:
-        width = max(len(members) for members in groups.values())
-    return [
-        Task(by_idx[i], k, tuple(members[start : start + width]))
-        for (i, k), members in groups.items()
-        for start in range(0, len(members), width)
-    ]
+    return [Task(by_idx[i], k, tuple(members)) for (i, k), members in groups.items()]
 
 
 def versions(config: GenerationConfig) -> dict[str, str]:
@@ -191,8 +178,8 @@ def generate(
     passports = _network_tables(config, jobs, catalog, root, writer, manifest)
     manifest.add_units(plan_units(config, jobs))
     todo = [u for u in manifest.units.values() if u.status != "done"]
+    tasks = plan_tasks(todo, jobs)
     processes = config.settings.num_processes or os.cpu_count() or 1
-    tasks = plan_tasks(todo, jobs, processes, config.settings.contexts_per_process)
     units = {u.key: u for u in todo}
     lock = threading.Lock()
 

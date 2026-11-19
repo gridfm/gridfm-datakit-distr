@@ -122,39 +122,9 @@ def test_units_and_tasks(tmp_path: Path) -> None:
     units = plan_units(cfg, jobs)
     assert len(units) == 2 * 2 * 3  # networks x variants x chunks (2 + 2 + 1 scenarios)
     assert [(u.chunk, u.first, u.stop) for u in units[:3]] == [(0, 0, 2), (1, 2, 4), (2, 4, 5)]
-    for processes in (1, 4):  # 4 variants: one task per variant, built once per slot
-        tasks = plan_tasks(units, jobs, processes, 1)
-        assert [len(t.units) for t in tasks] == [3] * 4
-        assert all(len({(u.network_idx, u.variant_idx) for u in t.units}) == 1 for t in tasks)
-
-
-def test_tasks_split_a_variant_only_below_the_processes(tmp_path: Path) -> None:
-    cfg = config()
-    jobs = jobs_of(cfg, catalog(tmp_path))
-    units = plan_units(cfg, jobs)  # 4 variants of 3 chunks
-    for width, sizes in ((1, [1] * 12), (2, [2, 1] * 4), (5, [3] * 4)):
-        tasks = plan_tasks(units, jobs, 5, width)  # 5 processes > 4 variants
-        assert [len(t.units) for t in tasks] == sizes
-        assert [u.key for t in tasks for u in t.units] == [u.key for u in units]
-        assert all(len({(u.network_idx, u.variant_idx) for u in t.units}) == 1 for t in tasks)
-    # a resumed run: the units left of one variant fill a task of their own
-    left = [u for u in units if (u.network_idx, u.variant_idx) == (1, 1)]
-    assert [len(t.units) for t in plan_tasks(left, jobs, 2, 1)] == [1, 1, 1]
-    assert [len(t.units) for t in plan_tasks(left, jobs, 1, 1)] == [3]
-    assert plan_tasks([], jobs, 4, 1) == []
-
-
-def test_the_dry_run_counts_the_processes_the_tasks_keep_busy(tmp_path: Path) -> None:
-    from gridfm_datakit_distr.cli import _dry_run
-
-    def busy(**settings: Any) -> str:
-        cfg = config(**settings)  # 4 variants of 3 chunks
-        text = _dry_run(cfg, jobs_of(cfg, catalog(tmp_path)), tmp_path, tmp_path / "out")
-        return next(line for line in text.splitlines() if "of wall time" in line)
-
-    assert "on 8 process(es)" in busy(num_processes=8)  # 12 tasks of one chunk
-    assert "on 4 process(es)" in busy(num_processes=8, contexts_per_process=3)  # 4 tasks
-    assert "on 4 process(es)" in busy(num_processes=4)  # a task per variant
+    tasks = plan_tasks(units, jobs)
+    assert [len(t.units) for t in tasks] == [3] * 4  # one task per variant: built once per slot
+    assert all(len({(u.network_idx, u.variant_idx) for u in t.units}) == 1 for t in tasks)
 
 
 # ----------------------------------------------------------------------------------- generation
@@ -214,12 +184,11 @@ def test_a_dataset(tmp_path: Path) -> None:
     assert card.startswith("# d\n")
 
 
-@pytest.mark.parametrize("processes", [4, 5])  # 4 variants: a task per variant, then per chunks
-def test_the_same_dataset_with_processes_and_contexts(tmp_path: Path, processes: int) -> None:
-    """The same dataset with (1 process, 1 context) and (``processes``, 2 contexts)."""
+def test_the_same_dataset_with_processes_and_contexts(tmp_path: Path) -> None:
+    """The same dataset with (1 process, 1 context) and (4 processes, 2 contexts)."""
     cat = catalog(tmp_path)
     generate(config(), tmp_path / "a", catalog=cat, root=tmp_path)
-    parallel = config(num_processes=processes, contexts_per_process=2)
+    parallel = config(num_processes=4, contexts_per_process=2)
     generate(parallel, tmp_path / "b", catalog=cat, root=tmp_path)
     same_dataset(tmp_path / "a", tmp_path / "b")
 
