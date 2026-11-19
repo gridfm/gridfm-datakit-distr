@@ -293,7 +293,7 @@ def _dry_run(config: GenerationConfig, jobs: list[Job], cache: Path | None, out:
     """Counts and estimates of a generation (:mod:`solve.estimate`)."""
     from gridfm_datakit_distr.networks.prepare import prepare_network
     from gridfm_datakit_distr.solve.estimate import CONTROLS_FACTOR, estimate_network
-    from gridfm_datakit_distr.solve.executor import plan_units
+    from gridfm_datakit_distr.solve.executor import plan_tasks, plan_units
     from gridfm_datakit_distr.solve.pf_batch import prepare_options
 
     options = prepare_options(config)
@@ -321,8 +321,10 @@ def _dry_run(config: GenerationConfig, jobs: list[Job], cache: Path | None, out:
             f"  {job.network.id}: {e.nodes} nodes, {e.customers} customers; "
             f"{e.seconds_per_scenario * 1e3:.1f} ms, {e.bytes_per_scenario / 1e3:.1f} kB{flag}"
         )
-    # one task per variant: more processes than variants stay idle
-    processes = min(config.settings.num_processes or os.cpu_count() or 1, len(jobs) * n_variants)
+    # a process without a task stays idle: the tasks are planned as the run will
+    requested = config.settings.num_processes or os.cpu_count() or 1
+    tasks = plan_tasks(units, jobs, requested, config.settings.contexts_per_process)
+    processes = min(requested, len(tasks))
     lines += [
         f"estimated CPU time {_duration(seconds)}, about {_duration(seconds / processes)} of wall "
         f"time on {processes} process(es); storage {_size(size)}",

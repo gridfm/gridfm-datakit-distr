@@ -202,7 +202,7 @@ Execution settings; the dataset does not depend on the process and context count
 |---|---|---|---|
 | `settings.data_dir` | string of at least 1 character | `./data` | Directory of the datasets (relative to the working directory). |
 | `settings.seed` | integer ≥ 0 | required | Root of the seed tree. |
-| `settings.num_processes` | integer ≥ 1 or null | null | Worker processes; null: one per core. Each runs one variant at a time, so at most networks x variants are busy. |
+| `settings.num_processes` | integer ≥ 1 or null | null | Worker processes; null: one per core. With at least as many variants (networks x variants) as processes, a process runs all the chunks of a variant; with fewer, the chunks of a variant go to different processes. |
 | `settings.contexts_per_process` | integer ≥ 1 | `1` | OpenDSS contexts (threads) per process. |
 | `settings.chunk_size` | integer ≥ 1 | `500` | Scenarios per output chunk. |
 | `settings.float_precision` | one of `mixed`, `full` | `mixed` | `mixed`: float32 for currents, powers and setpoints; `full`: float64 everywhere (docs/manual/outputs.md). |

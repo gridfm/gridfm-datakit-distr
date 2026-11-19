@@ -464,8 +464,9 @@ class Settings(_Config):
     num_processes: int | None = Field(
         default=None,
         ge=1,
-        description="Worker processes; null: one per core. Each runs one variant at a time, so "
-        "at most networks x variants are busy.",
+        description="Worker processes; null: one per core. With at least as many variants "
+        "(networks x variants) as processes, a process runs all the chunks of a variant; with "
+        "fewer, the chunks of a variant go to different processes.",
     )
     contexts_per_process: int = Field(
         default=1, ge=1, description="OpenDSS contexts (threads) per process."
