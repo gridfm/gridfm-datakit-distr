@@ -18,8 +18,7 @@
 **gridfm-datakit-distr** is a Python library for generating machine-learning datasets of power
 flows and optimal power flows in **three-phase unbalanced distribution networks**: MV and LV,
 including European four-wire LV feeders with an explicit neutral. It is the distribution
-counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit) and is meant for
-multiphase neural solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit).
+counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
 
 > Developed by Carmine Delle Femine ([@cardef](https://github.com/cardef)) at
 > [Vicomtech](https://www.vicomtech.org). Copyright 2026 Vicomtech, released under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
@@ -49,8 +48,8 @@ multiphase neural solvers in [gridfm-graphkit](https://github.com/gridfm/gridfm-
   Croissant metadata. The same config and seed give the same bytes, whatever the number of
   processes. 10⁶ snapshots of CSIRO LV feeders: about 0.3 h on 32 cores and 60 GB
   (extrapolated from 10⁵).
-* **gridfm-graphkit today**: `export-posseq` writes the positive-sequence equivalent of a dataset
-  in gridfm-datakit's format, readable by today's GENCO.
+* **[gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit)**: `export-posseq` writes the
+  positive-sequence equivalent of a dataset in gridfm-datakit's format, readable by GENCO.
 
 ---
 
@@ -224,3 +223,16 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - **opf/**: with `labels.opf.enabled`, per scenario the OPF status, the PV dispatch and the node
   voltages.
 - **stats/**: the statistics written by `stats`.
+
+# TODO
+
+- [ ] Storage, dispatchable generators and wind units, in the scenarios and as OPF controls (the
+  OPF controls the PV units only).
+- [ ] PV availability per unit (orientation, shading, units off) and PV output from irradiance
+  data by location and date.
+- [ ] More variability, ordered by how much each moves the labels: unbalanced source voltage,
+  multiple earthing of the neutral, upstream network strength, voltage-dependent (ZIP) loads, a
+  factor shared by the line lengths of a feeder, inverter volt-var and volt-watt.
+- [ ] OPF on IEEE 37, the one catalog network it does not cover.
+- [ ] Evaluation protocol for power flow and OPF: metrics, data splits (held-out variants, feeders
+  and sources) and baselines.

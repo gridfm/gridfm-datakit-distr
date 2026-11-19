@@ -430,7 +430,7 @@ def export_posseq(
     ] = 1,
 ) -> None:
     """Export the positive-sequence equivalent of a dataset in gridfm-datakit's layout (the input
-    of today's balanced GENCO), computed from the stored three-phase solutions; one directory per
+    of the balanced GENCO), computed from the stored three-phase solutions; one directory per
     network. Exit 1 if a view raised an error."""
     from gridfm_datakit_distr.io.manifest import MANIFEST
     from gridfm_datakit_distr.views.posseq_export import export_posseq as run_export

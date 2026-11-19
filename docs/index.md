@@ -17,7 +17,7 @@ explicit neutral. It is the distribution counterpart of
   recorded, never dropped.
 - **Reproducible.** The same config and seed give the same bytes, whatever the number of
   processes.
-- **gridfm-graphkit today.** `export-posseq` writes the positive-sequence equivalent of a dataset in
+- **gridfm-graphkit.** `export-posseq` writes the positive-sequence equivalent of a dataset in
   gridfm-datakit's format.
 
 Start with [Installation](installation.md) and [Getting started](manual/getting_started.md).

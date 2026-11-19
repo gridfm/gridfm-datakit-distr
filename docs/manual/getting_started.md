@@ -11,7 +11,7 @@ many *scenarios* (loads, PV output, source voltage) in OpenDSS, the reference en
 of every converged scenario gets its complex voltage. The admittances of the network and of each
 element are stored too, so every current and power flow follows from the voltages (section 4
 below). The dataset is this three-phase truth. Simplified versions are derived from it on demand:
-`export-posseq` writes the positive-sequence equivalent in gridfm-datakit's layout for today's
+`export-posseq` writes the positive-sequence equivalent in gridfm-datakit's layout for
 GENCO, and the Kron view (neutral eliminated) is re-solved next to the full model when the config
 asks for it. Tables and units are defined in [Outputs](outputs.md), config keys
 in [Configuration reference](config.md).

@@ -2,7 +2,7 @@
 
 `schema_version: 0.5.0` · Status: in progress for v0.2. Any change gets a new `schema_version` and a migration note.
 
-This document is the contract between the generator and its consumers (a future multiphase GENCO in gridfm-graphkit, baselines, benchmark users).
+This document is the contract between the generator and its consumers (models, baselines, benchmark users).
 
 ---
 
