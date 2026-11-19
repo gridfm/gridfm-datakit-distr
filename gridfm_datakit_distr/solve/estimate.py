@@ -11,7 +11,7 @@ by the executor, 6-core workstation):
   capacitor controls settle every scenario: IEEE 13 takes 1.2 times the estimate, IEEE 8500 22
   times. The Kron view, when on, adds its own solve (not in the estimate);
 - bytes per row as below (mixed and full precision; the views are float64 in both), plus a fixed
-  part per variant (its model tables and semantic layer, ~450 bytes per node).
+  part per variant (its model tables, admittance and semantic layer, ~500 bytes per node).
 
 These are estimates of the order of magnitude, for planning; the run itself measures.
 """
