@@ -122,8 +122,8 @@ def test_units_and_tasks(tmp_path: Path) -> None:
     units = plan_units(cfg, jobs)
     assert len(units) == 2 * 2 * 3  # networks x variants x chunks (2 + 2 + 1 scenarios)
     assert [(u.chunk, u.first, u.stop) for u in units[:3]] == [(0, 0, 2), (1, 2, 4), (2, 4, 5)]
-    tasks = plan_tasks(units, jobs, 2)
-    assert [len(t.units) for t in tasks] == [2, 1] * 4  # never across variants
+    tasks = plan_tasks(units, jobs)
+    assert [len(t.units) for t in tasks] == [3] * 4  # one task per variant: built once per slot
     assert all(len({(u.network_idx, u.variant_idx) for u in t.units}) == 1 for t in tasks)
 
 
@@ -230,7 +230,11 @@ def test_an_interrupted_pool_stops_and_resumes(
 ) -> None:
     """Ctrl-C with several processes: the queued tasks are cancelled, not run unrecorded."""
     cat = catalog(tmp_path)
-    cfg = config(num_processes=2, chunk_size=1)  # 20 units, one task each
+    data = copy.deepcopy(CONFIG)
+    data["variants"]["n_variants"] = 8
+    data["scenarios"]["n_scenarios_per_variant"] = 2
+    data["settings"].update(num_processes=2, chunk_size=1)
+    cfg = GenerationConfig.model_validate(data)  # 16 tasks (one per variant) of 2 units
     real = executor._record
 
     def interrupted(*args: Any) -> None:
@@ -242,7 +246,7 @@ def test_an_interrupted_pool_stops_and_resumes(
     with pytest.raises(KeyboardInterrupt):
         generate(cfg, out, catalog=cat, root=tmp_path)
     ran = list((out / "scenarios" / "scenario_meta").glob("part-*.parquet"))
-    assert 1 <= len(ran) < 20
+    assert 1 <= len(ran) < 32  # the tasks running or handed to a worker, not the queued ones
     monkeypatch.undo()
     generate(cfg, out, catalog=cat, root=tmp_path)
     generate(cfg, tmp_path / "full", catalog=cat, root=tmp_path)
