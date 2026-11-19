@@ -11,7 +11,9 @@ import pytest
 from gridfm_datakit_distr.config.schema import Variants
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.networks.catalog import load_catalog
-from gridfm_datakit_distr.variants.generate import EDIT_TOL, generate_variants, variants_table
+from gridfm_datakit_distr.networks.prepare import prepare_network
+from gridfm_datakit_distr.variants.generate import EDIT_TOL, generate_variant, variants_table
+from gridfm_datakit_distr.variants.targets import collect_targets
 
 pytestmark = [pytest.mark.conformance, pytest.mark.network_data]
 
@@ -52,7 +54,9 @@ def test_variants_pass_c1_c2(
     network_master: Callable[[str], Path], network_id: str, kinds: set[str]
 ) -> None:
     network_master(network_id)
-    results = generate_variants(load_catalog().network(network_id), EXAMPLE, seed=11)
+    network = load_catalog().network(network_id)
+    targets = collect_targets(prepare_network(network))
+    results = [generate_variant(network, targets, EXAMPLE, 11, k) for k in range(3)]
     assert len(results) == 3
     for r in results:
         assert r.status == "ok", r.failures

@@ -17,7 +17,8 @@ from gridfm_datakit_distr.scenarios.profiles import customers_of
 from gridfm_datakit_distr.scenarios.profiles.synthetic import SyntheticProvider
 from gridfm_datakit_distr.validate.residual import residual
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
-from gridfm_datakit_distr.variants.generate import generate_variants
+from gridfm_datakit_distr.variants.generate import generate_variant
+from gridfm_datakit_distr.variants.targets import collect_targets
 
 pytestmark = [pytest.mark.conformance, pytest.mark.network_data]
 
@@ -37,7 +38,11 @@ def test_pv_units_deliver_their_sampled_outputs(
     variants = Variants.model_validate(
         {"n_variants": 2, "phase_reallocation": {"enabled": True, "fraction": 0.2}}
     )
-    results = generate_variants(network, variants, seed=11, der=SPEC)
+    targets = collect_targets(prepare_network(network))
+    results = [
+        generate_variant(network, targets, variants, 11, k, der=SPEC)
+        for k in range(variants.n_variants)
+    ]
     for r in results:
         assert r.status == "ok", r.failures
         assert r.perturbation is not None

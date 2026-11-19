@@ -34,7 +34,7 @@ from gridfm_datakit_distr.variants.perturbation import (
     edit_script,
     sample_perturbation,
 )
-from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
+from gridfm_datakit_distr.variants.targets import VariantTargets
 
 MAX_ATTEMPTS = 3
 EDIT_TOL = 1e-12
@@ -178,23 +178,6 @@ def generate_variant(
     return VariantResult(
         network.id, k, fingerprint, "failed", None, (), tuple(failures), None, math.nan
     )
-
-
-def generate_variants(
-    network: Network,
-    config: Variants,
-    seed: int,
-    *,
-    options: PrepareOptions | None = None,
-    root: Path | None = None,
-    der: PV | None = None,
-) -> list[VariantResult]:
-    """The ``config.n_variants`` variants of ``network``."""
-    targets = collect_targets(prepare_network(network, options, root))
-    return [
-        generate_variant(network, targets, config, seed, k, options=options, root=root, der=der)
-        for k in range(config.n_variants)
-    ]
 
 
 def variants_table(results: list[VariantResult]) -> pa.Table:

@@ -20,7 +20,6 @@ from gridfm_datakit_distr.variants import generate
 from gridfm_datakit_distr.variants.generate import (
     VariantError,
     generate_variant,
-    generate_variants,
     variants_table,
 )
 from gridfm_datakit_distr.variants.perturbation import (
@@ -253,9 +252,11 @@ def test_an_edit_that_misses_its_target_raises(
         generate_variant(network, targets, variants(), SEED, 0, root=root)
 
 
-def test_generate_variants(base: tuple[Network, Path, PreparedNetwork]) -> None:
+def test_variants_of_a_network(
+    base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
+) -> None:
     network, root, _ = base
-    results = generate_variants(network, variants(), SEED, root=root)
+    results = [generate_variant(network, targets, variants(), SEED, k, root=root) for k in range(3)]
     assert [r.variant_id for r in results] == ["t/var/v0000", "t/var/v0001", "t/var/v0002"]
     assert all(r.status == "ok" for r in results)
     assert len({r.script_sha1 for r in results}) == 3
