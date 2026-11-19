@@ -29,6 +29,7 @@ def config(network_id: str, **sections: Any) -> GenerationConfig:
             }
         },
         "scenarios": {"n_scenarios_per_variant": 6},
+        "labels": {"element_currents": True},
         "settings": {"seed": 13, "residual_sample_rate": 0.5},
         **sections,
     }

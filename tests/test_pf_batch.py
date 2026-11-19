@@ -274,3 +274,5 @@ def test_outcome_fields(tmp_path: Path) -> None:
     assert o.seed > 0
     assert o.load_p_w.shape == o.load_q_var.shape == (1,)
     assert o.t_solve_s > 0
+    assert o.pf_status == "converged"
+    assert o.i_pd is None  # element currents only with labels.element_currents

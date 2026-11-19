@@ -79,10 +79,10 @@ def chunk_tables(
     precision: schema.Precision,
     config_hash: str,
     versions: dict[str, str],
-    element_currents: bool = True,
 ) -> dict[str, pa.Table]:
-    """The scenario-level tables of a chunk; ``element_results`` only with
-    ``element_currents`` (otherwise they are Yprim · V)."""
+    """The scenario-level tables of a chunk; ``element_results`` only with the runner's
+    ``labels.element_currents`` (otherwise they are Yprim · V)."""
+    element_currents = runner.config.labels.element_currents
     index = {e.name: e.idx for e in runner.model.elements}
     load_idx = np.array([index[c.element] for c in runner.customers], dtype=np.int32)
     pv_idx = np.array(

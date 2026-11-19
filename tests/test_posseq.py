@@ -38,6 +38,7 @@ CONFIG: dict[str, Any] = {
     "dataset_name": "t",
     "networks": {"include": ["x"]},
     "scenarios": {"n_scenarios_per_variant": 4},
+    "labels": {"element_currents": True},  # the runner's currents stand for the stored ones
     "settings": {"seed": 5},
 }
 

@@ -434,9 +434,8 @@ def _unit_tables(
     if slot.opf is not None:
         engines["casadi"] = version("casadi")
     found = chunk_tables(
-        runner, outcomes, precision=precision, config_hash=digest,
-        versions=engines, element_currents=config.labels.element_currents,
-    )  # fmt: skip
+        runner, outcomes, precision=precision, config_hash=digest, versions=engines
+    )
     if slot.opf is not None:
         found.update(slot.opf.tables(opf_rows, precision))
     for name, table in found.items():

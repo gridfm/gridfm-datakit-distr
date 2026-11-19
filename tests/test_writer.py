@@ -143,8 +143,9 @@ def run_chunk(
 @pytest.mark.parametrize("precision", ["mixed", "full"])
 def test_chunk_tables(tmp_path: Path, precision: schema.Precision) -> None:
     runner, result, outcomes = run_chunk(
-        tmp_path, VARIANT_FEEDER, der={"pv": {"penetration": 1.0}}, controls={"mode": "as_is"}
-    )
+        tmp_path, VARIANT_FEEDER, der={"pv": {"penetration": 1.0}}, controls={"mode": "as_is"},
+        labels={"element_currents": True},
+    )  # fmt: skip
     versions = {"generator": __version__, "opendss": "x"}
     tables = chunk_tables(runner, outcomes, precision=precision, config_hash="h", versions=versions)
     for name, table in tables.items():

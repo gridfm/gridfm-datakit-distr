@@ -10,7 +10,8 @@ runs scenarios by index. Each scenario:
 4. solves with ``ControlMode=OFF``; a non-converged solve is retried once with ``MaxIterations``
    x 5; then the setpoint check and, on a sample of scenarios, the KCL residual;
 5. returns a :class:`ScenarioOutcome`: status, draws and, if converged at its setpoints, the node
-   voltages. Any exception becomes ``pf_status = error`` with its message: nothing is dropped.
+   voltages (and the element currents with ``labels.element_currents``). Any exception becomes
+   ``pf_status = error`` with its message: nothing is dropped.
 
 Every solve starts with ``Set Mode=Snap``: OpenDSS then starts from the same point whatever was
 solved before, so a scenario's result is bitwise independent of the order and of the process that
@@ -104,7 +105,8 @@ class ScenarioOutcome:
     v: NDArray[np.complex128] | None = None
     """Node voltages (V) in the model's node order; only when converged at the setpoints."""
     i_pd: NDArray[np.complex128] | None = None
-    """Currents into the PD elements per local position (``VariantRunner.plan`` rows, A)."""
+    """Currents into the PD elements per local position (``VariantRunner.plan`` rows, A); only
+    with ``labels.element_currents`` (otherwise ``Yprim · V``, recomputed when needed)."""
     t_extract_s: float = 0.0
 
 
@@ -202,7 +204,7 @@ class VariantRunner:
             solved = time.perf_counter()
             v = self.ctx.ynode_voltages()[self._to_model]
             model, plan = self._at_state(state_id)
-            i_pd = plan.currents(v)
+            i_pd = plan.currents(v) if self.config.labels.element_currents else None
             extracted = time.perf_counter()
             return self._outcome(
                 s, draws, start, "converged", state, status.iterations,
