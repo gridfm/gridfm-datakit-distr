@@ -148,15 +148,15 @@ Output:
 The stored voltages solve the stored network, and one sparse product shows it. Two kinds of
 admittance matrix (S) describe the network:
 
-- `Yprim`, one per element (line, transformer, capacitor, …): `I_e = Yprim · V_e` maps the
-  voltages of the element's terminal conductors to the currents flowing into it. Its size is
-  terminals × conductors per terminal (a three-phase line: 6 × 6). Stored in `variants/yprim`, and
-  in `states/yprim_state` for regulated transformers and switched capacitors, whose `Yprim`
-  changes with the taps.
-- `Y_state`, the network admittance (`n_nodes` × `n_nodes`, indexed by `node_idx`): the `Yprim` of
-  every power-delivery element added in at the nodes it connects. Loads, generators and sources
-  are not in it: they are what injects current. It depends on the network state (tap positions,
-  capacitor steps): `variants/ybus` with the entries `states/ybus` changes
+- `Yprim` (OpenDSS's name: *primitive* admittance), one per element (line, transformer,
+  capacitor, …): `I_e = Yprim · V_e` maps the voltages of the element's terminal conductors to the
+  currents flowing into it. Its size is terminals × conductors per terminal (a three-phase line:
+  6 × 6). Stored in `variants/yprim`, and in `states/yprim_state` for regulated transformers and
+  switched capacitors, whose `Yprim` changes with the taps.
+- `Y_state` (the network admittance of one network *state*), `n_nodes` × `n_nodes`, indexed by
+  `node_idx`: the `Yprim` of every power-delivery element added in at the nodes it connects.
+  Loads, generators and sources are not in it: they are what injects current. It depends on the
+  state (tap positions, capacitor steps): `variants/ybus` with the entries `states/ybus` changes
   ([Outputs](outputs.md#statesybusparquet)).
 
 `Y_state` is the graph a model learns on, and `I_inj = Y_state V`, the current each node injects
@@ -184,14 +184,15 @@ i_abs = np.abs(i_inj)
 kcl = i_abs[~injecting].max() / i_abs.max()
 assert kcl < 1e-6  # Kirchhoff: no net current where nothing is injected
 print(f"largest |I_inj|: {i_abs.max():.0f} A, where a load or source connects")
-print(f"|I_inj| below 1e-6 of it at the {(~injecting).sum()} nodes where nothing connects")
+n_free = (~injecting).sum()
+print(f"at the {n_free} nodes where nothing connects: |I_inj| < 1e-6 × {i_abs.max():.0f} A")
 ```
 
 Output:
 
 ```text
 largest |I_inj|: 563 A, where a load or source connects
-|I_inj| below 1e-6 of it at the 19 nodes where nothing connects
+at the 19 nodes where nothing connects: |I_inj| < 1e-6 × 563 A
 ```
 
 ### Power flows from the element currents
