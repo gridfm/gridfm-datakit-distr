@@ -4,179 +4,270 @@
      `uv run python -m gridfm_datakit_distr.config.reference > docs/manual/config.md`;
      do not edit. -->
 
-A dataset is described by one YAML file (examples in `scripts/config/`), validated by
-`gridfm_datakit_distr.config.load_config`. Unknown keys, non-finite numbers and values of the
-wrong type are errors (`"1"` is not an integer; YAML reads `1e-10` as text, write `1.0e-10`);
-every problem is reported as `<dotted.path>: <reason>`. Defaults leave the source networks
-unchanged (no perturbation, no DER).
+A generation config is one YAML file that describes one dataset. This page lists every key with
+its type, range, default and effect, generated from the models that validate it.
 
-**Value specs** (gridfm-datakit's semantics): a number, or
-`{distribution: normal, mean, std, min?, max?}` (truncated: out-of-range draws are redrawn, an
-unbounded side ends 6 std beyond the mean), `{distribution: uniform, low, high}` (on
-`[low, high)`), `{distribution: choice, values, weights?}`. A field's range applies to every
-value a spec can draw: a normal needs an explicit `max` under a ceiling.
+## Overview
+
+The sections follow the order in which a dataset is built:
+
+1. `networks`, `normalisation`: select catalog networks, normalise their models
+   ([Networks](networks.md)).
+2. `variants`, `der`: perturb each network into variants and place PV ([Variants](variants.md)).
+3. `scenarios`: on each variant, draw the loads, PV output and source voltage of each scenario
+   ([Scenarios](scenarios.md)).
+4. `controls`: settle each scenario's regulators and capacitors into a network state.
+5. `labels`, `views`: solve the power flow at that state; optional element currents, OPF
+   ([OPF labels](opf.md)) and Kron view.
+6. `settings`: run in chunks and write ([Outputs](outputs.md)).
+
+Four keys are required; every other key has a default:
+
+```yaml
+dataset_name: my_dataset
+networks: {include: [ieee13]}
+scenarios: {n_scenarios_per_variant: 100}
+settings: {seed: 1}
+```
+
+Sample configs in `scripts/config/`:
+
+| Config | Shows |
+|---|---|
+| `default.yaml` | a commented starting point; every optional key it sets is at its default |
+| `ieee13_small.yaml` | the smallest power-flow dataset: IEEE 13, 2 variants of 20 scenarios |
+| `ieee123.yaml` | regulators and capacitors settled per scenario; ANSI voltage limits |
+| `csiro_feeder.yaml` | a four-wire LV feeder: phase reallocation, PV |
+| `csiro_enwl_pf.yaml` | most keys written out; Kron view on |
+| `edp_rural.yaml` | loads from EDP's smart-meter profiles; EN 50160 voltage limits |
+| `opf_small.yaml` | OPF labels on one LV feeder in seconds |
+| `opf_slice.yaml` | OPF labels on five LV feeders with PV that pushes voltages over the limit |
+| `sample.yaml` | the v0.2 sample dataset: IEEE 13 and EDP rural, power-flow and OPF labels |
+| `health.yaml` | every catalog network (`include: ["*"]`), small: a catalog health run |
+
+## Checking a config
+
+`gridfm_datakit_distr generate <config> --dry-run` validates the config, loads its networks (they
+must be fetched) and prints the counts of scenarios and work units with time and storage
+estimates; it writes nothing. An invalid config stops it with exit code 2 and every problem listed
+at once, one line each: `<dotted.path>: <reason>` (list items as `[i]`). In Python,
+`gridfm_datakit_distr.config.load_config(path)` runs the same config checks without the network
+cache.
+
+- Unknown keys are errors; a missing key takes its default.
+- Types are not coerced: `"1"` is not a number, `true` is not an integer (an integer is a valid
+  number); `.inf` and `.nan` are refused.
+- YAML 1.1: an exponent needs a decimal point (`1.0e-10`; `1e-10` is read as text); a
+  duplicated key is an error.
+- Units are SI unless the key's name says otherwise (`_pu`, `kwp` in kW).
+
+**Dataset identity.** The dataset's `manifest.json` stores the resolved config, every default
+filled in; its `config_hash` covers every key except `settings.data_dir`, `num_processes`,
+`contexts_per_process` and `overwrite`. When `generate` resumes, refuses or overwrites a dataset:
+[Command-line reference](cli.md#generate).
+
+## Value specs
+
+A key of type *value spec* takes a number or a distribution, drawn anew each time its description
+says (per variant, per scenario, per unit):
+
+- `0.5`: always 0.5.
+- `{distribution: uniform, low: 0.9, high: 1.1}`: uniform on [low, high); low < high.
+- `{distribution: normal, mean: 1.0, std: 0.05, min: 0.9, max: 1.1}`: normal truncated to
+  [min, max], each bound optional; std > 0; out-of-range draws are redrawn, never clipped.
+- `{distribution: choice, values: [1, 5, 20], weights: [2, 1, 1]}`: one of `values`, with
+  probabilities proportional to `weights` (non-negative, positive sum; default: equal).
+
+The range in the Type column holds for every value a spec can draw. Under a lower bound, a fixed
+number, a uniform's `low` or any choice below it is an error, while a normal is truncated at it.
+Under an upper bound, the largest possible draw must respect it: a uniform's `high`, the largest
+choice, the end of a normal. A normal's unbounded side ends 6 std beyond its mean (or beyond its
+other bound, when that is further out), so under an upper bound it needs a `max` unless
+mean + 6 std fits; a `[min, max]` outside mean ± 6 std is an error.
 
 ## Top level
 
-A dataset generation config.
+Top-level keys. `networks`, `scenarios` and `settings` hold required keys; the other
+sections may be omitted.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `dataset_name` | string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` | required | Name of the dataset directory under `settings.data_dir`. |
+| `dataset_name` | string matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` | required | Name of the dataset: its directory is `<settings.data_dir>/<dataset_name>`. |
 
 ## `networks`
 
-Which catalog networks enter the dataset (`docs/manual/networks.md`).
+Which catalog networks enter the dataset and which model of each is loaded
+([Networks](networks.md)).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `networks.include` | list of strings (each of at least 1 character), at least 1 item | required | Catalog network ids or glob patterns (`fnmatch`, case-sensitive), e.g. `csiro_enwl/n01_*`. `<pattern>@<representation>` selects a named representation (`ieee8500@unbalanced`, `csiro_enwl/n01_f1@kron`) and overrides a plain match of the same network. Networks are ordered by id (seed tree). |
-| `networks.neutral_representation` | one of `explicit`, `kron`, `as_is` | `explicit` | `kron` loads the Kron-reduced representation where the source provides one (CSIRO); `explicit` and `as_is` load each network's default model. |
+| `networks.include` | list of strings (each of at least 1 character), at least 1 item | required | Catalog network ids or glob patterns (`fnmatch`, case-sensitive; `*` also matches `/`), e.g. `ieee13`, `csiro_enwl/n01_*`, `*`. Each entry must match a network; overlapping matches count once. `<pattern>@<representation>` loads that alternative model of every network the pattern matches (an error where one lacks it or is already selected with another representation) and wins over a plain match of the same network: `four_wire` (the default), `kron`, `phase_to_neutral`, `modified_phase_to_neutral` on the CSIRO feeders, `unbalanced` on `ieee8500`; the alternatives are not yet validated. Patterns do not skip networks that fail the conformance suite: `*` selects `csiro_enwl/n13_f4`, whose variants do not converge. The selected networks are sorted by id: that order numbers them in scenario ids and file names (`network_idx`); a network's random draws depend on its id only. |
+| `networks.neutral_representation` | one of `explicit`, `kron`, `as_is` | `explicit` | `kron`: the `kron` representation of every network that has one (the CSIRO feeders), the default model elsewhere. `explicit` and `as_is` both load each network's default model; `explicit` also has `generate` print a note naming the networks whose default model has no explicit neutral (the Kron-reduced IEEE feeders). An `@representation` in `include` overrides this key. |
 
-## `networks.voltage_limits`
+### `networks.voltage_limits`
 
-Voltage limits for statistics and OPF: a preset or explicit values, per unit of each
-network's nominal line-to-neutral voltage (the base unless the catalog declares one).
+Voltage limits, per unit of each bus's nominal line-to-neutral voltage
+(`variants/nodes.kv_nominal_ln`: the base unless the catalog declares a nominal, e.g. 230 V on
+the 416 V CSIRO feeders). They do not change the power-flow labels: they bound the OPF, count
+the violations in `stats` and set `min_vm_pu`, `max_vm_pu` of `export-posseq`. The defaults
+are the `uk_esqcr` values.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `networks.voltage_limits.preset` | one of `uk_esqcr`, `ansi_a` or null | null | `uk_esqcr`: 0.94 to 1.10 pu (UK ESQCR, 230 V +10 %/-6 %); `ansi_a`: 0.95 to 1.05 pu (ANSI C84.1 Range A). Sets `vmin_pu` and `vmax_pu`. |
-| `networks.voltage_limits.vmin_pu` | number > 0 | `0.94` | Lower voltage limit (pu of the nominal voltage). |
-| `networks.voltage_limits.vmax_pu` | number > 0 | `1.1` | Upper voltage limit (pu of the nominal voltage). |
+| `networks.voltage_limits.preset` | one of `uk_esqcr`, `ansi_a` or null | null | `uk_esqcr`: 0.94 to 1.10 pu (UK ESQCR, 230 V +10 %/-6 %); `ansi_a`: 0.95 to 1.05 pu (ANSI C84.1 Range A). Sets `vmin_pu` and `vmax_pu`: giving either with another value is an error. null: `vmin_pu` and `vmax_pu` as given. |
+| `networks.voltage_limits.vmin_pu` | number > 0 | `0.94` | Lower limit (pu of the nominal voltage); must be below `vmax_pu`. |
+| `networks.voltage_limits.vmax_pu` | number > 0 | `1.1` | Upper limit (pu of the nominal voltage). |
 
 ## `normalisation`
 
-Normalisation of the source models, recorded in the passports.
+Normalisation applied to every network and variant after compilation, recorded in the
+passports (`catalog/passports`).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `normalisation.s_base_va` | `auto` or a number > 0 (VA) | `auto` | Power base of the network (VA): per-unit base of the semantic model and the PMD export, scale of the positive-sequence view's source limits and balance tolerance (the view itself is per unit on 100 MVA). `auto`: the rating of the largest transformer of the source zone, else the total nominal load, else 1 MVA. |
+| `normalisation.s_base_va` | `auto` or a number > 0 (VA) | `auto` | Power base (VA). `auto`: the rating of the largest transformer with a winding in the source zone, else the total nominal apparent power of the loads, else 1 MVA; the dataset always uses it, as the per-unit base of the semantic model (`variants/semantic`, PMD-aligned) and in `catalog/networks.s_base_va`. A number replaces it only in `export-posseq`: the source generator's limits and the balance tolerance of the positive-sequence view (itself per unit on 100 MVA). |
 
-## `normalisation.loads`
+### `normalisation.loads`
 
-Load model applied before extraction.
+Model of every enabled load. Outside its voltage window [`vminpu`, `vmaxpu`] OpenDSS turns
+a load into a constant impedance and still reports convergence; every solve is checked against
+the setpoints, so a scenario where a load or generator misses its setpoint (1e-6 relative) is
+`off_setpoint`, without results. The PV units get the same window.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `normalisation.loads.model` | one of `constant_power`, `as_is` | `constant_power` | `constant_power`: every load becomes constant P, Q within [`vminpu`, `vmaxpu`]; `as_is`: the source's load models. |
-| `normalisation.loads.vminpu` | number > 0 and < 1 | `0.6` | Below this voltage (pu) OpenDSS turns a load into a constant impedance. |
-| `normalisation.loads.vmaxpu` | number > 1 | `1.5` | Above this voltage (pu) OpenDSS turns a load into a constant impedance. |
+| `normalisation.loads.model` | one of `constant_power`, `as_is` | `constant_power` | `constant_power`: every load becomes constant P, Q (OpenDSS `model=1`); OPF labels need it. `as_is`: each load keeps its source model, only the window is set. A load of another model (constant impedance, constant current, ZIP) delivers its setpoint only at its rated voltage, so with `as_is` practically every scenario of a network with such loads ends `off_setpoint`. |
+| `normalisation.loads.vminpu` | number > 0 and < 1 | `0.6` | Lower end of the window (pu of each load's rated voltage). OpenDSS's own 0.95 would turn loads into impedances in ordinary undervoltage. |
+| `normalisation.loads.vmaxpu` | number > 1 | `1.5` | Upper end of the window (pu of each load's rated voltage). |
 
 ## `variants`
 
-Perturbed copies of each network; each must converge and pass the Kirchhoff residual
-check.
+Perturbed copies of each network ([Variants](variants.md)). Each variant draws from its own
+streams; its base case must converge and pass the Kirchhoff residual check, else it is redrawn,
+3 attempts at most, and then recorded as failed: its units fail and `generate` exits with an
+error. The defaults perturb every variant; `line_length_scale: 1.0`,
+`phase_reallocation.enabled: false` and `der.pv.penetration: 0` keep the source network.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `variants.n_variants` | integer ≥ 1 and ≤ 10000 | `4` | Variants per network (variant ids have four digits). |
+| `variants.n_variants` | integer ≥ 1 and ≤ 10000 | `4` | Variants per network (ids `v0000` to `v9999`). |
 
-## `variants.admittance`
+### `variants.admittance`
 
-Parameter perturbations of a variant; one draw per element.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `variants.admittance.line_length_scale` | value spec, > 0 | `{distribution: uniform, low: 0.9, high: 1.1}` | Factor on each line's length. |
-| `variants.admittance.neutral_impedance_scale` | value spec, > 0 | `1.0` | Factor on the neutral self and mutual impedances of explicit-neutral lines. |
-| `variants.admittance.grounding_resistance_ohm` | value spec, > 0 or null | null | Resistance (Ω) of the existing grounding points; null keeps the source's. |
-
-## `variants.phase_reallocation`
-
-Moves single-phase customers to another phase available at their bus.
+Parameter perturbations, drawn per element and variant. A fixed `1.0` (null for the
+resistance) keeps the source's values and draws nothing.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `variants.phase_reallocation.enabled` | boolean | `true` | Reallocate phases in each variant. |
-| `variants.phase_reallocation.fraction` | number ≥ 0 and ≤ 1 | `0.2` | Share of single-phase customers moved. |
+| `variants.admittance.line_length_scale` | value spec, > 0 | `{distribution: uniform, low: 0.9, high: 1.1}` | Factor on each line's length (switches excluded): its series impedance and shunt admittance scale with it. |
+| `variants.admittance.neutral_impedance_scale` | value spec, > 0 | `1.0` | Factor β on the neutral of every line with a neutral conductor: its self impedance times β, the phase-neutral mutual impedances times √β. No effect on networks without an explicit neutral. |
+| `variants.admittance.grounding_resistance_ohm` | value spec, > 0 or null | null | Resistance (Ω) of every earth electrode: `Rneut` of grounded wye windings and grounding reactors, except the neutral's bond at a source. null: the source's values. |
+
+### `variants.phase_reallocation`
+
+Moves single-phase loads (one phase conductor, at a bus with another phase) to another
+phase of their bus, with their neutral; phase-to-phase loads stay. Drawn per variant.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `variants.phase_reallocation.enabled` | boolean | `true` | Reallocate in each variant; `false` ignores `fraction`. |
+| `variants.phase_reallocation.fraction` | number ≥ 0 and ≤ 1 | `0.2` | Share of the eligible loads moved (rounded to the nearest count), each to one of the other phases of its bus, chosen uniformly. |
 
 ## `der`
 
-Distributed energy resources added to the networks.
+Distributed energy resources added to every variant.
 
-## `der.pv`
+### `der.pv`
 
-Rooftop PV: placed per variant, output per scenario.
+Rooftop PV units, placed and sized per variant (`variants/variants.perturbation`), output
+per scenario (`scenarios.pv_profile`). Every enabled load is a customer that can get one: the
+unit sits on the load's nodes (after any phase move), constant P, Q within the load window.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 0.8}` | Share of customers with PV, drawn per variant. The default puts a voltage violation in about 6 % of the scenarios of a dataset of the whole catalog; 0 places no PV. |
-| `der.pv.kwp` | value spec, > 0 | `{distribution: uniform, low: 2.0, high: 6.0}` | Peak power (kW) of each PV system. |
-| `der.pv.power_factor` | value spec, > 0 and ≤ 1 | `1.0` | Power factor of each inverter, drawn per variant; below 1 the inverter absorbs reactive power, within its rating. |
-| `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp of PV. |
-| `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | Largest reactive power of each inverter in the OPF, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per variant and unit. |
-| `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | No reactive power in the OPF when a unit's available power is below this fraction of its rating (IEEE 1547-2018 Category B: 0.05; 0: always); drawn per variant and unit. |
+| `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 0.8}` | Share of customers with PV, drawn per variant: each customer gets a unit with that probability, so the realised share (`scenario_meta.der_penetration`) varies around the draw. `0`: no PV. The default puts a voltage violation in about 6 % of the scenarios of a dataset of the whole catalog. |
+| `der.pv.kwp` | value spec, > 0 | `{distribution: uniform, low: 2.0, high: 6.0}` | Peak power (kW) of each unit, drawn per customer and variant. |
+| `der.pv.power_factor` | value spec, > 0 and ≤ 1 | `1.0` | Power factor of each inverter in the power flow, drawn per unit and variant. Below 1 the inverter absorbs reactive power, `q = -p · tan(acos(pf))`, limited to its rating. |
+| `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp. Active power is clipped at the rating; from 1 up it never clips (the available power never exceeds kWp). |
+| `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | OPF only: largest reactive power of each inverter, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per unit and variant. |
+| `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | OPF only: a unit whose available power is below this fraction of its rating gives no reactive power (IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant. |
 
 ## `scenarios`
 
-Operating points of each variant.
+Operating points of each variant ([Scenarios](scenarios.md)); each scenario draws from its
+own streams.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.n_scenarios_per_variant` | integer ≥ 1 and ≤ 2147483648 | required | Scenarios per variant (scenario ids hold 31 bits of scenario index). |
-| `scenarios.source_voltage_pu` | value spec, > 0 | `{distribution: uniform, low: 0.98, high: 1.05}` | Source voltage magnitude (pu), angle 0. |
+| `scenarios.n_scenarios_per_variant` | integer ≥ 1 and ≤ 2147483648 | required | Scenarios per variant of each network. |
+| `scenarios.source_voltage_pu` | value spec, > 0 | `{distribution: uniform, low: 0.98, high: 1.05}` | Source voltage magnitude (pu of the source's base voltage), drawn per scenario; balanced, angle 0. |
 
-## `scenarios.profiles`
+### `scenarios.profiles`
 
-Where load values come from.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `scenarios.profiles.provider` | one of `synthetic`, `network_loadshapes`, `edp_smart_meter` | `synthetic` | `synthetic`; `network_loadshapes`: the loadshapes of the source model; `edp_smart_meter`: EDP's meter data. |
-| `scenarios.profiles.same_timestamp` | boolean | `true` | All customers of a scenario share one timestamp (coincident demand). |
-
-## `scenarios.profiles.synthetic`
-
-Synthetic loads: a global factor per scenario and lognormal noise per customer.
+Where each scenario's loads come from ([Scenarios](scenarios.md)).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.profiles.synthetic.global_scale` | value spec, ≥ 0 | `{distribution: uniform, low: 0.2, high: 1.2}` | Factor on every nominal load, drawn per scenario. |
-| `scenarios.profiles.synthetic.local_sigma` | number ≥ 0 | `0.3` | Sigma of the lognormal noise on each customer's load. |
-| `scenarios.profiles.synthetic.power_factor` | value spec, > 0 and ≤ 1 | `{distribution: uniform, low: 0.9, high: 0.99}` | Power factor of each load. |
+| `scenarios.profiles.provider` | one of `synthetic`, `network_loadshapes`, `edp_smart_meter` | `synthetic` | `synthetic`: nominal loads times random factors (section `synthetic`). `network_loadshapes`: the loads' daily (else yearly) loadshapes in the source model, at a profile time drawn uniformly over the shortest multi-point loadshape; loads without one keep their nominal (or one-point) value. `edp_smart_meter`: the same mechanism for the EDP networks, whose loadshapes are the smart-meter files; only the recorded `profile_source` differs. A network without loadshapes is not caught by the config check: its units fail at generation (`ProfileError`). |
+| `scenarios.profiles.same_timestamp` | boolean | `true` | Loadshape providers only (ignored by `synthetic`). `true`: one profile time per scenario for all customers (coincident demand), whose time of day is the PV hour (the profile start taken as midnight). `false`: one time per customer, and a PV hour drawn on its own. |
 
-## `scenarios.pv_profile`
+#### `scenarios.profiles.synthetic`
 
-PV output profile.
+Synthetic loads, `provider: synthetic` only (this section with another provider is an
+error): `P = g · m · P_nominal` and lagging `Q = P · tan(acos(pf))`, with `g` per scenario, `m`
+and `pf` per customer and scenario. The loads' nominal reactive powers are not used.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.pv_profile.provider` | one of `synthetic_clear_sky` | `synthetic_clear_sky` | Clear-sky profile reduced by cloudiness. |
-| `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Cloudiness, drawn per scenario. |
+| `scenarios.profiles.synthetic.global_scale` | value spec, ≥ 0 | `{distribution: uniform, low: 0.2, high: 1.2}` | Factor `g` on every nominal load, drawn per scenario. |
+| `scenarios.profiles.synthetic.local_sigma` | number ≥ 0 | `0.3` | Sigma of the per-customer factor `m = exp(sigma z - sigma²/2)`, `z` standard normal, of mean 1 (so the mean load is `E[g] · P_nominal`); 0: no per-customer noise. |
+| `scenarios.profiles.synthetic.power_factor` | value spec, > 0 and ≤ 1 | `{distribution: uniform, low: 0.9, high: 0.99}` | Power factor `pf` of each load, drawn per customer and scenario. |
+
+### `scenarios.pv_profile`
+
+PV output per scenario: available power = kWp · clear-sky shape of the hour · cloud
+factor, injected up to the inverter rating ([Scenarios](scenarios.md)).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scenarios.pv_profile.provider` | one of `synthetic_clear_sky` | `synthetic_clear_sky` | `synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and 18:00, no date or location. The hour `h` is the load profile's time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios fall at night, with no PV output. |
+| `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %. |
 
 ## `controls`
 
-Regulator taps and capacitor states per scenario; labels always use
-`ControlMode=OFF`.
+Regulator taps and switched-capacitor states per scenario. The state reached is frozen
+(`states/`) and the label is the power flow at it with `ControlMode=OFF`. On a network without
+control elements both keys are ignored: the state is the compiled one.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `controls.mode` | one of `static_settle`, `as_is` | `static_settle` | `static_settle`: settle with `ControlMode=STATIC`, move the regulated taps by the tap jitter and settle again from there, freeze the state; `as_is`: the taps and capacitor states as compiled. |
-| `controls.tap_jitter_steps` | integer ≥ 0 | `2` | Largest move (tap steps) of each settled tap before the controls settle again from there; 0 settles once. |
+| `controls.mode` | one of `static_settle`, `as_is` | `static_settle` | `static_settle`: with the scenario's setpoints, `ControlMode=STATIC` settles regulators and capacitors, the regulated taps are jittered and settle again from there, and the state is frozen; when settling fails, a load ramp reaches the scenario ([Scenarios](scenarios.md)). `as_is`: the taps and capacitor states as compiled. |
+| `controls.tap_jitter_steps` | integer ≥ 0 | `2` | Largest jitter `J` (tap steps): each regulated winding's settled tap moves by a uniform integer in [-J, J], within its limits, before the controls settle again; capacitors are not jittered. 0: settle once. Ignored with `as_is`. |
 
 ## `labels`
 
-What is solved for each scenario.
+What is solved and stored for each scenario.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `labels.pf` | boolean | `true` | Power-flow labels. |
-| `labels.element_currents` | boolean | `false` | Also store the current of every power-delivery element at each terminal conductor (`scenarios/element_results`); otherwise they are recomputed exactly as Yprim · V. |
+| `labels.pf` | boolean | `true` | Power-flow labels. They are computed and written whatever this value; `false` is accepted only with `opf.enabled: true`. |
+| `labels.element_currents` | boolean | `false` | Also store the current of every power-delivery element at each terminal conductor (`scenarios/element_results`); otherwise they follow exactly from the stored data as Yprim · V ([Outputs](outputs.md#6-scenario-level)). |
 
-## `labels.opf`
+### `labels.opf`
 
-OPF labels: the minimum-cost OPF of each scenario (docs/manual/opf.md).
+OPF labels: the minimum-cost OPF of every scenario, verified in OpenDSS
+([OPF labels](opf.md)). The power-flow labels stay; the `opf/` tables are added.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario (needs the `opf` extra and constant-power loads). |
+| `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario. The config is refused unless the `opf` extra (CasADi) is installed and `normalisation.loads.model` is `constant_power`. Networks outside the OPF's scope get `not_supported` rows. |
 | `labels.opf.costs` | one of `economic`, `sampled` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); `sampled`: coefficients drawn per scenario from `sampled`. |
-| `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit of one OPF solve (s), Ipopt's `max_wall_time`. |
+| `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit (s) of each Ipopt solve (`max_wall_time`). A scenario not solved from the flat start is solved once more from its power flow, so it can take twice this. Machine-dependent; the 3000-iteration limit is the deterministic bound. |
 
-## `labels.opf.sampled`
+#### `labels.opf.sampled`
 
 Cost coefficients of the preset ``sampled``, drawn per scenario (``c2 p^2 + c1 p``, ``p``
-in W): one pair for the source, one per PV unit.
+in W): one pair for the source, one per PV unit. Ignored with ``costs: economic``.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -187,25 +278,28 @@ in W): one pair for the source, one per PV unit.
 
 ## `views`
 
-Reduced views written next to the full model. The positive-sequence view is not
-one: ``export-posseq`` computes it from a dataset.
+Reduced views written next to the full model ([Outputs](outputs.md#7-views)). The
+positive-sequence view is not one: ``export-posseq`` computes it from a dataset.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `views.kron` | boolean | `false` | Kron view (neutral eliminated), re-solved per scenario; ~1 kB per 100 phase nodes and scenario. |
+| `views.kron` | boolean | `false` | Kron view (neutral eliminated), re-solved in OpenDSS for every converged scenario (one more solve each; `views/kron/`); ~1 kB per 100 phase nodes and scenario. On a network without an explicit neutral it is only a mapping to the full model. |
 
 ## `settings`
 
-Execution settings; the dataset does not depend on the process and context counts.
+How the run is executed and written. `data_dir`, `num_processes`, `contexts_per_process`
+and `overwrite` are execution-only: the dataset does not depend on them, they are outside the
+config hash, and `generate` overrides them with `--data-dir`, `--processes`, `--contexts` and
+`--overwrite`.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `settings.data_dir` | string of at least 1 character | `./data` | Directory of the datasets (relative to the working directory). |
-| `settings.seed` | integer ≥ 0 | required | Root of the seed tree. |
-| `settings.num_processes` | integer ≥ 1 or null | null | Worker processes; null: one per core. |
-| `settings.contexts_per_process` | integer ≥ 1 | `1` | OpenDSS contexts (threads) per process. |
-| `settings.chunk_size` | integer ≥ 1 | `500` | Scenarios per output chunk. |
-| `settings.float_precision` | one of `mixed`, `full` | `mixed` | `mixed`: float32 for currents, powers and setpoints; `full`: float64 everywhere (docs/manual/outputs.md). |
-| `settings.residual_sample_rate` | number ≥ 0 and ≤ 1 | `0.01` | Share of scenarios with the full KCL residual check. |
-| `settings.overwrite` | boolean | `false` | Replace a dataset of the same name generated from another config. |
-| `settings.validation_tolerance` | number > 0 and ≤ 1e-08 | `1e-10` | OpenDSS `Tolerance` of the conformance runs; at most 1e-8 for the setpoint check. |
+| `settings.data_dir` | string of at least 1 character | `./data` | Parent directory of the dataset, `<data_dir>/<dataset_name>`; a relative path is relative to the working directory. |
+| `settings.seed` | integer ≥ 0 | required | Root of the seed tree. Every draw is keyed by the seed, the network id, the variant and scenario indices and the quantity, never by the order of work: on one machine the same config, seed and versions give the same dataset bit for bit for any number of processes and contexts (Reproducibility in [OPF labels](opf.md)); a network's draws do not depend on the other networks selected; more variants or scenarios keep the existing ones; changing one quantity's spec does not shift the draws of another. |
+| `settings.num_processes` | integer ≥ 1 or null | null | Worker processes; null: one per CPU core (`os.cpu_count()`); 1: in the main process. |
+| `settings.contexts_per_process` | integer ≥ 1 | `1` | Threads per process, each with its own OpenDSS context and one chunk of the same variant: more than 1 helps only when a variant has several chunks (`n_scenarios_per_variant` > `chunk_size`). |
+| `settings.chunk_size` | integer ≥ 1 | `500` | Scenarios per work unit: one Parquet part per scenario table, the unit of scheduling, resume and failure, held in memory until written. |
+| `settings.float_precision` | one of `mixed`, `full` | `mixed` | `mixed`: float32 for currents, powers and setpoints, float64 for voltages and admittances; `full`: float64 everywhere ([Outputs](outputs.md#1-conventions)). |
+| `settings.residual_sample_rate` | number ≥ 0 and ≤ 1 | `0.01` | Share of converged scenarios whose full Kirchhoff (KCL) residual is computed and stored in `scenario_meta.residual_rel` (null elsewhere), chosen by a hash of the scenario id; it never changes a status. |
+| `settings.overwrite` | boolean | `false` | Delete and regenerate the dataset in `<data_dir>/<dataset_name>` when it has another config hash or versions; `false` refuses. A directory that is not a dataset (no `manifest.json`) is never touched. |
+| `settings.validation_tolerance` | number > 0 and ≤ 1e-08 | `1e-10` | OpenDSS `Tolerance` of every solve of the generation, also the solver term of the residual check. At most 1e-8: the setpoint check (1e-6 relative) needs a tolerance 100 times tighter. |

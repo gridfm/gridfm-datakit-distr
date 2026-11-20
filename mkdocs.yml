@@ -7,6 +7,8 @@ theme:
   features:
     - navigation.sections
     - content.code.copy
+validation:
+  anchors: warn
 markdown_extensions:
   - admonition
   - tables
@@ -25,3 +27,4 @@ nav:
       - OPF labels: manual/opf.md
       - Outputs: manual/outputs.md
       - Configuration reference: manual/config.md
+      - Command-line reference: manual/cli.md

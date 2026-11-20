@@ -13,11 +13,17 @@ explicit neutral. It is the distribution counterpart of
 - **Variety.** Variants (line lengths, neutral impedances, earthing, phases of customers, rooftop
   PV) and scenarios (load profiles, PV output, source voltage, regulator and capacitor states).
 - **Physics-checked labels.** A scenario counts as converged only if every load and generator
-  delivers its setpoint, and a sample gets the full Kirchhoff residual check. Failures are
+  delivers its setpoint; a sample of scenarios gets its Kirchhoff residual recorded. Failures are
   recorded, never dropped.
-- **Reproducible.** The same config and seed give the same bytes, whatever the number of
-  processes.
+- **OPF labels (optional).** The minimum-cost unbalanced AC OPF of every scenario, with the PV units
+  as controls, solved with Ipopt and verified in OpenDSS.
+- **Reproducible.** The same config, seed and library versions give the same tables, whatever the
+  number of processes; only the measured solve times differ.
 - **gridfm-graphkit.** `export-posseq` writes the positive-sequence equivalent of a dataset in
   gridfm-datakit's format.
 
-Start with [Installation](installation.md) and [Getting started](manual/getting_started.md).
+Start with [Installation](installation.md) and [Getting started](manual/getting_started.md). The
+manual explains [networks](manual/networks.md), [variants](manual/variants.md),
+[scenarios](manual/scenarios.md) and [OPF labels](manual/opf.md); the references list every
+[output table](manual/outputs.md), [config key](manual/config.md) and
+[command](manual/cli.md).
