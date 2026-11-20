@@ -43,7 +43,7 @@ Sample configs in `scripts/config/`:
 | `opf_small.yaml` | OPF labels on one LV feeder in seconds |
 | `opf_slice.yaml` | OPF labels on five LV feeders with PV that pushes voltages over the limit |
 | `sample.yaml` | the v0.2 sample dataset: IEEE 13 and EDP rural, power-flow and OPF labels |
-| `health.yaml` | every catalog network (`include: ["*"]`), small: a catalog health run |
+| `health.yaml` | a small catalog health run: every network but `csiro_enwl/n13_f4` (fails C1) |
 
 ## Checking a config
 

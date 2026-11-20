@@ -1,9 +1,11 @@
-# Catalog health run: every network with the default config, 2 variants x 200 scenarios each.
+# Catalog health run: every network but csiro_enwl/n13_f4 (it fails conformance check C1) with the
+# default config, 2 variants x 200 scenarios each. Patterns have no negation: the last three spell
+# "every CSIRO feeder but n13_f4" with character classes ([!1]: any character but 1).
 # Run one network at a time (networks.include overridden) to keep the disk use of one network;
 # `stats` then gives the health table's columns. Unlisted keys take their defaults: docs/manual/config.md.
 dataset_name: health
 networks:
-  include: ["*"]
+  include: ["edp/*", "ieee*", "csiro_enwl/n[!1]*", "csiro_enwl/n1[!3]*", "csiro_enwl/n13_f[!4]"]
 variants:
   n_variants: 2
 scenarios:

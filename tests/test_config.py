@@ -103,6 +103,14 @@ def test_there_are_example_configs() -> None:
     }
 
 
+def test_the_health_run_leaves_out_the_feeder_that_fails_conformance() -> None:
+    """`health.yaml`: every catalog network but `csiro_enwl/n13_f4`, which fails check C1."""
+    config = load_config(REPO / "scripts" / "config" / "health.yaml")
+    catalog = load_catalog()
+    selected = {s.network_id for s in select_networks(config.networks, catalog)}
+    assert selected == set(catalog.networks) - {"csiro_enwl/n13_f4"}
+
+
 def test_dump_round_trip() -> None:
     config = load_config(REPO / "scripts" / "config" / "csiro_enwl_pf.yaml")
     dumped = config.model_dump(mode="json")
