@@ -21,7 +21,7 @@ from gridfm_datakit_distr.io.writer import STATE_TABLES, DatasetWriter, part_key
 from gridfm_datakit_distr.model.ids import split_scenario_id
 from gridfm_datakit_distr.solve.executor import generate
 from gridfm_datakit_distr.stats.physics import physics
-from gridfm_datakit_distr.validate.closed_loop import closed_loop, linearised, no_load
+from gridfm_datakit_distr.validate.closed_loop import closed_loop
 from gridfm_datakit_distr.views.stored import VariantStore
 from tests.test_executor import catalog, config
 
@@ -55,11 +55,6 @@ def test_the_closed_loop_reproduces_the_stored_voltages(dataset: Path) -> None:
     for sc in reader.scenarios(ids):
         result = closed_loop(sc)
         assert result.max_dv_pu <= 1e-6, (sc.variant.variant_id, result)
-        assert sc.v is not None
-        base = sc.variant.base_v
-        err_lin = np.max(np.abs(linearised(sc) - sc.v) / base)
-        err_none = np.max(np.abs(no_load(sc) - sc.v) / base)
-        assert result.max_dv_pu < err_lin < err_none
 
 
 def test_the_reader_imports_no_engine() -> None:

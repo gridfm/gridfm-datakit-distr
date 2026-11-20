@@ -239,5 +239,5 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
   multiple earthing of the neutral, upstream network strength, voltage-dependent (ZIP) loads, a
   factor shared by the line lengths of a feeder, inverter volt-var and volt-watt.
 - [ ] OPF on IEEE 37, the one catalog network it does not cover.
-- [ ] Evaluation protocol for power flow and OPF: metrics, data splits (held-out variants, feeders
-  and sources) and baselines.
+- [ ] Evaluation protocol for power flow and OPF: metrics and data splits (held-out variants,
+  feeders and sources).

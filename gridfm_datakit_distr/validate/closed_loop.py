@@ -1,12 +1,11 @@
-"""Power flow from the stored tables alone and the baselines built on it.
+"""Power flow from the stored tables alone.
 
 The network is ``A V = Y_s E + I(V)`` with ``A = Y_state + Y_s`` (the source admittance embedded at
 its nodes), ``E = source_v_pu · e`` and ``I(V)`` the currents the constant-power loads and DER
 inject: each branch ``(a, b)`` of a unit draws ``i = conj(s / (V_a - V_b))`` out of ``a`` and into
 ``b``, ``s`` an equal share of the unit's power. :func:`fixed_point` iterates
-``V ← A⁻¹ (Y_s E + I(V))`` (the Z-bus method); :func:`no_load` is ``I = 0`` and
-:func:`linearised` one step of it from the no-load voltage. Errors are per unit of each node's
-line-to-neutral base. Engine-free, like the reader.
+``V ← A⁻¹ (Y_s E + I(V))`` (the Z-bus method) from the no-load voltage. Errors are per unit of
+each node's line-to-neutral base. Engine-free, like the reader.
 """
 
 from __future__ import annotations
@@ -74,19 +73,6 @@ class _System:
     def solve(self, injections: NDArray[np.complex128]) -> NDArray[np.complex128]:
         v_pu = self.lu.solve(self.d @ (self.rhs + injections))
         return np.asarray(self.d @ v_pu, dtype=np.complex128)
-
-
-def no_load(sc: ScenarioData) -> NDArray[np.complex128]:
-    """Node voltages (V) with every load and DER at zero."""
-    system = _System(sc)
-    return system.solve(np.zeros(system.n, dtype=np.complex128))
-
-
-def linearised(sc: ScenarioData) -> NDArray[np.complex128]:
-    """``V0 + Z I(V0)``: one fixed-point step from the no-load voltage ``V0`` (V)."""
-    system = _System(sc)
-    v0 = system.solve(np.zeros(system.n, dtype=np.complex128))
-    return system.solve(system.injections(v0))
 
 
 def fixed_point(sc: ScenarioData, max_iter: int = MAX_ITER) -> tuple[NDArray[np.complex128], int]:
