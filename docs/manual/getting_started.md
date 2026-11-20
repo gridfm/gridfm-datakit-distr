@@ -114,8 +114,10 @@ Each scenario has a `scenario_id`, its `variant_id`, the `state_id` of its netwo
 
 Nodes are the conductors of the buses (`a`, `b`, `c`, `n`, …) of a variant, numbered by
 `node_idx`. The label of a power-flow model is one complex voltage per node, to ground, in volts,
-as two float columns. The three phases of bus 671 below differ in magnitude and are not exactly
-120° apart: the network is unbalanced.
+stored in rectangular form: `v_re` and `v_im`. Magnitude and angle are one line away (below).
+Rectangular, because a neutral conductor sits near 0 V, where an angle is ill-defined, and because
+the physics is linear in it (`I = Y V`, next section). The three phases of bus 671 below differ in
+magnitude and are not exactly 120° apart: the network is unbalanced.
 
 ```python
 first = meta.filter(pc.equal(meta["pf_status"], "converged")).slice(0, 1).to_pylist()[0]
@@ -143,13 +145,24 @@ Output:
 
 ### The network admittance and Kirchhoff's current law
 
-The stored voltages solve the stored network, and one sparse product shows it. `Y_state` (S, rows
-and columns are `node_idx`) is the network admittance of the scenario's state, assembled from the
-Yprims of its power-delivery elements ([Outputs](outputs.md#statesybusparquet)). It is the graph a
-model learns on, and `I_inj = Y_state V`, the current each node injects into the network, is a
-physics check or a loss you can reuse on predicted voltages. Where no load, generator or source
-connects, Kirchhoff's current law makes `I_inj` zero, up to the power flow's tolerance.
-`DatasetReader` returns `Y_state` with the nodes and elements of the variant:
+The stored voltages solve the stored network, and one sparse product shows it. Two kinds of
+admittance matrix (S) describe the network:
+
+- `Yprim`, one per element (line, transformer, capacitor, …): `I_e = Yprim · V_e` maps the
+  voltages of the element's terminal conductors to the currents flowing into it. Its size is
+  terminals × conductors per terminal (a three-phase line: 6 × 6). Stored in `variants/yprim`, and
+  in `states/yprim_state` for regulated transformers and switched capacitors, whose `Yprim`
+  changes with the taps.
+- `Y_state`, the network admittance (`n_nodes` × `n_nodes`, indexed by `node_idx`): the `Yprim` of
+  every power-delivery element added in at the nodes it connects. Loads, generators and sources
+  are not in it: they are what injects current. It depends on the network state (tap positions,
+  capacitor steps): `variants/ybus` with the entries `states/ybus` changes
+  ([Outputs](outputs.md#statesybusparquet)).
+
+`Y_state` is the graph a model learns on, and `I_inj = Y_state V`, the current each node injects
+into the network, is a physics check or a loss you can reuse on predicted voltages: where no load,
+generator or source connects, Kirchhoff's current law makes it zero, up to the power flow's
+tolerance. `DatasetReader` returns `Y_state` with the nodes and elements of the variant:
 
 ```python
 from gridfm_datakit_distr.io.reader import DatasetReader
@@ -170,25 +183,24 @@ for e in model.elements:
 i_abs = np.abs(i_inj)
 kcl = i_abs[~injecting].max() / i_abs.max()
 assert kcl < 1e-6  # Kirchhoff: no net current where nothing is injected
-print(
-    f"KCL at the {(~injecting).sum()} of {model.n_nodes} nodes without injection: "
-    f"|I_inj| below 1e-6 of the largest, {i_abs.max():.0f} A"
-)
+print(f"largest |I_inj|: {i_abs.max():.0f} A, where a load or source connects")
+print(f"|I_inj| below 1e-6 of it at the {(~injecting).sum()} nodes where nothing connects")
 ```
 
 Output:
 
 ```text
-KCL at the 19 of 41 nodes without injection: |I_inj| below 1e-6 of the largest, 563 A
+largest |I_inj|: 563 A, where a load or source connects
+|I_inj| below 1e-6 of it at the 19 nodes where nothing connects
 ```
 
 ### Power flows from the element currents
 
 Line currents, power flows and losses are not stored by default (`labels.element_currents: true`
-stores the currents), but they follow exactly from the voltages and each element's Yprim: the
+stores the currents), but they follow exactly from the voltages and each element's `Yprim`: the
 current into its terminal conductors is `I = Yprim · V` and the complex power into a terminal is
 `S = Σ V I*` over its conductors. They are the labels for branch quantities. The variant's model
-carries the Yprims of the elements the network state does not change, which includes the lines
+carries the `Yprim`s of the elements the network state does not change, which includes the lines
 (regulated transformers and switched capacitors have theirs per state).
 
 ```python
