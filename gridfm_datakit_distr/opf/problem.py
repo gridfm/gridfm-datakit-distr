@@ -290,7 +290,7 @@ class PowerFlowStart:
 
 def power_base(load_va: ArrayLike) -> float:
     """Power base (VA) of the NLP's scaling: the power of ten at or below a tenth of the total
-    nominal load, at least 1 kVA. Measured in T3.4: with the median load, MV networks of small
+    nominal load, at least 1 kVA. Measured: with the median load, MV networks of small
     loads (IEEE 34: 10 kVA, EDP industrial: 1 kVA) ended class-A scenarios in restoration
     failures. The total load itself (rounded to a power of ten) verifies as well on every network
     still supported (IEEE 13, 34, EULV, a CSIRO feeder, EDP industrial: 65 of 65 solved dispatches

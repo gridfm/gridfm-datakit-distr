@@ -5,8 +5,8 @@ the config. Each attempt is compiled afresh, its edits are checked against the p
 (:func:`check_edits` and read-backs: a wrong edit is a bug, raised), and its base case must pass
 C1 (converges) and C2 (KCL residual). A variant failing C1 or C2 is redrawn with the next
 attempt's streams, at most :data:`MAX_ATTEMPTS` times; then it is recorded as failed, with the
-reasons, for the manifest. Datasets hold only sampled variants (``v0000`` ...): with
-the default config, the one variant is the source network.
+reasons, for the manifest. Datasets hold only sampled variants (``v0000`` ...); the default
+config perturbs every one of them.
 """
 
 from __future__ import annotations

@@ -463,7 +463,10 @@ def export_posseq(
 
 @app.command("setup-julia")
 def setup_julia() -> None:
-    """Install and precompile the Julia environment for OPF (needs the 'julia' extra)."""
+    """Install and precompile Julia for the OPF cross-checks (needs the 'julia' extra).
+
+    Julia and PowerModelsDistribution only cross-check the OPF in tests: the OPF labels do not
+    use them."""
     from gridfm_datakit_distr.opf.julia_env import setup
 
     for key, value in setup().items():

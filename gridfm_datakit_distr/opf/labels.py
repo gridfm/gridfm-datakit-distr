@@ -138,7 +138,7 @@ class OPFLabeller:
             if not result.solved:
                 # A second solve from the power-flow solution, a feasible point when the scenario
                 # is of class A: from the flat start Ipopt can end such a scenario infeasible or
-                # unfinished (T3.4: IEEE 13, 34, 123).
+                # unfinished (seen on IEEE 13, 34, 123).
                 assert o.v is not None
                 empty = np.zeros(len(self.units))
                 pf = PowerFlowStart(

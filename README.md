@@ -31,8 +31,9 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
   is stored, so currents, flows and injections follow exactly.
 * **Real distribution networks**: IEEE test feeders, the IEEE European LV feeder, 128 four-wire
   ENWL LV feeders (CSIRO) and EDP's MV/LV networks. They are downloaded with checksums, each
-  carries a passport (provenance, licence, recipe), and every network in use passes a conformance
-  suite (convergence, Kirchhoff residual, admittance consistency, phases, neutral, golden files).
+  carries a passport (provenance, licence, recipe), and each is checked by a conformance suite
+  (convergence, Kirchhoff residual, admittance consistency, phases, neutral, golden files): all
+  pass but one CSIRO feeder, `n13_f4`, which does not converge at its nominal loads.
 * **Structural variants**: line lengths, neutral impedances, earthing resistances, phases of
   single-phase customers, rooftop PV placement and size.
 * **Operating scenarios**: synthetic or measured load profiles, PV output from time of day and
@@ -45,9 +46,9 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
   units as controls, solved with Ipopt (through CasADi) on the stored admittances; each dispatch
   is verified in OpenDSS.
 * **Compact, reproducible outputs**: Parquet tables per variant, network state and scenario, with
-  Croissant metadata. The same config and seed give the same bytes, whatever the number of
-  processes. 10⁶ snapshots of CSIRO LV feeders: about 0.3 h on 32 cores and 60 GB
-  (extrapolated from 10⁵).
+  Croissant metadata. On one machine the same config, seed and versions give the same tables,
+  whatever the number of processes, but for the measured solve times. 10⁶ snapshots of CSIRO LV
+  feeders: about 0.3 h on 32 cores and 60 GB (extrapolated from 10⁵).
 * **[gridfm-graphkit](https://github.com/gridfm/gridfm-graphkit)**: `export-posseq` writes the
   positive-sequence equivalent of a dataset in gridfm-datakit's format, readable by GENCO.
 
@@ -62,6 +63,9 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
     ```bash
     pip install "gridfm-datakit-distr @ git+https://github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     ```
+
+    `@v0.2.0` is the latest release, which writes data schema 0.5.0. This documentation describes
+    the development version on `main` (schema 0.7.0); to install it, leave out `@v0.2.0`.
 
 3. Optional: OPF labels (CasADi with its bundled Ipopt)
 
@@ -195,7 +199,7 @@ views:
   kron: false # true also re-solves each scenario without the neutral (Kron reduction)
 
 settings:
-  seed: 42 # same config and seed: same dataset, bit for bit
+  seed: 42 # same config, seed and versions: same tables but for the solve times
   data_dir: ./data
   num_processes: null # null: one per core
   chunk_size: 500 # scenarios per output part

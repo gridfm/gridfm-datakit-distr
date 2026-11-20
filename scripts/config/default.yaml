@@ -44,7 +44,7 @@ views:
   kron: false # true also re-solves each scenario without the neutral (Kron reduction)
 
 settings:
-  seed: 42 # same config and seed: same dataset, bit for bit
+  seed: 42 # same config, seed and versions: same tables but for the solve times
   data_dir: ./data
   num_processes: null # null: one per core
   chunk_size: 500 # scenarios per output part
