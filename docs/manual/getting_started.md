@@ -143,7 +143,7 @@ Output:
 671.c: 1.016 pu at   118.2 deg
 ```
 
-### The network admittance and Kirchhoff's current law
+### The network admittance and the power-flow equations
 
 The stored voltages solve the stored network, and one sparse product shows it. Two kinds of
 admittance matrix (S) describe the network:
@@ -159,10 +159,14 @@ admittance matrix (S) describe the network:
   state (tap positions, capacitor steps): `variants/ybus` with the entries `states/ybus` changes
   ([Outputs](outputs.md#statesybusparquet)).
 
-`Y_state` is the graph a model learns on, and `I_inj = Y_state V`, the current each node injects
-into the network, is a physics check or a loss you can reuse on predicted voltages: where no load,
-generator or source connects, Kirchhoff's current law makes it zero, up to the power flow's
-tolerance. `DatasetReader` returns `Y_state` with the nodes and elements of the variant:
+Together with the loads and PV units, they make up the power-flow problem a model learns: the
+setpoints are the input, `Y_state` the graph, the voltages the output. Two equations tie them:
+`I_inj = Y_state V`, the current each node injects into the network, and `S_inj = V · conj(I_inj)`,
+the power. The snippet checks the stored voltages against them, as you would check a model's
+predicted voltages (or use the mismatch as a loss): the power the source delivers must equal what
+the loads draw plus the network's losses, and no current may enter the network where nothing
+connects (Kirchhoff's current law). `DatasetReader` returns `Y_state` with the nodes and elements
+of the variant:
 
 ```python
 from gridfm_datakit_distr.io.reader import DatasetReader
@@ -173,26 +177,31 @@ model = scenario.variant.model  # nodes and elements of its variant
 Y = scenario.y_state  # network admittance of its state (S, sparse)
 if Y is None:  # a scenario without a state: the variant's, as compiled
     Y = scenario.variant.y_base
-i_inj = Y @ v  # A injected at each node
 
-# the nodes where an element that is not power delivery (load, generator, source) connects
+i_inj = Y @ v  # A: the current each node injects into the network
+s_inj = v * np.conj(i_inj)  # VA: the power each node injects (negative where a load draws)
+source = s_inj[scenario.variant.source_nodes].sum()  # what the source delivers
+loads = sum(scenario.s_drawn.values())  # the stored setpoints of the loads and PV (PV negative)
+losses = s_inj.sum()  # every injection together: what the network dissipates
+assert abs(source - loads - losses) < 1e-6 * abs(source)  # the power balance closes
+kw = [x.real / 1e3 for x in (source, loads, losses)]
+print("source {:.1f} kW = loads {:.1f} kW + losses {:.1f} kW".format(*kw))
+
+# the nodes where a load, generator or source connects (elements that are not power delivery)
 injecting = np.zeros(model.n_nodes, dtype=bool)
 for e in model.elements:
     if not e.is_pd:
         injecting[[k for k in e.local_nodes() if k >= 0]] = True  # k < 0: ground
-i_abs = np.abs(i_inj)
-kcl = i_abs[~injecting].max() / i_abs.max()
-assert kcl < 1e-6  # Kirchhoff: no net current where nothing is injected
-print(f"largest |I_inj|: {i_abs.max():.0f} A, where a load or source connects")
-n_free = (~injecting).sum()
-print(f"at the {n_free} nodes where nothing connects: |I_inj| < 1e-6 × {i_abs.max():.0f} A")
+kcl = np.abs(i_inj[~injecting]).max() / np.abs(i_inj).max()
+assert kcl < 1e-6  # Kirchhoff: no current enters where nothing connects
+print(f"no current injected at the {(~injecting).sum()} nodes where nothing connects")
 ```
 
 Output:
 
 ```text
-largest |I_inj|: 563 A, where a load or source connects
-at the 19 nodes where nothing connects: |I_inj| < 1e-6 × 563 A
+source 2035.3 kW = loads 2002.8 kW + losses 32.5 kW
+no current injected at the 19 nodes where nothing connects
 ```
 
 ### Power flows from the element currents
