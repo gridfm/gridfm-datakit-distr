@@ -57,22 +57,22 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
 
 1. Make sure you have Python 3.10, 3.11 or 3.12.
 
-2. Install gridfm-datakit-distr (the repository is private for now: you need access to it)
+2. Install gridfm-datakit-distr
 
     ```bash
-    pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
+    pip install "gridfm-datakit-distr @ git+https://github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     ```
 
 3. Optional: OPF labels (CasADi with its bundled Ipopt)
 
     ```bash
-    pip install "gridfm-datakit-distr[opf] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
+    pip install "gridfm-datakit-distr[opf] @ git+https://github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     ```
 
 4. Optional: Julia with PowerModelsDistribution, used only to cross-check the OPF
 
     ```bash
-    pip install "gridfm-datakit-distr[julia] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
+    pip install "gridfm-datakit-distr[julia] @ git+https://github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
     gridfm_datakit_distr setup-julia
     ```
 
@@ -82,7 +82,7 @@ With [uv](https://docs.astral.sh/uv/) (creates `.venv` and installs the versions
 `uv.lock`):
 
 ```bash
-git clone git@github.com:gridfm/gridfm-datakit-distr.git
+git clone https://github.com/gridfm/gridfm-datakit-distr.git
 cd gridfm-datakit-distr
 uv sync
 uv run pytest -m "not slow and not julia"

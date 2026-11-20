@@ -7,18 +7,16 @@ package.
 ## From the repository
 
 ```bash
-pip install "gridfm-datakit-distr @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
+pip install "gridfm-datakit-distr @ git+https://github.com/gridfm/gridfm-datakit-distr.git@v0.2.0"
 gridfm_datakit_distr version
 ```
-
-The repository is private for now: the command needs access to it.
 
 ## For developers
 
 With [uv](https://docs.astral.sh/uv/), which creates `.venv` with the versions pinned in `uv.lock`:
 
 ```bash
-git clone git@github.com:gridfm/gridfm-datakit-distr.git
+git clone https://github.com/gridfm/gridfm-datakit-distr.git
 cd gridfm-datakit-distr
 uv sync
 uv run pytest -m "not slow and not julia"

@@ -68,7 +68,7 @@ bound.
 Install the `opf` extra (CasADi, which bundles Ipopt):
 
 ```bash
-pip install "gridfm-datakit-distr[opf] @ git+ssh://git@github.com/gridfm/gridfm-datakit-distr.git"
+pip install "gridfm-datakit-distr[opf] @ git+https://github.com/gridfm/gridfm-datakit-distr.git"
 ```
 
 and set in the config:
