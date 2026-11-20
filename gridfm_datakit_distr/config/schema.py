@@ -210,13 +210,10 @@ class LoadNormalisation(_Config):
     the setpoints, so a scenario where a load or generator misses its setpoint (1e-6 relative) is
     `off_setpoint`, without results. The PV units get the same window."""
 
-    model: Literal["constant_power", "as_is"] = Field(
+    model: Literal["constant_power"] = Field(
         default="constant_power",
-        description="`constant_power`: every load becomes constant P, Q (OpenDSS `model=1`); "
-        "OPF labels need it. `as_is`: each load keeps its source model, only the window is set. "
-        "A load of another model (constant impedance, constant current, ZIP) delivers its "
-        "setpoint only at its rated voltage, so with `as_is` practically every scenario of a "
-        "network with such loads ends `off_setpoint`.",
+        description="`constant_power`, the only model: every load becomes constant P, Q "
+        "(OpenDSS `model=1`), whatever its model in the source.",
     )
     vminpu: float = Field(
         default=0.6,
@@ -488,8 +485,8 @@ class OPFLabels(_Config):
     enabled: bool = Field(
         default=False,
         description="Solve and verify the OPF of every scenario. The config is refused unless the "
-        "`opf` extra (CasADi) is installed and `normalisation.loads.model` is `constant_power`. "
-        "Networks outside the OPF's scope get `not_supported` rows.",
+        "`opf` extra (CasADi) is installed. Networks outside the OPF's scope get `not_supported` "
+        "rows.",
     )
     costs: Literal["economic", "sampled"] = Field(
         default="economic",

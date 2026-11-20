@@ -86,19 +86,15 @@ def validate_config(
     return config
 
 
-REMOVED: tuple[tuple[str, ...], ...] = (("labels", "pf"),)
-"""Keys removed from the config; a dataset written before may still hold them."""
-
-
 def stored_config(data: Mapping[str, Any]) -> GenerationConfig:
-    """The resolved config of a dataset's manifest, without the keys removed since it was
-    written (none of them changes how the stored data is read)."""
+    """The resolved config of a dataset's manifest, without what was removed since it was
+    written: the key ``labels.pf`` and the value ``as_is`` of ``normalisation.loads.model``
+    (replaced by the default). Neither changes how the stored data is read."""
     data = copy.deepcopy(dict(data))
-    for *parents, key in REMOVED:
-        node = data
-        for parent in parents:
-            node = node.get(parent, {})
-        node.pop(key, None)
+    data.get("labels", {}).pop("pf", None)
+    loads = data.get("normalisation", {}).get("loads", {})
+    if loads.get("model") == "as_is":
+        del loads["model"]
     return GenerationConfig.model_validate(data)
 
 
@@ -165,26 +161,15 @@ def _selection(networks: Networks, catalog: Catalog) -> tuple[list[SelectedNetwo
 
 
 def _opf_requirements(config: GenerationConfig) -> list[Issue]:
-    """OPF labels need CasADi (the ``opf`` extra) and constant-power loads (the problem's
-    load model)."""
-    if not config.labels.opf.enabled:
+    """OPF labels need CasADi (the ``opf`` extra)."""
+    if not config.labels.opf.enabled or importlib.util.find_spec("casadi") is not None:
         return []
-    issues: list[Issue] = []
-    if importlib.util.find_spec("casadi") is None:
-        issues.append(
-            (
-                "labels.opf.enabled",
-                "OPF labels need the 'opf' extra: pip install 'gridfm-datakit-distr[opf]'",
-            )
+    return [
+        (
+            "labels.opf.enabled",
+            "OPF labels need the 'opf' extra: pip install 'gridfm-datakit-distr[opf]'",
         )
-    if config.normalisation.loads.model != "constant_power":
-        issues.append(
-            (
-                "labels.opf.enabled",
-                "OPF labels need normalisation.loads.model: constant_power (the OPF's load model)",
-            )
-        )
-    return issues
+    ]
 
 
 _RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (_opf_requirements,)

@@ -312,10 +312,20 @@ def test_the_power_flow_labels_have_no_switch() -> None:
     one_issue(with_("labels.pf", True), "labels.pf", "Extra inputs are not permitted")
 
 
+def test_every_load_is_constant_power() -> None:
+    """`as_is` kept the source's load models, whose setpoints the solves never met."""
+    one_issue(
+        with_("normalisation.loads.model", "as_is"),
+        "normalisation.loads.model",
+        "Input should be 'constant_power'",
+    )
+
+
 def test_a_stored_config_drops_the_keys_removed_since() -> None:
     """A dataset's manifest written before a key was removed is still read."""
     old = validate_config(MINIMAL).model_dump(mode="json")
     old["labels"]["pf"] = True
+    old["normalisation"]["loads"]["model"] = "as_is"
     assert stored_config(old) == validate_config(MINIMAL)
 
 
@@ -334,12 +344,6 @@ def test_opf_labels_are_accepted() -> None:
     pytest.importorskip("casadi")
     config = validate_config(with_("labels.opf.enabled", True))
     assert (config.labels.opf.costs, config.labels.opf.time_limit_s) == ("economic", 300.0)
-
-
-def test_opf_labels_need_constant_power_loads() -> None:
-    pytest.importorskip("casadi")
-    data = with_("normalisation.loads.model", "as_is", with_("labels.opf.enabled", True))
-    one_issue(data, "labels.opf.enabled", "OPF labels need normalisation.loads.model")
 
 
 def test_opf_labels_need_the_opf_extra(monkeypatch: pytest.MonkeyPatch) -> None:

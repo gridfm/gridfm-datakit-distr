@@ -325,6 +325,7 @@ def test_a_dataset_of_an_earlier_config_is_exported(tmp_path: Path) -> None:
     path = out / "manifest.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["config"]["labels"]["pf"] = True
+    manifest["config"]["normalisation"]["loads"]["model"] = "as_is"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     [result] = export_posseq(out, tmp_path / "export")
     assert result.statuses == {"converged": 5}

@@ -7,9 +7,6 @@ With `labels.opf.enabled: true` ([`labels.opf`](config.md#labelsopf)), every sce
 Install the `opf` extra (CasADi, which bundles Ipopt: [Installation](../installation.md#optional-extras)) and set in the config:
 
 ```yaml
-normalisation:
-  loads:
-    model: constant_power   # the default; the OPF needs it
 labels:
   opf:
     enabled: true
@@ -17,7 +14,7 @@ labels:
     time_limit_s: 300       # wall-clock limit of one solve
 ```
 
-The config is refused when the extra is missing or the loads are not constant power. Each scenario then costs one Ipopt solve (0.2 to 1.5 s on a small CSIRO feeder) and one more OpenDSS power flow, which the dry run's time estimate leaves out. With the OPF off, CasADi is never imported and the dataset has no `opf/` tables. The dataset card (`README.md`) counts the scenarios by OPF status.
+The config is refused when the extra is missing. Each scenario then costs one Ipopt solve (0.2 to 1.5 s on a small CSIRO feeder) and one more OpenDSS power flow, which the dry run's time estimate leaves out. With the OPF off, CasADi is never imported and the dataset has no `opf/` tables. The dataset card (`README.md`) counts the scenarios by OPF status.
 
 ## The problem
 

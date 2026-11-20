@@ -34,11 +34,11 @@ carry loadshapes. On any other network the loadshape providers fail every unit w
 catch it. No source dates its profiles: `profile_time_s` counts seconds from the start of the
 profile. `scenarios.profiles.synthetic` may be set only with `provider: synthetic`.
 
-**Load model.** With `normalisation.loads.model: constant_power` (default) every load draws
-constant P and Q between `vminpu` and `vmaxpu` (0.6 and 1.5 pu): OpenDSS's default window is
+**Load model.** Every load draws constant P and Q (`normalisation.loads.model: constant_power`,
+the only model) between `vminpu` and `vmaxpu` (0.6 and 1.5 pu): OpenDSS's default window is
 widened because outside it a load silently becomes a constant impedance (the scenario would then
-be `off_setpoint`). `as_is` keeps the source's load models; the stored setpoints then no longer
-determine the voltages, and OPF labels are refused ([Outputs](outputs.md#scenariosloads)).
+be `off_setpoint`). The stored setpoints therefore determine the voltages
+([Outputs](outputs.md#scenariosloads)).
 
 ## PV output
 

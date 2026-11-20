@@ -136,7 +136,7 @@ the setpoints, so a scenario where a load or generator misses its setpoint (1e-6
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `normalisation.loads.model` | one of `constant_power`, `as_is` | `constant_power` | `constant_power`: every load becomes constant P, Q (OpenDSS `model=1`); OPF labels need it. `as_is`: each load keeps its source model, only the window is set. A load of another model (constant impedance, constant current, ZIP) delivers its setpoint only at its rated voltage, so with `as_is` practically every scenario of a network with such loads ends `off_setpoint`. |
+| `normalisation.loads.model` | one of `constant_power` | `constant_power` | `constant_power`, the only model: every load becomes constant P, Q (OpenDSS `model=1`), whatever its model in the source. |
 | `normalisation.loads.vminpu` | number > 0 and < 1 | `0.6` | Lower end of the window (pu of each load's rated voltage). OpenDSS's own 0.95 would turn loads into impedances in ordinary undervoltage. |
 | `normalisation.loads.vmaxpu` | number > 1 | `1.5` | Upper end of the window (pu of each load's rated voltage). |
 
@@ -259,7 +259,7 @@ OPF labels: the minimum-cost OPF of every scenario, verified in OpenDSS
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario. The config is refused unless the `opf` extra (CasADi) is installed and `normalisation.loads.model` is `constant_power`. Networks outside the OPF's scope get `not_supported` rows. |
+| `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario. The config is refused unless the `opf` extra (CasADi) is installed. Networks outside the OPF's scope get `not_supported` rows. |
 | `labels.opf.costs` | one of `economic`, `sampled` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); `sampled`: coefficients drawn per scenario from `sampled`. |
 | `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit (s) of each Ipopt solve (`max_wall_time`). A scenario not solved from the flat start is solved once more from its power flow, so it can take twice this. Machine-dependent; the 3000-iteration limit is the deterministic bound. |
 
