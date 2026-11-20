@@ -17,8 +17,8 @@ explicit neutral. It is the distribution counterpart of
   recorded, never dropped.
 - **OPF labels (optional).** The minimum-cost unbalanced AC OPF of every scenario, with the PV units
   as controls, solved with Ipopt and verified in OpenDSS.
-- **Reproducible.** The same config, seed and library versions give the same tables, whatever the
-  number of processes; only the measured solve times differ.
+- **Reproducible.** On one machine the same config, seed and library versions give the same
+  tables, whatever the number of processes; only the measured wall times differ.
 - **gridfm-graphkit.** `export-posseq` writes the positive-sequence equivalent of a dataset in
   gridfm-datakit's format.
 

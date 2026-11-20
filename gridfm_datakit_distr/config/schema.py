@@ -544,7 +544,7 @@ class Settings(_Config):
         description="Root of the seed tree. Every draw is keyed by the seed, the network id, the "
         "variant and scenario indices and the quantity, never by the order of work: on one "
         "machine the same config, seed and versions give the same tables, but for the measured "
-        "solve times, for any number of processes and contexts ([Scenarios](scenarios.md), "
+        "wall times, for any number of processes and contexts ([Scenarios](scenarios.md), "
         "Reproducibility in [OPF labels](opf.md)); a network's draws do not depend on the other "
         "networks selected; more variants or scenarios keep the existing ones; changing one "
         "quantity's spec does not shift the draws of another.",
