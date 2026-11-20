@@ -67,12 +67,13 @@ RAMP_STEPS = 10
 
 def prepare_options(config: GenerationConfig) -> PrepareOptions:
     """Normalisation and solver settings of a config."""
-    loads = config.normalisation.loads
+    loads, s_base = config.normalisation.loads, config.normalisation.s_base_va
     return PrepareOptions(
         load_model=loads.model,
         vminpu=loads.vminpu,
         vmaxpu=loads.vmaxpu,
         tolerance=config.settings.validation_tolerance,
+        s_base_va=None if s_base == "auto" else s_base,
     )
 
 

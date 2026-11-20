@@ -125,7 +125,7 @@ passports (`catalog/passports`).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `normalisation.s_base_va` | `auto` or a number > 0 (VA) | `auto` | Power base (VA). `auto`: the rating of the largest transformer with a winding in the source zone, else the total nominal apparent power of the loads, else 1 MVA; the dataset always uses it, as the per-unit base of the semantic model (`variants/semantic`, PMD-aligned) and in `catalog/networks.s_base_va`. A number replaces it only in `export-posseq`: the source generator's limits and the balance tolerance of the positive-sequence view (itself per unit on 100 MVA). |
+| `normalisation.s_base_va` | `auto` or a number > 0 (VA) | `auto` | Power base (VA) of each network: the per-unit base of the semantic model (`variants/semantic`, PMD-aligned), `catalog/networks.s_base_va` and the passports, and in `export-posseq` the source generator's limits and the balance tolerance of the positive-sequence view (itself per unit on 100 MVA). `auto`: per network, the rating of the largest transformer with a winding in the source zone, else the total nominal apparent power of the loads, else 1 MVA. A number: that base for every network. |
 
 ### `normalisation.loads`
 

@@ -396,7 +396,8 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
     slot.variant = variant
     if variant.status == "ok":
         runner = VariantRunner(network, variant, config, i, root=root, prepared=variant.prepared)
-        s_base = s_base_va(runner.ctx, runner.model)[0]  # the loads are still the variant's
+        # auto: from the variant's loads, still as compiled
+        s_base = options.s_base_va or s_base_va(runner.ctx, runner.model)[0]
         semantic = extract_semantic(runner.ctx, runner.model, s_base_va=s_base)
         slot.semantic = semantic.model_dump_json()
         slot.runner = runner

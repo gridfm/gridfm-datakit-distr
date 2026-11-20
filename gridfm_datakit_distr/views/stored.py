@@ -90,6 +90,7 @@ class VariantStore:
         if row.num_rows != 1:
             raise ValueError(f"{root}: network {i} is not in catalog/networks")
         self.frequency_hz = float(row.column("frequency_hz")[0].as_py())
+        # equal for new datasets; older ones stored the auto base even with a configured one
         explicit = config.normalisation.s_base_va
         stored = float(row.column("s_base_va")[0].as_py())
         self.s_base_va = stored if isinstance(explicit, str) else float(explicit)

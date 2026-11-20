@@ -331,6 +331,23 @@ def test_a_dataset_of_an_earlier_config_is_exported(tmp_path: Path) -> None:
     assert result.statuses == {"converged": 5}
 
 
+def test_a_configured_power_base_is_the_datasets(tmp_path: Path) -> None:
+    """A number for ``normalisation.s_base_va`` is every network's power base: in
+    ``catalog/networks``, the passports and the semantic layer."""
+    data = copy.deepcopy(CONFIG)
+    data["networks"]["include"] = ["t/feeder"]
+    data["variants"]["n_variants"] = 1
+    data["normalisation"] = {"s_base_va": 2.5e5}
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out, catalog=catalog(tmp_path), root=tmp_path)
+    networks = pq.read_table(out / "catalog" / "networks.parquet")
+    assert networks.column("s_base_va").to_pylist() == [2.5e5]
+    passport = json.loads((out / "catalog" / "passports" / "t" / "feeder.json").read_text())
+    assert (passport["s_base_va"], passport["s_base_origin"]) == (2.5e5, "configured")
+    semantic = out / "variants" / "semantic" / "t" / "feeder" / "v0000.json"
+    assert json.loads(semantic.read_text())["settings"]["sbase_default"] == 250.0
+
+
 def test_a_network_without_a_view_exports_its_errors(tmp_path: Path) -> None:
     """A single-phase network has no three-phase backbone: it generates, its nodes have no
     ``backbone_bus``, and the export records the error of every scenario's view."""

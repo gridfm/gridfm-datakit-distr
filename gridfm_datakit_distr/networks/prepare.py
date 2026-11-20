@@ -30,13 +30,15 @@ from gridfm_datakit_distr.validate.setpoints import SetpointReport, setpoint_rep
 
 @dataclass(frozen=True, slots=True)
 class PrepareOptions:
-    """Normalisation parameters (config ``normalisation.loads``) and solver settings."""
+    """Normalisation parameters (config ``normalisation``) and solver settings."""
 
     load_model: LoadModel = "constant_power"
     vminpu: float = 0.6
     vmaxpu: float = 1.5
     tolerance: float = 1e-10
     max_iterations: int = 200
+    s_base_va: float | None = None
+    """The configured power base (VA); None: ``auto`` (:func:`normalize.bases.s_base_va`)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,7 +127,7 @@ def prepare_network(
         bases_as_loaded=as_loaded,
         base_fix=fix,
         bases=bases,
-        s_base=s_base_va(ctx, model),
+        s_base=s_base_va(ctx, model) if opts.s_base_va is None else (opts.s_base_va, "configured"),
         neutral=classify_neutral(model),
         phases=phase_consistency(model),
         setpoints=setpoint_report(ctx),
