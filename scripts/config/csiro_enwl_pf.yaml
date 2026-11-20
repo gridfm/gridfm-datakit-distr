@@ -19,7 +19,6 @@ variants:
   admittance:
     line_length_scale: {distribution: uniform, low: 0.9, high: 1.1}
     neutral_impedance_scale: 1.0
-    grounding_resistance_ohm: {distribution: choice, values: [1.0, 5.0, 20.0]}
   phase_reallocation:
     enabled: true
     fraction: 0.2
@@ -32,7 +31,6 @@ scenarios:
   n_scenarios_per_variant: 1000
   profiles:
     provider: synthetic
-    same_timestamp: true
     synthetic:
       global_scale: {distribution: uniform, low: 0.2, high: 1.2}
       local_sigma: 0.3
