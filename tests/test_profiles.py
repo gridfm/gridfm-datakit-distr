@@ -18,6 +18,7 @@ from gridfm_datakit_distr.scenarios.profiles import (
     ProfileError,
     customers_of,
     make_provider,
+    profile_issues,
 )
 from gridfm_datakit_distr.scenarios.profiles.network_loadshapes import (
     LoadshapeProvider,
@@ -61,6 +62,47 @@ def test_a_network_without_loadshapes_is_refused(tmp_path: Path) -> None:
     write_circuit(tmp_path / "src", LATERAL)
     with pytest.raises(ProfileError, match="no load has a daily or yearly loadshape"):
         read_series(Network(id="t/lat", source="src", master="master.dss"), tmp_path)
+
+
+def test_the_provider_check_names_the_networks_it_cannot_serve(tmp_path: Path) -> None:
+    write_circuit(tmp_path / "src" / "prof", PROFILED)
+    write_circuit(tmp_path / "src" / "lat", LATERAL)
+    prof = Network(id="t/prof", source="src", master="prof/master.dss")
+    lat = Network(id="t/lat", source="src", master="lat/master.dss")
+    shapes = Profiles.model_validate({"provider": "network_loadshapes"})
+    assert profile_issues(shapes, [prof, lat], tmp_path) == [
+        "t/lat: no load has a daily or yearly loadshape"
+    ]
+    assert profile_issues(Profiles(), [prof, lat], tmp_path) == []  # synthetic: no loadshape
+
+
+def test_generate_refuses_a_provider_it_cannot_serve_before_any_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With and without ``--dry-run``: exit 2, as an invalid config, naming the networks."""
+    from typer.testing import CliRunner
+
+    from gridfm_datakit_distr.cli import app
+    from gridfm_datakit_distr.networks import cache, catalog
+    from tests.test_executor import catalog as test_catalog
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: test_catalog(tmp_path))
+    monkeypatch.setattr(cache, "is_fetched", lambda source, root=None: True)
+    config = tmp_path / "c.yaml"
+    config.write_text(
+        "dataset_name: d\nnetworks: {include: ['t/*']}\nsettings: {seed: 1}\nscenarios:\n"
+        "  n_scenarios_per_variant: 1\n  profiles: {provider: edp_smart_meter}\n"
+    )
+    data = tmp_path / "data"
+    args = ["generate", str(config), "--cache", str(tmp_path), "--data-dir", str(data)]
+    for dry_run in ([], ["--dry-run"]):
+        result = CliRunner().invoke(app, [*args, *dry_run])
+        assert result.exit_code == 2, result.output
+        for network in ("t/feeder", "t/reg"):
+            expected = f"- scenarios.profiles.provider: {network}: no load has a daily or yearly"
+            assert expected in result.output
+        assert "dataset d" not in result.output  # the dry run's report
+    assert not data.exists()
 
 
 def provider(profiled: tuple[Network, Path], same_timestamp: bool = True) -> LoadshapeProvider:

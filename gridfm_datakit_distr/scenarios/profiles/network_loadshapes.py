@@ -108,7 +108,9 @@ def read_series(network: Network, root: Path | None = None) -> LoadshapeSeries:
         if has_q:
             qmult = np.asarray(api.LoadShape.QMult(), dtype=np.float64)
             if qmult.size != mult.size:
-                raise ProfileError(f"LoadShape.{shape}: {qmult.size} Q points, {mult.size} P")
+                raise ProfileError(
+                    f"{network.id}: LoadShape.{shape}: {qmult.size} Q points, {mult.size} P"
+                )
             q = 1e3 * qmult * (1.0 if actual else kvar)
         else:
             q = p * (kvar / kw if kw else 0.0)
@@ -116,7 +118,9 @@ def read_series(network: Network, root: Path | None = None) -> LoadshapeSeries:
             constants[name] = (float(p[0]), float(q[0]))
             continue
         if interval <= 0 or interval != round(interval):
-            raise ProfileError(f"LoadShape.{shape}: interval {interval} s is not a whole second")
+            raise ProfileError(
+                f"{network.id}: LoadShape.{shape}: interval {interval} s is not a whole second"
+            )
         intervals.add(int(interval))
         profiles[name] = (p, q)
     if len(intervals) > 1:

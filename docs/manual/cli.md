@@ -76,8 +76,11 @@ network without a golden file fails C7. Exit 1 if a network fails.
 | `--cache DIR` | cache directory |
 
 **What it checks first.** The config: every problem is listed as `<dotted.path>: <reason>`, exit
-2. The sources of its networks must be in the cache (exit 1 otherwise). Every network is
-prepared once before any work: one that does not load stops the run.
+2. The sources of its networks must be in the cache (exit 1 otherwise). A loadshape provider
+(`network_loadshapes`, `edp_smart_meter`) must find loadshapes in every network: the networks
+without them are listed as `scenarios.profiles.provider: <network_id>: <reason>`, exit 2, also
+with `--dry-run`. Every network is prepared once before any work: one that does not load stops
+the run.
 
 **New, resumed or refused.** The output directory is
 

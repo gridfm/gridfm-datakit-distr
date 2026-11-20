@@ -380,8 +380,8 @@ class Profiles(_Config):
         "a profile time drawn uniformly over the shortest multi-point loadshape; loads without "
         "one keep their nominal (or one-point) value. `edp_smart_meter`: the same mechanism for "
         "the EDP networks, whose loadshapes are the smart-meter files; only the recorded "
-        "`profile_source` differs. A network without loadshapes is not caught by the config "
-        "check: its units fail at generation (`ProfileError`).",
+        "`profile_source` differs. `generate` refuses either on a network without loadshapes "
+        "before any work, also with `--dry-run`.",
     )
     same_timestamp: bool = Field(
         default=True,

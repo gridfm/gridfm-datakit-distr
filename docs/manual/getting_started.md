@@ -397,7 +397,7 @@ estimate. For scale: 10⁶ snapshots of CSIRO LV feeders take about 0.3 h on 32 
 | `… exists and is not a dataset (no manifest.json): not touched` | the output directory is not empty | another `dataset_name` or `--data-dir` |
 | `error: N unit(s) failed, e.g. …` | see each unit's `message` in `manifest.json` | a rerun retries failed units; a failure caused by the drawn data repeats |
 | … `variant failed: attempt 0: C1: …` | the variant's base case did not converge or failed the Kirchhoff check, in all three attempts ([Variants](variants.md#checks-and-failures)) | smaller perturbations; CSIRO `n13_f4` fails at its nominal loads ([Networks](networks.md#known-differences-and-exclusions)) |
-| … `ProfileError: … no load has a daily or yearly loadshape` | `network_loadshapes` or `edp_smart_meter` on a network without loadshapes (not caught by the dry run) | use them on the EDP networks and `ieee_eulv` only ([Scenarios](scenarios.md#loads)) |
+| `scenarios.profiles.provider: <network_id>: no load has a daily or yearly loadshape` | `network_loadshapes` or `edp_smart_meter` on a network without loadshapes | use them on the EDP networks and `ieee_eulv` only ([Scenarios](scenarios.md#loads)) |
 | many `not_converged` or `off_setpoint` scenarios | operating points the network cannot carry at constant power (they are recorded, not errors) | `stats` and the dataset card count them, `pf_message` explains them; if unwanted, narrow the load, PV or source-voltage ranges |
 | the run stops with a dead worker process | a worker was killed, e.g. by the out-of-memory killer | resume with fewer `--processes` |
 | `export-posseq`: `incomplete in the dataset` | a network with failed or unfinished units | resume `generate`, or `--network` for the complete ones |

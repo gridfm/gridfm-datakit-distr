@@ -29,10 +29,10 @@ setpoints:
 | `edp_smart_meter` | the same reader: in the EDP networks the loadshapes are the smart-meter files. The name is what `scenario_meta.profile_source` records. |
 
 Only the EDP networks and the IEEE European LV feeder (`ieee_eulv`: one day at 1-minute steps)
-carry loadshapes. On any other network the loadshape providers fail every unit with
-`ProfileError: … no load has a daily or yearly loadshape`; the config check and the dry run do not
-catch it. No source dates its profiles: `profile_time_s` counts seconds from the start of the
-profile. `scenarios.profiles.synthetic` may be set only with `provider: synthetic`.
+carry loadshapes. `generate`, with or without `--dry-run`, refuses a loadshape provider on any
+other network before any work (exit 2), naming the networks. No source dates its profiles:
+`profile_time_s` counts seconds from the start of the profile. `scenarios.profiles.synthetic` may
+be set only with `provider: synthetic`.
 
 **Load model.** Every load draws constant P and Q (`normalisation.loads.model: constant_power`,
 the only model) between `vminpu` and `vmaxpu` (0.6 and 1.5 pu): OpenDSS's default window is

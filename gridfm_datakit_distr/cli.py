@@ -235,6 +235,7 @@ def generate(
     from gridfm_datakit_distr.config.load import ConfigError, load_config
     from gridfm_datakit_distr.networks.cache import is_fetched
     from gridfm_datakit_distr.networks.catalog import load_catalog
+    from gridfm_datakit_distr.scenarios.profiles import profile_issues
     from gridfm_datakit_distr.solve.executor import GenerationError, jobs_of
     from gridfm_datakit_distr.solve.executor import generate as run_generation
 
@@ -270,6 +271,12 @@ def generate(
     if missing:
         typer.echo(f"error: run `gridfm_datakit_distr fetch {' '.join(missing)}` first", err=True)
         raise typer.Exit(1)
+    unserved = profile_issues(config.scenarios.profiles, [j.network for j in jobs], cache)
+    if unserved:  # else every unit of these networks would fail
+        where = "scenarios.profiles.provider"
+        error = ConfigError(str(config_path), [(where, reason) for reason in unserved])
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(2)
     out = Path(config.settings.data_dir) / config.dataset_name
     if dry_run:
         typer.echo(_dry_run(config, jobs, cache, out), nl=False)

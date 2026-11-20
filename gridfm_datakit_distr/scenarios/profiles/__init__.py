@@ -27,6 +27,7 @@ __all__ = [
     "ProfileProvider",
     "customers_of",
     "make_provider",
+    "profile_issues",
 ]
 
 
@@ -44,3 +45,19 @@ def make_provider(
             name=config.provider,
         )
     raise ProfileError(f"provider {config.provider!r} is not available in this version")
+
+
+def profile_issues(
+    config: Profiles, networks: Sequence[Network], root: Path | None = None
+) -> list[str]:
+    """Why ``config.provider`` cannot serve each network it cannot serve, before any work: a
+    loadshape provider reads each network's loadshapes as :func:`make_provider` does."""
+    if config.provider == "synthetic":
+        return []
+    issues = []
+    for network in networks:
+        try:
+            read_series(network, root)
+        except ProfileError as exc:
+            issues.append(str(exc))
+    return issues
