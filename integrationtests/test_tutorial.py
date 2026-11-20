@@ -21,26 +21,38 @@ OPF_SECTION = "## 5. OPF labels"
 SNIPPET = re.compile(r"```python\n(.*?)```(?:\n+Output:\n+```text\n(.*?)```)?", re.S)
 
 
+def sections() -> tuple[str, str]:
+    """The guide without its OPF section, and the OPF section."""
+    head, _, tail = TUTORIAL.read_text(encoding="utf-8").partition(OPF_SECTION)
+    opf_part, _, rest = tail.partition("\n## ")
+    return head + rest, opf_part
+
+
 def blocks(language: str, *, opf: bool = False) -> list[str]:
     """The code blocks of the guide outside its OPF section (``opf``: of the OPF section only)."""
-    text = TUTORIAL.read_text(encoding="utf-8")
-    head, _, tail = text.partition(OPF_SECTION)
-    opf_part, _, rest = tail.partition("\n## ")
-    return re.findall(rf"```{language}\n(.*?)```", opf_part if opf else head + rest, re.S)
+    return re.findall(rf"```{language}\n(.*?)```", sections()[opf], re.S)
 
 
-def snippets() -> list[tuple[str, str]]:
-    """The Python blocks outside the OPF section, each with the output the guide shows after it
-    (``""`` if none: then it must print nothing)."""
-    text = TUTORIAL.read_text(encoding="utf-8")
-    head, _, tail = text.partition(OPF_SECTION)
-    _, _, rest = tail.partition("\n## ")
-    return SNIPPET.findall(head + rest)
+def snippets(*, opf: bool = False) -> list[tuple[str, str]]:
+    """The Python blocks outside the OPF section (``opf``: of the OPF section only), each with the
+    output the guide shows after it (``""`` if none: then it must print nothing)."""
+    return SNIPPET.findall(sections()[opf])
 
 
 def trimmed(text: str) -> str:
     """``text`` without trailing blanks on each line and at its end."""
     return "\n".join(line.rstrip() for line in text.rstrip().splitlines())
+
+
+def run_snippets(found: list[tuple[str, str]], namespace: dict[str, Any]) -> None:
+    """Run the snippets in order in one namespace; each must print what the guide shows."""
+    for i, (code, shown) in enumerate(found):
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            exec(compile(code, f"tutorial-snippet-{i}", "exec"), namespace)
+        assert trimmed(printed.getvalue()) == trimmed(shown), (
+            f"snippet {i} printed:\n{printed.getvalue()}\nthe guide shows:\n{shown}"
+        )
 
 
 def test_the_tutorial_runs(
@@ -62,13 +74,7 @@ def test_the_tutorial_runs(
     namespace: dict[str, Any] = {}
     found = snippets()
     assert len(found) >= 5
-    for i, (code, shown) in enumerate(found):
-        printed = io.StringIO()
-        with contextlib.redirect_stdout(printed):
-            exec(compile(code, f"tutorial-snippet-{i}", "exec"), namespace)
-        assert trimmed(printed.getvalue()) == trimmed(shown), (
-            f"snippet {i} printed:\n{printed.getvalue()}\nthe guide shows:\n{shown}"
-        )
+    run_snippets(found, namespace)
     assert namespace["kcl"] < 1e-6
 
 
@@ -84,8 +90,9 @@ def test_the_opf_example_runs(
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
     namespace: dict[str, Any] = {}
-    (snippet,) = blocks("python", opf=True)
-    exec(compile(snippet, "tutorial-opf", "exec"), namespace)
+    found = snippets(opf=True)
+    assert len(found) >= 3
+    run_snippets(found, namespace)
     assert namespace["solved"]
     assert namespace["curtailed"]
 

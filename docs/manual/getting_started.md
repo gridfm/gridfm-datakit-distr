@@ -300,38 +300,176 @@ Output:
 
 ## 5. OPF labels
 
-With the `opf` extra installed, a dataset can also carry the optimal power flow of every scenario:
-the dispatch of the PV units that imports the least power within the voltage limits, checked in
-OpenDSS ([OPF labels](opf.md)). `scripts/config/opf_small.yaml` asks for 10 scenarios of a small
-CSIRO feeder with large PV units:
+With the `opf` extra installed, a dataset can also carry the optimal power flow (OPF) of every
+scenario ([OPF labels](opf.md) has the problem, its scope and the statuses):
+
+- **Input:** the scenario itself: network state, loads, source voltage and the power each PV unit
+  has available.
+- **Label:** the dispatch of the PV units, the active and reactive power of each (`p_w`, `q_var`),
+  and the node voltages it gives.
+- **Objective** (default preset `economic`): draw the least active power from the source, which is
+  the largest use of the PV power net of losses.
+- **Constraints:** every phase-to-neutral voltage within the config's limits (here `uk_esqcr`: 216.2
+  to 253.0 V on this 230 V feeder) and every transformer within its rating.
+- **Class:** `A` when the power flow, which dispatches every PV unit at its available power,
+  already respects the limits; `B` when it does not and the OPF has to correct the dispatch.
+- **Verification:** each dispatch is set on the PV units in OpenDSS and the power flow solved
+  again; the label is `verified` when OpenDSS gives the OPF's voltages (within 1e-6 pu) with the
+  limits respected.
+
+`scripts/config/opf_small.yaml` asks for 10 scenarios of a small CSIRO feeder with large PV units:
 
 ```bash
 uv sync --extra opf
 uv run --extra opf gridfm_datakit_distr generate scripts/config/opf_small.yaml --data-dir data
 ```
 
-Every scenario has a row in `opf/opf_meta`, with its status and class; the solved ones have the
-dispatch in `opf/opf_der` and the voltages in `opf/opf_node_results`:
+### Status and class of every scenario
+
+`opf/opf_meta` has one row per scenario, solved or not: its `opf_status` (Ipopt's, or why the
+scenario was not solved), its class, and `curtailment_w`, the active power the OPF takes off the PV
+units against the power flow. Only `Solve_Succeeded` rows are labels. Here all ten are solved; in
+three of the four class-`B` scenarios the OPF curtails PV, in the fourth reactive power alone
+removes the violation.
 
 ```python
-from collections import Counter
+import json
+from pathlib import Path
 
+import numpy as np
 import pyarrow.parquet as pq
 
-opf = pq.read_table("data/opf_small/opf/opf_meta").to_pylist()
-print(Counter((r["opf_status"], r["opf_class"]) for r in opf))
+DATASET = Path("data/opf_small")
+opf = pq.read_table(DATASET / "opf" / "opf_meta").to_pylist()  # one row per scenario
 solved = [r for r in opf if r["opf_status"] == "Solve_Succeeded"]
 assert all(r["verified"] for r in solved)  # OpenDSS reproduces every dispatch
-curtailed = {r["scenario_id"]: r["curtailment_w"] for r in solved if r["curtailment_w"] > 1.0}
-print("curtailed (W):", curtailed)
-dispatch = pq.read_table("data/opf_small/opf/opf_der")
-pv = pq.read_table("data/opf_small/scenarios/der")
-print(dispatch.num_rows, "PV set points of the OPF next to", pv.num_rows, "of the power flow")
+# curtailment_w is round-off (about 1e-3 W) where nothing is curtailed
+curtailed = {r["scenario_id"] for r in solved if r["curtailment_w"] > 1.0}  # W
+
+print("status             class scenarios curtailed")
+for status, cls in sorted({(r["opf_status"], r["opf_class"]) for r in opf}):
+    rows = [r for r in opf if (r["opf_status"], r["opf_class"]) == (status, cls)]
+    n_curtailed = sum(r["scenario_id"] in curtailed for r in rows)
+    print(f"{status:<18} {cls:<5} {len(rows):>9} {n_curtailed:>9}")
 ```
 
-In a class-`B` scenario the power flow's dispatch breaks a voltage limit and the OPF corrects it,
-with reactive power first and by curtailing when that is not enough. The larger slice of five
-feeders is `scripts/config/opf_slice.yaml` (500 scenarios, about 22 minutes on one process).
+Output:
+
+```text
+status             class scenarios curtailed
+Solve_Succeeded    A             6         0
+Solve_Succeeded    B             4         3
+```
+
+### Voltages: power flow against OPF
+
+Take the class-`B` scenario where the OPF curtails the most, the worst case of the ten. The limits
+bound the voltage of each phase to the neutral of its bus: the power flow breaks the upper limit,
+the OPF's voltages stop on it (within the 1e-6 pu of the verification).
+
+```python
+from gridfm_datakit_distr.io.reader import DatasetReader
+
+worst = max((r for r in solved if r["opf_class"] == "B"), key=lambda r: r["curtailment_w"])
+sid = worst["scenario_id"]
+(scenario,) = DatasetReader(DATASET).scenarios([sid])
+model = scenario.variant.model  # nodes and elements of its variant
+
+
+def of_scenario(*path):  # the rows of a table that belong to the scenario
+    return pq.read_table(DATASET.joinpath(*path), filters=[("scenario_id", "=", sid)])
+
+
+nodes = of_scenario("opf", "opf_node_results").sort_by("node_idx")
+v_opf = nodes["v_re"].to_numpy() + 1j * nodes["v_im"].to_numpy()  # V, to ground
+v_pf = scenario.v  # the power flow's, in the same node order
+
+# the limits the OPF used (pu of the nominal voltage), from the config the dataset resolved
+manifest = json.loads((DATASET / "manifest.json").read_text())
+limits = manifest["config"]["networks"]["voltage_limits"]
+phases = [n for n in model.nodes if n.conductor != "n"]
+neutral = {n.bus: n.idx for n in model.nodes if n.conductor == "n"}  # the neutral of each bus
+nominal = phases[0].nominal_v_ln  # V, phase to neutral: one voltage level on this feeder
+vmin, vmax = limits["vmin_pu"] * nominal, limits["vmax_pu"] * nominal
+
+
+def phase_neutral(v):  # V: magnitude of each phase's voltage to the neutral of its bus
+    return np.array([abs(v[n.idx] - v[neutral[n.bus]]) for n in phases])
+
+
+vm_pf, vm_opf = phase_neutral(v_pf), phase_neutral(v_opf)
+tol = 1e-6 * nominal  # V
+print(f"scenario {sid}                    power flow     OPF   limit")
+print(f"highest phase-to-neutral (V) {vm_pf.max():12.1f} {vm_opf.max():7.1f} {vmax:7.1f}")
+print(f"lowest phase-to-neutral (V)  {vm_pf.min():12.1f} {vm_opf.min():7.1f} {vmin:7.1f}")
+n_pf, n_opf = (vm_pf > vmax + tol).sum(), (vm_opf > vmax + tol).sum()
+print(f"phases above the limit       {n_pf:12d} {n_opf:7d}")
+```
+
+Output:
+
+```text
+scenario 9                    power flow     OPF   limit
+highest phase-to-neutral (V)        279.8   253.0   253.0
+lowest phase-to-neutral (V)         249.6   248.7   216.2
+phases above the limit                721       0
+```
+
+### Dispatch: power flow against OPF
+
+The dispatch behind it, of the same scenario. The power flow sets every PV unit to its available
+power at unity power factor (`q_var` is 0, checked below). Here the OPF has every unit absorb
+reactive power up to its inverter's limit `q_max_var` (0.44 of its 22 kVA rating) and curtails
+active power where that is not enough. The table gives the five most curtailed units and the
+totals. Then come the total curtailment and the power the source delivers at its terminals, as in
+section 4 (negative: the feeder feeds power back to it; `opf_meta.source_p_w` also counts the
+source's own impedance). The OPF gives up part of that export to keep the voltages within the
+limits, by a little less than the curtailment, because the network's losses change too.
+
+```python
+der_pf = of_scenario("scenarios", "der").sort_by("element_idx").to_pydict()
+der_opf = of_scenario("opf", "opf_der").sort_by("element_idx").to_pydict()
+assert der_pf["element_idx"] == der_opf["element_idx"]  # the same units, in the same order
+assert not any(der_pf["q_var"])  # the power flow: unity power factor
+p_pf = np.array(der_pf["p_w"]) / 1e3  # kW
+p_opf = np.clip(der_opf["p_w"], 0, None) / 1e3  # kW; a unit curtailed to 0 is 0 up to round-off
+q_opf, q_max = np.array(der_opf["q_var"]) / 1e3, np.array(der_opf["q_max_var"]) / 1e3  # kvar
+
+print("PV unit               P pf  P OPF  Q OPF  |Q| max   (kW, kvar)")
+# the most curtailed first; units curtailed alike (to 0.01 kW) stay in unit order
+for k in np.argsort(np.round(p_opf - p_pf, 2), kind="stable")[:5]:
+    name = model.elements[der_opf["element_idx"][k]].name
+    print(f"{name:<19} {p_pf[k]:6.2f} {p_opf[k]:6.2f} {q_opf[k]:6.2f} {q_max[k]:8.2f}")
+print(f"all {len(p_pf)} units        {p_pf.sum():6.1f} {p_opf.sum():6.1f} {q_opf.sum():6.1f}")
+
+Y = scenario.y_state if scenario.y_state is not None else scenario.variant.y_base  # S
+
+
+def source_kw(v):  # kW the source delivers at its terminals
+    s = v * np.conj(Y @ v)  # VA injected at each node
+    return s[scenario.variant.source_nodes].sum().real / 1e3
+
+
+print(f"curtailed {worst['curtailment_w'] / 1e3:.1f} kW")
+print(f"source: {source_kw(v_pf):.1f} kW (power flow), {source_kw(v_opf):.1f} kW (OPF)")
+```
+
+Output:
+
+```text
+PV unit               P pf  P OPF  Q OPF  |Q| max   (kW, kvar)
+Generator.pv_load19  14.79   0.00  -9.68     9.68
+Generator.pv_load22  14.79   0.00  -9.68     9.68
+Generator.pv_load18  14.79   2.94  -9.68     9.68
+Generator.pv_load16  14.79   4.02  -9.68     9.68
+Generator.pv_load12  14.79   5.61  -9.68     9.68
+all 23 units         340.3  195.1 -222.6
+curtailed 145.1 kW
+source: -306.1 kW (power flow), -164.3 kW (OPF)
+```
+
+The larger slice of five feeders is `scripts/config/opf_slice.yaml` (500 scenarios, about 22 minutes
+on one process).
 
 ## 6. Scaling up
 
