@@ -7,6 +7,7 @@ the network catalog or the capabilities of this version, and run once the struct
 
 from __future__ import annotations
 
+import copy
 import fnmatch
 import importlib.util
 import re
@@ -83,6 +84,22 @@ def validate_config(
     if issues:
         raise ConfigError(source, issues)
     return config
+
+
+REMOVED: tuple[tuple[str, ...], ...] = (("labels", "pf"),)
+"""Keys removed from the config; a dataset written before may still hold them."""
+
+
+def stored_config(data: Mapping[str, Any]) -> GenerationConfig:
+    """The resolved config of a dataset's manifest, without the keys removed since it was
+    written (none of them changes how the stored data is read)."""
+    data = copy.deepcopy(dict(data))
+    for *parents, key in REMOVED:
+        node = data
+        for parent in parents:
+            node = node.get(parent, {})
+        node.pop(key, None)
+    return GenerationConfig.model_validate(data)
 
 
 def select_networks(networks: Networks, catalog: Catalog) -> list[SelectedNetwork]:

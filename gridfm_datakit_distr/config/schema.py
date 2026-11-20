@@ -507,13 +507,8 @@ class OPFLabels(_Config):
 
 
 class Labels(_Config):
-    """What is solved and stored for each scenario."""
+    """What is solved and stored for each scenario. The power-flow labels are always computed."""
 
-    pf: bool = Field(
-        default=True,
-        description="Power-flow labels. They are computed and written whatever this value; "
-        "`false` is accepted only with `opf.enabled: true`.",
-    )
     element_currents: bool = Field(
         default=False,
         description="Also store the current of every power-delivery element at each terminal "
@@ -521,12 +516,6 @@ class Labels(_Config):
         "data as Yprim · V ([Outputs](outputs.md#6-scenario-level)).",
     )
     opf: OPFLabels = OPFLabels()
-
-    @model_validator(mode="after")
-    def _something(self) -> Labels:
-        if not self.pf and not self.opf.enabled:
-            raise ValueError("nothing to label: enable pf or opf")
-        return self
 
 
 class Views(_Config):

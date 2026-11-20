@@ -5,6 +5,7 @@ from gridfm_datakit_distr.config.load import (
     SelectedNetwork,
     load_config,
     select_networks,
+    stored_config,
     validate_config,
 )
 from gridfm_datakit_distr.config.schema import GenerationConfig
@@ -15,5 +16,6 @@ __all__ = [
     "SelectedNetwork",
     "load_config",
     "select_networks",
+    "stored_config",
     "validate_config",
 ]

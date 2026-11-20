@@ -21,6 +21,7 @@ from gridfm_datakit_distr.config import (
     SelectedNetwork,
     load_config,
     select_networks,
+    stored_config,
     validate_config,
 )
 from gridfm_datakit_distr.config.reference import reference_markdown
@@ -306,8 +307,16 @@ def test_synthetic_settings_need_the_synthetic_provider() -> None:
     one_issue(data, "scenarios.profiles", "synthetic is used only with provider 'synthetic'")
 
 
-def test_something_must_be_labelled() -> None:
-    one_issue(with_("labels", {"pf": False}), "labels", "nothing to label")
+def test_the_power_flow_labels_have_no_switch() -> None:
+    """They are always computed: `labels.pf` is an unknown key."""
+    one_issue(with_("labels.pf", True), "labels.pf", "Extra inputs are not permitted")
+
+
+def test_a_stored_config_drops_the_keys_removed_since() -> None:
+    """A dataset's manifest written before a key was removed is still read."""
+    old = validate_config(MINIMAL).model_dump(mode="json")
+    old["labels"]["pf"] = True
+    assert stored_config(old) == validate_config(MINIMAL)
 
 
 def test_networks_must_have_distinct_seed_keys(monkeypatch: pytest.MonkeyPatch) -> None:

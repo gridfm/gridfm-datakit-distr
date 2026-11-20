@@ -246,11 +246,10 @@ control elements both keys are ignored: the state is the compiled one.
 
 ## `labels`
 
-What is solved and stored for each scenario.
+What is solved and stored for each scenario. The power-flow labels are always computed.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `labels.pf` | boolean | `true` | Power-flow labels. They are computed and written whatever this value; `false` is accepted only with `opf.enabled: true`. |
 | `labels.element_currents` | boolean | `false` | Also store the current of every power-delivery element at each terminal conductor (`scenarios/element_results`); otherwise they follow exactly from the stored data as Yprim · V ([Outputs](outputs.md#6-scenario-level)). |
 
 ### `labels.opf`

@@ -28,7 +28,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.config.load import stored_config
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
 from gridfm_datakit_distr.io.writer import COMPRESSION, DatasetWriter, part_key
@@ -104,7 +104,7 @@ def _variant_task(task: tuple[Path, Path, int, int]) -> None:
     """Build and solve the view of variant ``k`` of network ``i``; write its tables to ``work``
     (process entry point)."""
     dataset, work, i, k = task
-    config = GenerationConfig.model_validate(Manifest.load(dataset).config)
+    config = stored_config(Manifest.load(dataset).config)
     store = VariantStore(dataset, i, k, config)
     if store.first_state() is None:
         return  # no scenario converged: nothing to export

@@ -45,7 +45,6 @@ controls:
   mode: static_settle
   tap_jitter_steps: 2
 labels:
-  pf: true
   opf:
     enabled: false        # OPF labels: docs/manual/opf.md
 views:

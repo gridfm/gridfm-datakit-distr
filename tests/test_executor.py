@@ -315,6 +315,21 @@ def test_failed_units_are_recorded_without_files(
     assert result.statuses == {"converged": 10}
 
 
+def test_a_dataset_of_an_earlier_config_is_exported(tmp_path: Path) -> None:
+    """``export-posseq`` reads a manifest that holds keys removed since it was written."""
+    data = copy.deepcopy(CONFIG)
+    data["networks"]["include"] = ["t/feeder"]
+    data["variants"]["n_variants"] = 1
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out, catalog=catalog(tmp_path), root=tmp_path)
+    path = out / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["config"]["labels"]["pf"] = True
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    [result] = export_posseq(out, tmp_path / "export")
+    assert result.statuses == {"converged": 5}
+
+
 def test_a_network_without_a_view_exports_its_errors(tmp_path: Path) -> None:
     """A single-phase network has no three-phase backbone: it generates, its nodes have no
     ``backbone_bus``, and the export records the error of every scenario's view."""
