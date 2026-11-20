@@ -2,7 +2,8 @@
 
 From an empty machine to a dataset of three-phase unbalanced power flows read in Python, then OPF
 labels and larger runs. The test suite (`integrationtests/test_tutorial.py`) runs the IEEE 13
-commands of sections 2 and 4, every Python snippet and the OPF example, so they work as written.
+commands of sections 2 and 4, every Python snippet (its output must match the one shown) and the
+OPF example, so they work as written.
 
 **The model in one paragraph.** A catalog network ([Networks](networks.md)) is perturbed into
 *variants*: line lengths, earthing resistances, phases of customers, rooftop PV
@@ -94,11 +95,16 @@ from pathlib import Path
 import numpy as np
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
-import scipy.sparse as sp
 
 DATASET = Path("data/ieee13_small")
 meta = pq.read_table(DATASET / "scenarios" / "scenario_meta")
 print(meta.num_rows, "scenarios:", pc.value_counts(meta["pf_status"]).to_pylist())
+```
+
+Output:
+
+```text
+40 scenarios: [{'values': 'converged', 'counts': 40}]
 ```
 
 Each scenario has a `scenario_id`, its `variant_id`, the `state_id` of its network state and a
@@ -107,7 +113,9 @@ Each scenario has a `scenario_id`, its `variant_id`, the `state_id` of its netwo
 ### Voltages of a scenario
 
 Nodes are the conductors of the buses (`a`, `b`, `c`, `n`, …) of a variant, numbered by
-`node_idx`; voltages are to ground, in volts, as two float columns.
+`node_idx`. The label of a power-flow model is one complex voltage per node, to ground, in volts,
+as two float columns. The three phases of bus 671 below differ in magnitude and are not exactly
+120° apart: the network is unbalanced.
 
 ```python
 first = meta.filter(pc.equal(meta["pf_status"], "converged")).slice(0, 1).to_pylist()[0]
@@ -119,151 +127,117 @@ results = pq.read_table(DATASET / "scenarios" / "node_results")
 results = results.filter(pc.equal(results["scenario_id"], sid)).sort_by("node_idx")
 
 v = results["v_re"].to_numpy() + 1j * results["v_im"].to_numpy()  # V, to ground
-vm_pu = np.abs(v) / (nodes["kv_base_ln"].to_numpy() * 1e3)
-for bus, conductor, vm in list(
-    zip(nodes["bus"].to_pylist(), nodes["conductor"].to_pylist(), vm_pu)
-)[:5]:
-    print(f"{bus}.{conductor}: {vm:.4f} pu")
+vm_pu = np.abs(v) / (nodes["kv_base_ln"].to_numpy() * 1e3)  # per unit of the node's base
+for k, (bus, conductor) in enumerate(zip(nodes["bus"].to_pylist(), nodes["conductor"].to_pylist())):
+    if bus == "671":  # the three phases of one bus
+        print(f"{bus}.{conductor}: {vm_pu[k]:.3f} pu at {np.angle(v[k], deg=True):7.1f} deg")
+```
+
+Output:
+
+```text
+671.a: 0.999 pu at    -3.5 deg
+671.b: 1.036 pu at  -122.1 deg
+671.c: 1.016 pu at   118.2 deg
 ```
 
 ### The network admittance and Kirchhoff's current law
 
-The network admittance `Y_state` of a state (siemens, `row`/`col` are `node_idx`) is the
-variant's matrix, `variants/ybus`, with the entries the state changes (its taps and capacitor
-steps), `states/ybus`, in their place. It maps the voltages to the currents that loads,
-generators and sources inject into the network, `I_inj = Y_state V` (not stored: one sparse
-product). At a node where only lines, transformers and other power-delivery elements meet,
-Kirchhoff's current law makes `I_inj` zero: a check of the stored solution, up to the power
-flow's tolerance.
+The stored voltages solve the stored network, and one sparse product shows it. `Y_state` (S, rows
+and columns are `node_idx`) is the network admittance of the scenario's state, assembled from the
+Yprims of its power-delivery elements ([Outputs](outputs.md#statesybusparquet)). It is the graph a
+model learns on, and `I_inj = Y_state V`, the current each node injects into the network, is a
+physics check or a loss you can reuse on predicted voltages. Where no load, generator or source
+connects, Kirchhoff's current law makes `I_inj` zero, up to the power flow's tolerance.
+`DatasetReader` returns `Y_state` with the nodes and elements of the variant:
 
 ```python
-def table(path, column, value):
-    t = pq.read_table(path)
-    return t.filter(pc.equal(t[column], value))
+from gridfm_datakit_distr.io.reader import DatasetReader
 
+reader = DatasetReader(DATASET)
+(scenario,) = reader.scenarios([sid])  # the scenario above, with its state's network
+model = scenario.variant.model  # nodes and elements of its variant
+Y = scenario.y_state  # network admittance of its state (S, sparse)
+if Y is None:  # a scenario without a state: the variant's, as compiled
+    Y = scenario.variant.y_base
+i_inj = Y @ v  # A injected at each node
 
-entries = {}  # (row, col) -> admittance: the variant's, then the state's in their place
-for t in (
-    table(DATASET / "variants" / "ybus", "variant_id", variant),
-    table(DATASET / "states" / "ybus.parquet", "state_id", state),
-):
-    for r, c, g, b in zip(*(t[k].to_pylist() for k in ("row", "col", "g", "b"))):
-        entries[(r, c)] = complex(g, b)
-n = nodes.num_rows
-rows, cols = zip(*entries)
-Y = sp.coo_matrix((list(entries.values()), (rows, cols)), shape=(n, n)).tocsr()
-i_inj = Y @ v  # A
-
-elements = table(DATASET / "variants" / "elements", "variant_id", variant)
-terminals = table(DATASET / "variants" / "element_terminals", "variant_id", variant)
-conversion = set(elements.filter(pc.invert(elements["is_pd"]))["element_idx"].to_pylist())
-connected = {
-    k
-    for e, k in zip(terminals["element_idx"].to_pylist(), terminals["node_idx"].to_pylist())
-    if e in conversion
-}
-free = [k for k in range(n) if k not in connected]
-kcl = np.abs(i_inj[free]).max() / np.abs(i_inj).max()
+# the nodes where an element that is not power delivery (load, generator, source) connects
+injecting = np.zeros(model.n_nodes, dtype=bool)
+for e in model.elements:
+    if not e.is_pd:
+        injecting[[k for k in e.local_nodes() if k >= 0]] = True  # k < 0: ground
+i_abs = np.abs(i_inj)
+kcl = i_abs[~injecting].max() / i_abs.max()
+assert kcl < 1e-6  # Kirchhoff: no net current where nothing is injected
 print(
-    f"KCL at the {len(free)} of {n} nodes without loads or sources: {kcl:.1e} of the largest |I_inj|"
+    f"KCL at the {(~injecting).sum()} of {model.n_nodes} nodes without injection: "
+    f"|I_inj| below 1e-6 of the largest, {i_abs.max():.0f} A"
 )
-assert kcl < 1e-6
 ```
 
-`Y_state` is assembled from the primitive admittances (Yprim) of the power-delivery elements:
-`variants/yprim` for the elements whose Yprim does not depend on the network state, and
-`states/yprim_state` for the others (regulated transformers, switched capacitors). A Yprim's
-`row`/`col` are local positions, terminal by terminal (`terminal · n_conductors + position`), and
-`variants/element_terminals` gives the node of each position (`-1`: ground, left out):
+Output:
 
-```python
-yprims = [table(DATASET / "variants" / "yprim", "variant_id", variant)]
-if (DATASET / "states" / "yprim_state.parquet").exists():
-    yprims.append(table(DATASET / "states" / "yprim_state.parquet", "state_id", state))
-
-n_conductors = dict(zip(elements["element_idx"].to_pylist(), elements["n_conductors"].to_pylist()))
-node_of = {
-    (e, t * n_conductors[e] + p): k
-    for e, t, p, k in zip(
-        *(terminals[c].to_pylist() for c in ("element_idx", "terminal", "position", "node_idx"))
-    )
-}
-rows, cols, values = [], [], []
-for y in yprims:
-    for e, r, c, g, b in zip(*(y[k].to_pylist() for k in ("element_idx", "row", "col", "g", "b"))):
-        kr, kc = node_of[(e, r)], node_of[(e, c)]
-        if kr >= 0 and kc >= 0:
-            rows.append(kr)
-            cols.append(kc)
-            values.append(complex(g, b))
-Y_assembled = sp.coo_matrix((values, (rows, cols)), shape=(n, n)).tocsr()
-print("assembled vs stored Y_state:", abs(Y_assembled - Y).max() / abs(Y).max())
-assert abs(Y_assembled - Y).max() <= 1e-12 * abs(Y).max()
+```text
+KCL at the 19 of 41 nodes without injection: |I_inj| below 1e-6 of the largest, 563 A
 ```
 
 ### Power flows from the element currents
 
-The current into an element at each of its terminal conductors is its Yprim times the voltages
-of its nodes, `I = Yprim · V` (what the generator computes; with `labels.element_currents: true`
-the dataset also stores them, in `scenarios/element_results`). With the voltages they give the
-complex power into the element at each terminal, `S = Σ V I*`; the sum over its terminals is the
-element's loss.
+Line currents, power flows and losses are not stored by default (`labels.element_currents: true`
+stores the currents), but they follow exactly from the voltages and each element's Yprim: the
+current into its terminal conductors is `I = Yprim · V` and the complex power into a terminal is
+`S = Σ V I*` over its conductors. They are the labels for branch quantities. The variant's model
+carries the Yprims of the elements the network state does not change, which includes the lines
+(regulated transformers and switched capacitors have theirs per state).
 
 ```python
-size = {
-    e: n_t * n_c
-    for e, n_t, n_c in zip(
-        *(elements[c].to_pylist() for c in ("element_idx", "n_terminals", "n_conductors"))
-    )
-}
-yprim_of = {}
-for y in yprims:
-    for e, r, c, g, b in zip(*(y[k].to_pylist() for k in ("element_idx", "row", "col", "g", "b"))):
-        yprim_of.setdefault(e, np.zeros((size[e], size[e]), dtype=complex))[r, c] = complex(g, b)
+v_ground = np.append(v, 0)  # index -1, the ground, then reads 0 V
+flows = {}  # line name -> (power into terminal 1, loss), VA
+for e in model.elements:
+    if e.element_class == "line" and e.yprim is not None:
+        v_e = v_ground[e.local_nodes()]  # V at each terminal conductor
+        s = v_e * np.conj(e.yprim @ v_e)  # VA into the line at each terminal conductor
+        flows[e.name] = (s[: e.n_conductors].sum(), s.sum())  # loss: in at both terminals
 
-names = dict(zip(elements["element_idx"].to_pylist(), elements["name"].to_pylist()))
-power = {}
-for e, y_e in yprim_of.items():
-    nodes_e = [node_of[(e, q)] for q in range(size[e])]
-    v_local = np.array([v[k] if k >= 0 else 0.0 for k in nodes_e])
-    i_local = y_e @ v_local  # A, into the element
-    n_c = n_conductors[e]
-    for t in range(size[e] // n_c):
-        part = slice(t * n_c, (t + 1) * n_c)
-        power[(e, t)] = np.sum(v_local[part] * np.conj(i_local[part]))
+print("line                 kVA in   loss kW")
+for name, (s_in, loss) in sorted(flows.items(), key=lambda item: -abs(item[1][0]))[:5]:
+    print(f"{name:<18} {abs(s_in) / 1e3:8.0f} {loss.real / 1e3:9.2f}")
+assert all(loss.real > -1e-9 * max(abs(s), 1) for s, loss in flows.values())  # lines dissipate
+```
 
-lines = [e for e, name in names.items() if name.startswith("Line.") and (e, 1) in power]
-line = max(lines, key=lambda e: abs(power[(e, 0)]))  # the most loaded line
-s_from, s_to = power[(line, 0)], power[(line, 1)]
-print(
-    f"{names[line]}: {s_from / 1e3:.1f} kVA in at terminal 1, losses {(s_from + s_to) / 1e3:.3f} kVA"
-)
-assert (s_from + s_to).real > -1e-9 * abs(s_from)  # a passive line dissipates
+Output:
+
+```text
+line                 kVA in   loss kW
+Line.650632            2038     16.58
+Line.632670            1490      3.32
+Line.670671            1384      6.44
+Line.692675             638      1.79
+Line.632633             335      0.40
 ```
 
 ### The power flow without OpenDSS
 
-The tables determine the voltages: the network admittance, the source (`variants/source`: ideal
-voltages behind an admittance), the setpoints of the loads and PV units and the way each divides
-its power between its branches (equal shares: [Outputs](outputs.md#scenariosloads)). The reference
-loader reads them into arrays and a fixed-point power flow in NumPy solves them; neither imports
-OpenDSS. It also gives two baselines a learned model has to beat: the no-load voltage and one
-linearised step from it.
+The tables alone determine the solution: the network admittance, the source (`variants/source`:
+ideal voltages behind an admittance), the setpoints of the loads and PV units and the way each
+divides its power between its branches (equal shares: [Outputs](outputs.md#scenariosloads)). The
+reference loader reads them into arrays and a fixed-point power flow in NumPy solves them, without
+importing OpenDSS. Solving them and comparing with the stored voltages closes the loop: the dataset
+reproduces its own labels, with no engine in between.
 
 ```python
-from gridfm_datakit_distr.io.reader import DatasetReader
-from gridfm_datakit_distr.validate.closed_loop import closed_loop, linearised, no_load
+from gridfm_datakit_distr.validate.closed_loop import closed_loop
 
-reader = DatasetReader(DATASET)
-(scenario,) = reader.scenarios([sid])
-base = scenario.variant.base_v
-loop = closed_loop(scenario)
-print(
-    f"fixed point in {loop.iterations} iterations: {loop.max_dv_pu:.1e} pu from the stored voltages"
-)
-for name, baseline in (("no load", no_load), ("linearised", linearised)):
-    print(f"{name}: {(np.abs(baseline(scenario) - v) / base).max():.1e} pu at most")
-assert loop.max_dv_pu < 1e-6  # float32 setpoints (settings.float_precision: mixed)
+loop = closed_loop(scenario)  # solves the power flow from the tables, compares it with the stored v
+assert loop.max_dv_pu < 1e-6  # pu of each node's base; float32 setpoints (float_precision: mixed)
+print(f"the tables alone reproduce the stored voltages at all {len(v)} nodes within 1e-6 pu")
+```
+
+Output:
+
+```text
+the tables alone reproduce the stored voltages at all 41 nodes within 1e-6 pu
 ```
 
 ### The positive-sequence equivalent for gridfm-graphkit
@@ -291,9 +265,15 @@ bus = pq.read_table(raw / "bus_data.parquet")
 gap = np.abs(bus["Vm"].to_numpy() - bus["x_truth_Vm"].to_numpy()).max()
 print(
     f"{bus.num_rows} bus rows, {int((raw / 'n_scenarios.txt').read_text())} scenarios; "
-    f"largest |Vm - truth| {gap:.1e} pu"
+    f"largest |Vm - truth| {gap:.2e} pu"
 )
 assert gap < 0.01
+```
+
+Output:
+
+```text
+440 bus rows, 40 scenarios; largest |Vm - truth| 2.20e-03 pu
 ```
 
 ## 5. OPF labels
