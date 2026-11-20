@@ -13,7 +13,7 @@ gridfm_datakit_distr version
 ```
 
 `@v0.2.0` is the latest release, which writes data schema 0.5.0. This documentation describes the
-development version on `main` (schema 0.6.0); to install it, leave out `@v0.2.0`.
+development version on `main` (schema 0.7.0); to install it, leave out `@v0.2.0`.
 
 ## For developers
 

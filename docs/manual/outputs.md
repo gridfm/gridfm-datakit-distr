@@ -1,6 +1,6 @@
 # Data schema — gridfm-datakit-distr
 
-`schema_version: 0.6.0` · Status: in progress for v0.3. Any change gets a new `schema_version` and a migration note.
+`schema_version: 0.7.0` · Status: in progress for v0.3. Any change gets a new `schema_version` and a migration note.
 
 This document is the contract between the generator and its consumers (models, baselines, benchmark users).
 
@@ -44,7 +44,8 @@ This document is the contract between the generator and its consumers (models, b
 
 ```
 <data_dir>/<dataset_name>/
-  manifest.json                    # config (resolved), config_hash, seeds, versions, chunk list + status
+  manifest.json                    # schema_version, config_hash, versions, config (resolved, with
+                                   # the seed), networks, chunk list + status
                                    # and peak memory of the process that ran each chunk (MiB)
   README.md                        # dataset card (generated)
   croissant.json                   # Croissant metadata (generated)
@@ -94,14 +95,14 @@ This document is the contract between the generator and its consumers (models, b
 | `network_id` | string | catalog key |
 | `network_idx` | int32 | index of the network in the dataset (networks ordered by id; bits 47–62 of `scenario_id`) |
 | `representation` | string, nullable | named representation loaded (e.g. `kron`), null for the default model |
-| `source` | string | e.g. `ieee`, `csiro_enwl`, `edp`, `smart_ds` |
+| `source` | string | catalog source id: `epri_ieee`, `csiro_enwl`, `edp` |
 | `original_format` | string | `opendss` (others converted upstream) |
 | `converter` | string, nullable | tool and version if converted (e.g. DiTTo) |
 | `license` | string | SPDX id or free text |
 | `n_buses`, `n_nodes`, `n_elements` | int32 | after normalisation |
 | `neutral_representation` | string | `explicit`, `kron`, `mixed` |
 | `has_split_phase` | bool | North-American secondaries present |
-| `s_base_va` | float64 | per-feeder power base (VA): semantic model and PMD export; scale of the positive-sequence export's source limits and balance tolerance |
+| `s_base_va` | float64 | per-feeder power base (VA), `normalisation.s_base_va` (by default `auto`, set per network): semantic model and PMD export; scale of the positive-sequence export's source limits and balance tolerance |
 | `frequency_hz` | float64 | base frequency |
 | `engine_version` | string | DSS C-API / AltDSS version string |
 | `passport_path` | string | relative path |
@@ -330,15 +331,15 @@ Currents of PD elements per terminal and conductor position, written only with `
 | `scenario_id` | int64 | |
 | `element_idx` | int32 | load element |
 | `p_w`, `q_var` | float32/64 | setpoint at nominal voltage |
-| `zip` | string (JSON), nullable | ZIP coefficients if not constant power |
+| `zip` | string (JSON), nullable | always null: every load is constant power |
 
 Connection (bus, phases, wye/delta) is static and lives in the semantic layer. The power divides
 equally between the branches of the element's terminal (`variants/element_terminals`): wye, when
 the last conductor is a neutral or ground, one branch from each other conductor to it; delta on
 three phases, between the pairs (a, b), (b, c), (c, a); one branch between two phases. The same
-holds for `scenarios/der`. With the default `loads.model: constant_power` a converged scenario's
-loads draw exactly their setpoints (`n_off_setpoint = 0`); with `as_is` the `zip` column is not
-filled yet, and the stored tables do not determine the voltages.
+holds for `scenarios/der`. Every load is constant power (`normalisation.loads.model`), so a
+converged scenario's loads draw exactly their setpoints (`n_off_setpoint = 0`) and the stored
+tables determine the voltages.
 
 ### `scenarios/der`
 
@@ -384,13 +385,13 @@ A single-phase equivalent of the three-phase backbone, **re-solved** in OpenDSS,
 - **Buses.** The backbone: buses reached from the source through series elements that cover phases a, b and c. `bus` numbers them breadth-first from the source: `bus` 0 is the source and the only `REF` bus, all others are `PQ`. Every other bus is aggregated into the backbone bus where its lateral starts (`posseq_mapping.parquet`).
 - **Units (datakit's).** Powers in MW and MVAr (three-phase). `Vm` in pu of the bus's line-to-neutral base, `Va` in degrees in [-180, 180) relative to the source. `r`, `x`, `b`, `Y*`, `GS`, `BS`, `G`, `B` in pu on **100 MVA** (MATPOWER's and graphkit's default `baseMVA`) and the bus line-to-line base `vn_kv`. `rate_a` in MVA. `shift`, `ang_min`, `ang_max` in degrees.
 - **Demand.** `Pd`, `Qd` are the bus's equivalent demand in the full model's solution: the power that the backbone elements deliver into the bus, which covers its loads, its laterals with their losses and shunts, and earthing. It is **net of DER**, since a datakit PQ bus has no generation; the DER output is in `x_der_*`.
-- **Source.** Ideal, at |V1| of the full model's source bus. Its generator (`idx` 0, `is_slack_gen` 1) has limits ±`s_base_va` (`catalog/networks`, or the configured `normalisation.s_base_va`) and zero costs.
+- **Source.** Ideal, at |V1| of the full model's source bus. Its generator (`idx` 0, `is_slack_gen` 1) has limits ±`s_base_va` (`catalog/networks`) and zero costs.
 - **Branches.** `rate_a` is the sum of the elements' ratings (0 if none: unlimited); `br_status` 1; `ang_min`, `ang_max` ∓360. Transformers: `tap` is the no-load positive-sequence ratio at the from side, the vector-group shift is not modelled (`shift` = 0; the removed shift is in `x_vector_shift_deg`). Shunts at backbone buses (capacitors) are `GS`, `BS` at 1 pu. `min_vm_pu`, `max_vm_pu` are `networks.voltage_limits`.
 - **Scenarios.** `scenario` = 0 … n − 1 over the scenarios whose view converged, in the order of `scenario_id`; partition k = `scenario` // 200. The stable key is `load_scenario_idx` = `x_scenario_id` = `scenario_id`: `scenario` changes when a dataset grows. Branch flows come from the voltages and the branch admittances (`S = V conj(Y V)` on 100 MVA).
 - **Truth.** `x_truth_Vm`, `x_truth_Va` are the positive-sequence component of the full model's voltages at the bus, in the view's reference: the source at angle 0 and each zone rotated by its cumulative vector-group shift. The component is the same for phase-to-neutral and phase-to-ground voltages, because a common-mode voltage has no positive sequence; hence one pair of columns.
 - **Extra columns** (prefix `x_`, ignored by graphkit). Bus: `x_scenario_id`, `x_truth_Vm`, `x_truth_Va`, and `x_der_p_mw`, `x_der_q_mvar`, `x_der_p_avail_mw` (DER output and available power aggregated at the bus). Branch: `x_scenario_id`, `x_vector_shift_deg`. Generator and admittance: `x_scenario_id`.
 
-The export reproduces the view that the generation computed up to draft.7 to the last bit (IEEE 13, CSIRO n21_f3, EDP industrial). The exception is `x_der_*`, within 3e-10 relative, because the export reads the stored float32 setpoints.
+The export reproduces to the last bit the view that earlier versions computed during the generation (checked on IEEE 13, CSIRO n21_f3 and EDP industrial). The exception is `x_der_*`, within 3e-10 relative, because the export reads the stored float32 setpoints.
 
 `posseq_scenarios.parquet`, every scenario whose full model converged:
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from collections import Counter
 from pathlib import Path
@@ -71,6 +72,17 @@ def test_every_documented_table_has_its_schema() -> None:
         else:
             pytest.fail(f"{name} is documented but has no schema")
         assert actual == columns, name
+
+
+def test_the_docs_state_the_schema_version() -> None:
+    """The contract, the installation guide and the README badge name the version written."""
+    version = schema.SCHEMA_VERSION
+    outputs = (REPO / "docs" / "manual" / "outputs.md").read_text(encoding="utf-8")
+    assert outputs.splitlines()[2].startswith(f"`schema_version: {version}`")
+    install = (REPO / "docs" / "installation.md").read_text(encoding="utf-8")
+    assert f"development version on `main` (schema {version})" in install
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert f"badge/data%20schema-{version}-blue" in readme
 
 
 def test_precision() -> None:
@@ -144,6 +156,8 @@ def test_manifest(tmp_path: Path) -> None:
     manifest.finish(unit, "done")
     back = Manifest.load(tmp_path)
     assert back.config_hash == manifest.config_hash
+    keys = list(json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8")))
+    assert keys == ["schema_version", "config_hash", "versions", "config", "networks", "units"]
     assert back.units[unit.key].status == "done"
     # the hash ignores execution settings, not the data's
     other = copy.deepcopy(config)

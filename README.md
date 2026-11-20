@@ -8,7 +8,7 @@
 </p>
 
 ![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.12-blue)
-![Data schema](https://img.shields.io/badge/data%20schema-0.5.0-blue)
+![Data schema](https://img.shields.io/badge/data%20schema-0.7.0-blue)
 ![Status](https://img.shields.io/badge/status-pre--alpha-orange)
 
 ---
