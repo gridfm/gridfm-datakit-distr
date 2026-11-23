@@ -51,10 +51,7 @@ NO_FREE_VARIABLE = "no_free_variable"
 """Status of a class-B scenario without a dispatchable generator whose PV units are all fixed:
 none placed, or none with available power or a reactive range. Not solved: nothing can move to
 remove the violation."""
-NO_FREE_MESSAGE = (
-    "no dispatchable generator and PV units all fixed (none, or no power or reactive range): "
-    "nothing can move"
-)
+NO_FREE_MESSAGE = "PV units all fixed (none, or no power or reactive range): nothing can move"
 MAX_CACHED_PROBLEMS = 4
 """OPF problems kept, those of the most recent states (about 6.5 MiB each on IEEE 13): with
 regulators nearly every scenario meets a new state."""
