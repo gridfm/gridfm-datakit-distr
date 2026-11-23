@@ -137,6 +137,17 @@ def test_a_cached_file_changed_after_fetch_is_detected(tmp_path: Path, web: Fake
     assert fetch_source(source, root=tmp_path).skipped
 
 
+def test_the_pinned_manifest_wins_over_the_recorded_list(tmp_path: Path, web: FakeWeb) -> None:
+    serve_github(web, FILES)
+    source = github_source()
+    fetch_source(source, root=tmp_path)
+    (tmp_path / "gh" / "common.dss").write_bytes(b"changed\n")
+    listed = tmp_path / "gh" / ".fetch.sha256"  # a list rewritten to match the change
+    listed.write_text(listed.read_text().replace(sha256(FILES["common.dss"]), sha256(b"changed\n")))
+    with pytest.raises(ChecksumError, match=r"common\.dss"):
+        verify_cached(source, tmp_path)
+
+
 def test_a_copy_fetched_before_the_file_list_is_checked_against_the_manifest(
     tmp_path: Path, web: FakeWeb
 ) -> None:

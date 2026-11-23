@@ -42,10 +42,11 @@ id fetches its whole source: `fetch ieee13` installs every IEEE feeder.
 Every file is checked against the source's SHA-256 manifest in the package
 (`networks/manifests/`); archives are extracted in a staging directory that replaces the cached
 copy only once everything is verified. The SHA-256 of every installed file, extracted ones
-included, is kept in `<cache>/<source>/.fetch.sha256`. A source already fetched against the current
-manifest is skipped once its files still match that list; `fetch`, `inspect`, `validate` and
-`generate` stop with an error naming the changed files otherwise, and `fetch --force` restores
-them. EDP's RAR5 archives need `unrar`, `7z`, `7zz` or `bsdtar` on `PATH`.
+included, is kept in `<cache>/<source>/.fetch.sha256`. A source already fetched against the
+current manifest is skipped once its files still match the manifest and that list; `fetch`,
+`inspect`, `validate` and `generate` stop with an error naming the changed files otherwise, and
+`fetch --force` restores them. EDP's RAR5 archives need `unrar`, `7z`, `7zz` or `bsdtar` on
+`PATH`.
 
 ## `inspect`
 

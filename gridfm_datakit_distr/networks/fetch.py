@@ -231,17 +231,19 @@ def _installed_files(directory: Path) -> dict[str, str]:
 
 def verify_cached(source: SourceT, root: Path | None = None) -> None:
     """Raise :class:`ChecksumError` if a file that ``fetch`` installed for ``source`` is missing
-    or changed since. A copy fetched by an earlier version, which recorded no file list, is
-    checked against the manifest; a source without a fetch marker has nothing to check."""
+    or changed since: the files of the packaged manifest against its pinned hashes, the others
+    (extracted from archives) against the list ``fetch`` recorded. A copy fetched by an earlier
+    version has no list; a source without a fetch marker has nothing to check."""
     if read_marker(source.id, root) is None:
         return
     directory = source_dir(source.id, root)
     listed = directory / INSTALLED
-    expected = (
+    recorded = (
         parse_manifest(listed.read_text(encoding="utf-8"), origin=str(listed))
         if listed.is_file()
-        else source.manifest
+        else {}
     )
+    expected = {**recorded, **source.manifest}  # the pinned hashes win over the cache's own list
     changed = [
         rel
         for rel, digest in sorted(expected.items())
