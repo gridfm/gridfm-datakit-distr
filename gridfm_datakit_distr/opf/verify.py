@@ -1,12 +1,12 @@
 """Verification of an OPF dispatch in OpenDSS.
 
-The dispatch is set on the PV generators of a context that holds the scenario (loads and source
-voltage set, controls frozen), the power flow is solved with the controls off at the context's
-label tolerance, and the solution is checked: every load and generator at its set point
-(:func:`setpoint_report`), node voltages equal to the OPF's within :data:`TOLERANCE_PU` of each
-node's base (in a zone whose voltage to ground is a numerical convention, the voltages relative to
-the zone's first node: its common mode is no label), the bounded voltages within the OPF's bounds
-up to :data:`TOLERANCE_PU`. The NLP
+The dispatch is set on the PV generators of a context that holds the scenario (loads, storage
+set-points and source voltage set, controls frozen), the power flow is solved with the controls off
+at the context's label tolerance, and the solution is checked: every load and generator at its set
+point (:func:`setpoint_report`), node voltages equal to the OPF's within :data:`TOLERANCE_PU`
+of each node's base (in a zone whose voltage to ground is a numerical convention, the voltages
+relative to the zone's first node: its common mode is no label), the bounded voltages
+within the OPF's bounds up to :data:`TOLERANCE_PU`. The NLP
 and OpenDSS share the admittances, so the two solutions agree to the solvers' accuracy. The
 generators get back their outputs afterwards; a failed check is returned, never raised.
 """

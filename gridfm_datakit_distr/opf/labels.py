@@ -118,6 +118,7 @@ class OPFLabeller:
         if not labelled:
             return OPFRow(o.scenario_id, "no_pf_label", opf_class, costs=costs)
         p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else np.zeros(0)
+        bess = o.bess_p_w if o.bess_p_w is not None else np.zeros(0)
         q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
         if opf_class == "B" and not np.any((p_avail > 0) | (q_max > 0)):
             # No free variable: the NLP is the power flow's square system, which Ipopt solves while
@@ -130,7 +131,7 @@ class OPFLabeller:
                 return problem.solve(
                     source_v_pu=o.source_v_pu, load_p_w=o.load_p_w, load_q_var=o.load_q_var,
                     pv_p_avail_w=p_avail, pv_s_rated_va=self.s_rated_va, costs=costs,
-                    pv_q_max_var=q_max, start=start,
+                    pv_q_max_var=q_max, start=start, bess_p_w=bess,
                 )  # fmt: skip
 
             result = solve()
@@ -200,12 +201,14 @@ class OPFLabeller:
             problem = OPFProblem(
                 model, self.source, *self.limits_pu, self.time_limit_s, self.s_base_va
             )
-            customers = tuple(c.element for c in self.runner.customers)
-            units = self.runner.pv.units if self.runner.pv is not None else ()
-            if problem.load_names != customers or problem.pv_names != tuple(
-                u.generator for u in units
-            ):
-                raise ValueError("the OPF's loads or PV units differ from the scenario's")
+            runner = self.runner
+            customers = tuple(c.element for c in runner.customers)
+            pv = tuple(u.generator for u in (runner.pv.units if runner.pv is not None else ()))
+            bess = runner.der_generators[len(pv) :]
+            if (problem.load_names, problem.pv_names, problem.bess_names) != (
+                customers, pv, bess,
+            ):  # fmt: skip
+                raise ValueError("the OPF's loads, PV or storage units differ from the scenario's")
             if len(self._problems) >= MAX_CACHED_PROBLEMS:
                 self._problems.pop(next(iter(self._problems)))  # the oldest
             self._problems[state_id] = problem

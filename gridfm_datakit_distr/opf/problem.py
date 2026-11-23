@@ -1,7 +1,8 @@
 """The OPF problem of one network state: a nodal current-voltage NLP solved with Ipopt (CasADi).
 
-Unknowns: the node voltages in rectangular coordinates, one current per branch of every load and
-PV unit, and the active and reactive power of each PV unit. Constraints:
+Unknowns: the node voltages in rectangular coordinates, one current per branch of every load,
+storage unit and PV unit, and the active and reactive power of each PV unit. A storage unit is
+fixed at its set-point: a load of minus its power. Constraints:
 
 - Kirchhoff's current law at every node, ``(Y_state + Y_s) V - Y_s E = C_g I_g - C_l I_l``,
   linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus` (lines,
@@ -9,7 +10,7 @@ PV unit, and the active and reactive power of each PV unit. Constraints:
   admittance and ideal voltages (:class:`Source`);
 - each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.model.ground.unit_branches`:
   wye, delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's
-  constant power, the PV unit's ``p + jq``;
+  constant power (a storage unit's: minus its set-point), the PV unit's ``p + jq``;
 - PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max``
   (the unit's reactive limit);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
@@ -40,7 +41,7 @@ from numpy.typing import ArrayLike, NDArray
 from gridfm_datakit_distr.extract.source import Source
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 from gridfm_datakit_distr.model.ground import conventional_zones, unit_branches
-from gridfm_datakit_distr.opf.support import unsupported_reason
+from gridfm_datakit_distr.opf.support import BESS_PREFIX, unsupported_reason
 
 S_BASE_VA = 1e3
 """Default and smallest power base of the NLP's scaling (VA): :func:`power_base`."""
@@ -119,10 +120,16 @@ class OPFProblem:
         """Phase and neutral node (or second phase) of every bounded voltage, and its bounds (V)."""
         self.conventional = [np.array(z, dtype=np.int64) for z in conventional_zones(model)]
         """Zones whose voltage to ground is a numerical convention: only differences count."""
+        generators = _devices(model, "generator")
+        bess = [e for e in generators if e.name.lower().startswith(BESS_PREFIX)]
+        pvs = [e for e in generators if not e.name.lower().startswith(BESS_PREFIX)]
         loads = _devices(model, "load")
-        pvs = _devices(model, "generator")
         self.load_names = tuple(e.name for e in loads)
         """Load elements by name: the order of the scenario's customers."""
+        self.bess_names = tuple(e.name for e in bess)
+        """Storage generators by name, fixed injections: the order of the variant's units."""
+        self._n_customers = len(loads)
+        loads = loads + bess  # a storage unit is a load of minus its set-point
         self.pv_names = tuple(e.name for e in pvs)
         """PV generators by name: the order of the variant's PV units."""
         rated = [e for e in _devices(model, "transformer") if e.rating_va]
@@ -228,16 +235,21 @@ class OPFProblem:
         costs: Costs,
         pv_q_max_var: ArrayLike | None = None,
         start: PowerFlowStart | None = None,
+        bess_p_w: ArrayLike = (),
     ) -> OPFResult:
         """Solve one scenario from a flat start (source voltages ``source_v_pu · E``, neutral 0),
         or from ``start``, a power-flow solution of the same scenario.
 
         Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA), each
         drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
-        unit (default: the rating alone). The status is returned, never raised.
+        unit (default: the rating alone); ``bess_p_w``: the storage units' fixed set-points in
+        :attr:`bess_names` order (W, discharging positive, q = 0). The status is returned, never
+        raised.
         """
-        n, nl, ng, s = self._n, self._nl, self._ng, self._s_base
-        pl, ql = _vector(load_p_w, nl, "load_p_w") / s, _vector(load_q_var, nl, "load_q_var") / s
+        n, nc, ng, s = self._n, self._n_customers, self._ng, self._s_base
+        nb = self._nl - nc
+        pl = np.r_[_vector(load_p_w, nc, "load_p_w"), -_vector(bess_p_w, nb, "bess_p_w")] / s
+        ql = np.r_[_vector(load_q_var, nc, "load_q_var"), np.zeros(nb)] / s
         p_avail = _vector(pv_p_avail_w, ng, "pv_p_avail_w") / s
         s_rated = _vector(pv_s_rated_va, ng, "pv_s_rated_va") / s
         q_max = s_rated if pv_q_max_var is None else _vector(pv_q_max_var, ng, "pv_q_max_var") / s

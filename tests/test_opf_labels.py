@@ -22,6 +22,7 @@ from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
 from gridfm_datakit_distr.io.writer import DatasetWriter
+from gridfm_datakit_distr.opf.labels import NO_FREE_VARIABLE
 from gridfm_datakit_distr.opf.problem import SOLVED
 from gridfm_datakit_distr.solve.executor import generate
 from tests.circuits import opf_catalog as catalog
@@ -172,6 +173,41 @@ def test_a_variant_without_pv_is_solved(tmp_path: Path) -> None:
     assert read(out, "opf/opf_der").num_rows == 0
     # with nothing to dispatch, the objective is the power the source delivers in the power flow
     assert all(np.isfinite(r["objective"]) and r["objective"] > 0 for r in opf)
+
+
+def test_storage_stays_at_its_setpoint_in_the_opf(tmp_path: Path) -> None:
+    common = {"networks.include": ["t/lv"], "settings.float_precision": "full"}
+    out, without = tmp_path / "out", tmp_path / "without"
+    data = config(**{
+        **common, "der.storage": {"share": 1.0, "kw": 20.0},
+    })  # fmt: skip
+    generate(data, out, catalog=catalog(tmp_path), root=tmp_path)
+    generate(config(**common), without, catalog=catalog(tmp_path), root=tmp_path)
+    der = read(out, "scenarios/der").to_pylist()
+    bess = [r for r in der if r["der_type"] == "bess"]
+    assert len(bess) == 3 * 8  # one unit per PV customer
+    assert max(abs(r["p_w"]) for r in bess) > 10e3
+    opf = {r["scenario_id"]: r for r in read(out, "opf/opf_meta").to_pylist()}
+    solved = [r for r in opf.values() if r["opf_status"] == SOLVED]
+    assert len(solved) >= 3
+    # at night a violation the storage causes has no PV to move it: not solved, recorded
+    assert {r["opf_status"] for r in opf.values()} == {SOLVED, NO_FREE_VARIABLE}
+    # OpenDSS holds the storage set-points: the OPF's voltages agree only if it used them too
+    assert all(r["verified"] and r["verify_max_dv_pu"] <= 1e-6 for r in solved)
+    pv = {r["element_idx"] for r in der if r["der_type"] == "pv"}
+    assert {r["element_idx"] for r in read(out, "opf/opf_der").to_pylist()} == pv
+    # discharging relieves the source, charging loads it
+    base = {r["scenario_id"]: r for r in read(without, "opf/opf_meta").to_pylist()}
+    net = Counter[int]()
+    for r in bess:
+        net[r["scenario_id"]] += r["p_w"]
+    moved = [
+        (base[sid]["source_p_w"] - opf[sid]["source_p_w"], p)
+        for sid, p in net.items()
+        if abs(p) > 5e3 and opf[sid]["opf_status"] == base[sid]["opf_status"] == SOLVED
+    ]
+    assert moved
+    assert all(np.sign(d) == np.sign(p) for d, p in moved)
 
 
 def test_without_opf_labels_casadi_is_not_imported(tmp_path: Path) -> None:

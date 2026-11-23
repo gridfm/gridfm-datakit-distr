@@ -41,7 +41,7 @@ def test_transformers_and_delta_loads_are_covered(tmp_path: Path) -> None:
 def test_pv_systems_storage_and_other_generators_are_not_covered(tmp_path: Path) -> None:
     reason = unsupported_reason(model_of(tmp_path, ALL_CLASSES))
     assert reason is not None
-    assert "generator that is not a PV unit: Generator.g" in reason
+    assert "generator that is not a PV or storage unit: Generator.g" in reason
     assert "pvsystem not covered by the OPF yet: PVSystem.pv" in reason
     assert "storage not covered by the OPF yet: Storage.st" in reason
 
