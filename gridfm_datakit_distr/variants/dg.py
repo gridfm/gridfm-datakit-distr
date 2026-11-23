@@ -19,7 +19,10 @@ voltages rise with ``P``, a transformer's flow falls, then rises. A convex ``r``
 ``P = 0`` crosses 1 once, so a scan ``P = s · 2^k`` (``k = 0 … SCAN_STEPS - 1``, ``s`` the
 customers' total nominal apparent power per unit) brackets the crossing between the last point
 below every bound and the first at one, and a bisection narrows the bracket to :data:`BISECT_REL`
-of ``P``. ``P^max`` is the bracket's upper end, re-solved and checked last. A network without a
+of ``P``. A scan step can jump over the crossing to a point where the power flow diverges (EDP
+urban): then the step itself is bisected until a converged point at a bound is found, or the
+divergence lies within :data:`BISECT_REL` of the last point below every bound. ``P^max`` is the
+bracket's upper end, re-solved and checked last. A network without a
 capacity gets no DG, and a status that says why (:class:`DGCapacity`).
 """
 
@@ -60,8 +63,8 @@ class DGCapacity:
     status: str
     """``ok``; ``no_site`` (fewer than 4 loads); ``voltage_at_bound`` (a voltage at or above the
     upper bound without DG); ``no_binding_limit`` (nothing reached by the last scan point);
-    ``not_converged`` (a solve of the search did not converge before it found a point at a limit:
-    a doubling step can step past the limit to a diverging point, as on EDP urban);
+    ``not_converged`` (the power flow diverges before a limit is reached, within
+    :data:`BISECT_REL`, or a solve of the final bisection did not converge);
     ``off_setpoint`` (at ``P^max`` a unit or a load leaves its set-point)."""
     n_units: int
     p_max_w: float | None = None
@@ -88,20 +91,45 @@ class DGCapacity:
 
 def search(probe: Probe, scale: float) -> tuple[str, float, float]:
     """Status and bracket ``(lo, hi)`` (W) of the first ``P`` at which ``probe``'s ratio reaches 1,
-    from ``P = 0`` (below every bound); ``hi`` is NaN unless the status is ``ok``. A solve that
-    does not converge before a bound ends the search: only a converged point at a bound counts."""
-    lo, hi = 0.0, math.nan
+    from ``P = 0`` (below every bound); ``hi`` is NaN unless the status is ``ok``. Only a converged
+    point at a bound counts: a scan step that diverges is refined (:func:`_past_divergence`)."""
+    lo = 0.0
     for k in range(SCAN_STEPS):
         p = scale * 2.0**k
         converged, ratio = probe(p)
         if not converged:
-            return "not_converged", lo, math.nan
+            return _past_divergence(probe, lo, p)
         if ratio >= 1.0:
-            hi = p
-            break
+            return _bisect(probe, lo, p)
         lo = p
-    else:
-        return "no_binding_limit", lo, math.nan
+    return "no_binding_limit", lo, math.nan
+
+
+def _past_divergence(probe: Probe, lo: float, bad: float) -> tuple[str, float, float]:
+    """A scan step from ``lo`` (converged, below every bound) to ``bad`` (diverged), which may
+    have stepped over a bound: bisect between them until a converged point at a bound is found
+    (then :func:`_bisect`) or the gap is within :data:`BISECT_REL` (``not_converged``). A solve
+    starts from the previous one, and a diverged one leaves a bad start (spike s54): after each
+    divergence the next try is preceded by a solve at ``lo``."""
+    diverged = True
+    while bad - lo > BISECT_REL * bad:
+        if diverged and not probe(lo)[0]:
+            return "not_converged", lo, math.nan
+        mid = 0.5 * (lo + bad)
+        converged, ratio = probe(mid)
+        diverged = not converged
+        if diverged:
+            bad = mid
+        elif ratio >= 1.0:
+            return _bisect(probe, lo, mid)
+        else:
+            lo = mid
+    return "not_converged", lo, math.nan
+
+
+def _bisect(probe: Probe, lo: float, hi: float) -> tuple[str, float, float]:
+    """Narrow ``(lo, hi)``, below every bound at ``lo`` and at one at ``hi``, to
+    :data:`BISECT_REL` of ``hi``."""
     while hi - lo > BISECT_REL * hi:
         mid = 0.5 * (lo + hi)
         converged, ratio = probe(mid)

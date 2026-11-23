@@ -128,6 +128,42 @@ def test_the_search_reports_divergence_and_no_bound() -> None:
     assert probes == [2.0 * 2**k for k in range(SCAN_STEPS)]
 
 
+class Engine:
+    """A power flow that diverges from ``diverge_at`` on and binds at ``bind_at``; as OpenDSS, a
+    solve starts from the previous one, so after a divergence only a solve at the last converged
+    point converges again (spike s54)."""
+
+    def __init__(self, bind_at: float, diverge_at: float) -> None:
+        self.bind_at, self.diverge_at = bind_at, diverge_at
+        self.blown, self.last = False, 0.0
+        self.calls: list[float] = []
+
+    def __call__(self, p: float) -> tuple[bool, float]:
+        self.calls.append(p)
+        if p >= self.diverge_at or (self.blown and p != self.last):
+            self.blown = True
+            return False, math.nan
+        self.blown, self.last = False, p
+        return True, p / self.bind_at
+
+
+def test_a_scan_step_past_the_bound_into_divergence_is_refined() -> None:
+    """The step from 2 (below the bound) to 4 (diverged) jumps over the bound at 2.2: the search
+    bisects between them, solving at 2 again after each divergence, and finds the bound."""
+    engine = Engine(bind_at=2.2, diverge_at=3.0)
+    status, lo, hi = search(engine, 1.0)
+    assert engine.calls[:3] == [1.0, 2.0, 4.0]
+    assert engine.calls[3] == 2.0  # the last converged point, before the next try
+    assert status == "ok"
+    assert lo < 2.2 <= hi
+    assert hi - lo <= BISECT_REL * hi
+    # a divergence below the bound stays a divergence
+    status, lo, hi = search(Engine(bind_at=10.0, diverge_at=5.0), 1.0)
+    assert status == "not_converged"
+    assert 5.0 * (1 - BISECT_REL) <= lo < 5.0
+    assert math.isnan(hi)
+
+
 # ------------------------------------------------------------------- capacity on a feeder
 
 
