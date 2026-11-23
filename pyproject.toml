@@ -77,6 +77,24 @@ path = "gridfm_datakit_distr/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["gridfm_datakit_distr"]
 
+# An allow-list: the sdist holds these paths only, whatever else lies in the working copy.
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "gridfm_datakit_distr",
+    "tests",
+    "integrationtests",
+    "docs",
+    "scripts",
+    "conftest.py",
+    "mkdocs.yml",
+    "uv.lock",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
+]
+
 # ---------------------------------------------------------------- ruff
 [tool.ruff]
 line-length = 100
