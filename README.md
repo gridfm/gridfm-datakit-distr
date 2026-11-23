@@ -36,7 +36,8 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
   reference set of 35): all pass but one CSIRO feeder, `n13_f4`, which does not converge at its
   nominal loads.
 * **Structural variants**: line lengths, neutral impedances, earthing resistances, phases of
-  single-phase customers, rooftop PV placement and size, battery storage (off by default).
+  single-phase customers, rooftop PV placement and size, battery storage and dispatchable
+  generators (both off by default).
 * **Operating scenarios**: synthetic or measured load profiles, PV output from time of day and
   cloud cover, source voltage, regulator taps and capacitor states settled per scenario from
   jittered starting taps.
@@ -44,7 +45,7 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
   delivers its setpoint; a sample gets the full Kirchhoff residual check; failures are recorded,
   never dropped.
 * **OPF labels**: optionally, the minimum-cost unbalanced AC OPF of every scenario, with the PV
-  units as controls, solved with Ipopt (through CasADi) on the stored admittances; each dispatch
+  units and the dispatchable generators as controls, solved with Ipopt (through CasADi) on the stored admittances; each dispatch
   is verified in OpenDSS.
 * **Compact, reproducible outputs**: Parquet tables per variant, network state and scenario, with
   Croissant metadata. On one machine the same config, seed and versions give the same tables,
@@ -225,15 +226,15 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - **scenarios/**: per scenario, the metadata and status, the node voltages, the load and DER
   setpoints (and, if asked, every element's current).
 - **views/kron/**: if asked, the network without its neutral, re-solved per scenario.
-- **opf/**: with `labels.opf.enabled`, per scenario the OPF status, the PV dispatch and the node
-  voltages.
+- **opf/**: with `labels.opf.enabled`, per scenario the OPF status, the dispatch of the PV units
+  and dispatchable generators, and the node voltages.
 - **stats/**: the statistics written by `stats`.
 
 # TODO
 
-- [ ] Dispatchable generators and wind units, in the scenarios and as OPF controls (the OPF
-  controls the PV units only), and storage as an OPF control, which needs time sequences of
-  scenarios (storage is now fixed at a set-point per scenario: `der.storage`).
+- [ ] Wind units, in the scenarios and as OPF controls (the OPF controls the PV units and the
+  dispatchable generators, `der.dg`), and storage as an OPF control, which needs time sequences
+  of scenarios (storage is now fixed at a set-point per scenario: `der.storage`).
 - [ ] PV orientation and PV output from irradiance data by location and date (per-unit shading
   and outages: `scenarios.pv_profile.availability`).
 - [ ] More variability, ordered by how much each moves the labels: unbalanced source voltage,

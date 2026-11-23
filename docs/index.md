@@ -16,7 +16,7 @@ explicit neutral. It is the distribution counterpart of
   delivers its setpoint; a sample of scenarios gets its Kirchhoff residual recorded. Failures are
   recorded, never dropped.
 - **OPF labels (optional).** The minimum-cost unbalanced AC OPF of every scenario, with the PV units
-  as controls, solved with Ipopt and verified in OpenDSS.
+  and dispatchable generators as controls, solved with Ipopt and verified in OpenDSS.
 - **Reproducible.** On one machine the same config, seed and library versions give the same
   tables, whatever the number of processes; only the measured wall times differ.
 - **gridfm-graphkit.** `export-posseq` writes the positive-sequence equivalent of a dataset in

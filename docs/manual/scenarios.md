@@ -1,14 +1,15 @@
 # Scenarios
 
 A *scenario* is one operating point of a [variant](variants.md): load setpoints, PV output,
-source voltage and the state of regulators and capacitors, solved in OpenDSS. Keys:
+storage and dispatchable-generator set-points, source voltage and the state of regulators and
+capacitors, solved in OpenDSS. Keys:
 [`scenarios`](config.md#scenarios), [`scenarios.profiles`](config.md#scenariosprofiles),
 [`scenarios.pv_profile`](config.md#scenariospv_profile), [`controls`](config.md#controls),
 [`labels`](config.md#labels), [`views`](config.md#views).
 
 Each scenario, in order:
 
-1. draws its loads, PV output and source voltage;
+1. draws its loads, PV output, storage and DG set-points and source voltage;
 2. sets them in OpenDSS;
 3. resets the controls to the variant's compiled state, then settles and freezes them, or keeps
    them ([controls](#controls));
@@ -72,6 +73,15 @@ unit and scenario: positive discharging into the network, negative charging; `q 
 has no state of charge, so any set-point within the rating is admitted, at any hour; the unit is
 fixed in the power flow and in the OPF ([OPF labels](opf.md#the-problem)). In `scenarios/der` its
 rows have `der_type` `bess` and `p_avail_w` equal to `p_w`.
+
+## Dispatchable generators
+
+Each dispatchable generator ([Variants](variants.md#dispatchable-generators)) is set in the power
+flow to `p = setpoint · P^max`, with `setpoint` (`scenarios.dg_profile.setpoint`, uniform in 0 to 1
+by default) drawn per unit and scenario, and `q = 0`. This operating point is an assumption: the
+source of the DG setup gives only the OPF's bounds, in which the OPF then dispatches the units
+([OPF labels](opf.md#the-problem)). In `scenarios/der` the rows have `der_type` `dg`, `p_avail_w`
+and `s_rated_va` equal to `P^max`.
 
 ## Source voltage
 

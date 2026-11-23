@@ -6,11 +6,11 @@ Variant `k` of network `n` is stored as `n/v{k:04d}` with what was drawn
 ([Outputs §4](outputs.md#4-variant-level)). Keys: [`variants`](config.md#variants),
 [`variants.admittance`](config.md#variantsadmittance),
 [`variants.phase_reallocation`](config.md#variantsphase_reallocation), [`der.pv`](config.md#derpv),
-[`der.storage`](config.md#derstorage).
+[`der.storage`](config.md#derstorage), [`der.dg`](config.md#derdg).
 
 **Defaults.** 4 variants per network, each with every line length scaled by its own factor
 uniform in 0.9–1.1, 20 % of the movable single-phase customers moved to another phase, and PV at a
-share of the customers drawn uniformly in 0–0.8; no storage. Earthing resistances and neutral impedances stay
+share of the customers drawn uniformly in 0–0.8; no storage and no dispatchable generators. Earthing resistances and neutral impedances stay
 as in the source. The source network itself is never a variant; this gives one variant equal to it:
 
 ```yaml
@@ -35,6 +35,7 @@ fixes it).
 | Phase reallocation | `variants.phase_reallocation` | enabled single-phase loads with one phase conductor, at a bus that has another phase | `fraction` of them (rounded), chosen uniformly, each moved to one of the other phases of its bus, chosen uniformly; its neutral connection is kept |
 | Rooftop PV | `der.pv` | every enabled load (a *customer*) | PV units: [below](#rooftop-pv) |
 | Storage | `der.storage` | the customers with PV | storage units: [below](#storage) |
+| Dispatchable generators | `der.dg` | every 4th customer | not drawn: the same units in every variant, [below](#dispatchable-generators) |
 
 Not perturbed: switches (impedance and state; topology never changes), a grounding reactor that
 bonds the neutral to a source's star point (CSIRO's `Reactor.grounding`, which carries the whole
@@ -77,14 +78,45 @@ The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-outpu
 - **Rating.** `kw` per unit (uniform 3–5 kW by default, an assumption: the range of common
   residential battery inverters); stored as its `s_rated_va`.
 
+## Dispatchable generators
+
+The DG case study of Geth, Claeys and Deconinck ("Optimal power flow in four-wire distribution
+networks: formulation and benchmarking", PSCC 2022, §IV-B): "a single-phase DG at every 4th
+load", every DG with the same capacity `P^max`, "sized such that [...] the DGs can congest the
+network", with `0 ≤ p ≤ P^max` and `0 ≤ q ≤ P^max` in the OPF. `der.dg.enabled` (off by default)
+places them in every variant of every network. What the paper does not fix is ours:
+
+- **Sites.** The 4th, 8th, 12th, ... enabled load in name order (a string sort: `h1`, `h10`, `h2`,
+  ...), the order of the customers everywhere in this package; the paper gives no order and no
+  start. A unit takes its load's phases, so it is single-phase where the load is.
+- **Unit.** An OpenDSS generator `Generator.dg_<load>` on its customer's nodes (after any phase
+  move), connected as the load, constant P within the load voltage window, set per scenario
+  ([Scenarios](scenarios.md#dispatchable-generators)).
+- **Capacity.** One `P^max` per network, computed once per dataset: the smallest equal capacity at
+  which the units congest the unperturbed network, at its nominal loads, without PV and storage,
+  every unit at `p = P^max`, `q = 0`, controls off (the taps as compiled), solved in OpenDSS.
+  *Congest*: a bounded voltage of the OPF ([OPF labels](opf.md#the-problem): phase to neutral,
+  `networks.voltage_limits`) reaches the upper bound, or a transformer reaches its rating at
+  winding 1 (the OPF's only branch limit), counting only transformers below their rating without
+  DG. A scan of `P = s · 2^k`, `k = 0 … 6` (`s`: the customers' total nominal apparent power per
+  unit) brackets the first point at a limit, and a bisection narrows it to 0.1 % of `P`; the scan
+  is needed because a transformer's flow first falls, then rises with `P`.
+- **Record.** `manifest.json` (`networks[].dg`): `status`, `n_units`, `p_max_w` (W), `binding`
+  (`voltage` or the transformer's name) and `ignored` (transformers above their rating without
+  DG); the dataset card lists them, and `variants/variants.perturbation` holds `dg_kw` per load.
+  A network without a capacity gets no DG, with its status: `no_site` (fewer than 4 loads),
+  `voltage_at_bound` (a voltage at or above the upper bound without DG), `no_binding_limit`
+  (nothing reached at the largest `P` of the scan), `not_converged` (a power flow diverged before
+  a limit was reached) or `off_setpoint`.
+
 ## Checks and failures
 
 1. **The edits are read back.** A variant is the network compiled with its catalog recipe plus an
    OpenDSS edit script. After compiling it, every line's Yprim must match the drawn perturbation
    within 1e-12 (relative), and the earthing resistances, load connections, PV and storage units
-   must be exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
+   and dispatchable generators must be exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
    redrawn.
-2. **The base case must hold.** With its nominal loads and no PV or storage output, the variant must converge
+2. **The base case must hold.** With its nominal loads and no DER output, the variant must converge
    (C1) and pass the Kirchhoff residual check (C2) ([conformance suite](networks.md#conformance-suite)).
    If not, the whole variant is drawn again from fresh random streams: three attempts in all. The
    accepted attempt is recorded (`attempt` in `variants/variants.perturbation`). After three
