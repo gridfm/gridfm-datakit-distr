@@ -22,7 +22,7 @@ import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from gridfm_datakit_distr import __version__
@@ -399,7 +399,7 @@ def fetch_source(
             "n_files": len(source.manifest) + len(unverified),
             "n_unverified": len(unverified),
             "origin": str(from_path) if from_path is not None else "download",
-            "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "generator_version": __version__,
         }
         installed = format_manifest(_installed_files(staging))  # what verify_cached checks

@@ -1,6 +1,6 @@
 # Installation
 
-You need Python 3.10, 3.11 or 3.12. The power flow runs in OpenDSS through
+You need Python 3.11 or 3.12. The power flow runs in OpenDSS through
 [DSS-Extensions](https://dss-extensions.org/) (OpenDSSDirect.py), installed from PyPI with the
 package. Networks are downloaded afterwards with `fetch`
 ([Networks](manual/networks.md#sources-and-the-cache)).

@@ -17,7 +17,7 @@ gridfm-datakit's format (`export-posseq`).
 
 ## 1. Install and fetch the networks
 
-You need Python 3.10–3.12 and [uv](https://docs.astral.sh/uv/). The guide works in a clone of the
+You need Python 3.11 or 3.12 and [uv](https://docs.astral.sh/uv/). The guide works in a clone of the
 repository, for its sample configs in `scripts/config/` (pip and the optional extras:
 [Installation](../installation.md)).
 
