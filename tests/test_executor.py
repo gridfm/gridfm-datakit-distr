@@ -331,6 +331,19 @@ def test_a_dataset_of_an_earlier_config_is_exported(tmp_path: Path) -> None:
     assert result.statuses == {"converged": 5}
 
 
+@pytest.mark.parametrize("network_id", ["../decoy", "/abs/decoy", ""])
+def test_export_refuses_a_network_id_that_leaves_the_output(tmp_path: Path, network_id: str) -> None:
+    """A dataset is outside input: its network ids become folders under ``out``, never outside."""
+    manifest = Manifest.create(tmp_path / "dataset", {}, {})
+    manifest.networks = [{"network_id": network_id, "network_idx": 0, "representation": None}]
+    manifest.save()
+    decoy = tmp_path / "decoy" / "raw"
+    decoy.mkdir(parents=True)
+    with pytest.raises(ValueError, match="unsafe"):
+        export_posseq(tmp_path / "dataset", tmp_path / "export")
+    assert decoy.exists()
+
+
 def test_a_configured_power_base_is_the_datasets(tmp_path: Path) -> None:
     """A number for ``normalisation.s_base_va`` is every network's power base: in
     ``catalog/networks``, the passports and the semantic layer."""

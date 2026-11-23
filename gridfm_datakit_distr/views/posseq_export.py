@@ -30,8 +30,9 @@ import pyarrow.parquet as pq
 
 from gridfm_datakit_distr.config.load import stored_config
 from gridfm_datakit_distr.io import schema
-from gridfm_datakit_distr.io.manifest import Manifest
+from gridfm_datakit_distr.io.manifest import MANIFEST, Manifest
 from gridfm_datakit_distr.io.writer import COMPRESSION, DatasetWriter, part_key
+from gridfm_datakit_distr.networks.catalog import safe_relative_path
 from gridfm_datakit_distr.views.datakit_layout import write_datakit_layout
 from gridfm_datakit_distr.views.posseq import PosSeqView
 from gridfm_datakit_distr.views.stored import VariantStore
@@ -57,6 +58,11 @@ def export_posseq(
     """Export the view of ``networks`` (default: every network of the dataset) under ``out``."""
     manifest = Manifest.load(dataset)
     known = {str(n["network_id"]): int(n["network_idx"]) for n in manifest.networks}
+    for network_id in known:  # each id becomes a folder under `out`; a dataset is outside input
+        try:
+            safe_relative_path(network_id)
+        except ValueError as exc:
+            raise ValueError(f"{dataset / MANIFEST}: {exc}") from exc
     chosen = list(networks) if networks else sorted(known, key=lambda n: known[n])
     unknown = [n for n in chosen if n not in known]
     if unknown:
