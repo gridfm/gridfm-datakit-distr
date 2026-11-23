@@ -15,8 +15,13 @@ from typer.testing import CliRunner
 
 from gridfm_datakit_distr.cli import app
 from gridfm_datakit_distr.networks import fetch as fetch_mod
-from gridfm_datakit_distr.networks.cache import is_fetched, read_marker, source_dir
-from gridfm_datakit_distr.networks.catalog import ArchivesSource, CsiroDapSource, GithubSource
+from gridfm_datakit_distr.networks.cache import MARKER, is_fetched, read_marker, source_dir
+from gridfm_datakit_distr.networks.catalog import (
+    ArchivesSource,
+    CsiroDapSource,
+    GithubSource,
+    load_catalog,
+)
 from gridfm_datakit_distr.networks.fetch import (
     ChecksumError,
     FetchError,
@@ -431,3 +436,15 @@ def test_cli_reports_each_source_once(tmp_path: Path, monkeypatch: pytest.Monkey
     assert result.exit_code == 0, result.output
     assert calls == ["epri_ieee"]
     assert "epri_ieee: 3 files installed" in result.output
+
+
+@pytest.mark.parametrize("command", [["inspect", "ieee13"], ["validate", "ieee13"]])
+def test_cli_refuses_a_cached_copy_that_changed(tmp_path: Path, command: list[str]) -> None:
+    source = load_catalog().source("epri_ieee")
+    marker = source_dir(source.id, tmp_path) / MARKER
+    marker.parent.mkdir(parents=True)
+    # Marked as fetched, but the pinned files are gone: the check runs before any compile.
+    marker.write_text(json.dumps({"manifest_sha256": source.manifest_sha256}), encoding="utf-8")
+    result = CliRunner().invoke(app, [*command, "--cache", str(tmp_path)])
+    assert result.exit_code == 1, result.output
+    assert "changed since fetch" in result.output
