@@ -23,6 +23,7 @@ from gridfm_datakit_distr.networks.fetch import (
     FetchResult,
     fetch_source,
     git_blob_sha1,
+    verify_cached,
 )
 
 REV = "0" * 40
@@ -121,6 +122,32 @@ def test_fetched_source_is_not_downloaded_again(tmp_path: Path, web: FakeWeb) ->
     n_requests = len(web.requests)
     assert fetch_source(source, root=tmp_path).skipped
     assert len(web.requests) == n_requests
+
+
+def test_a_cached_file_changed_after_fetch_is_detected(tmp_path: Path, web: FakeWeb) -> None:
+    serve_github(web, FILES)
+    source = github_source()
+    fetch_source(source, root=tmp_path)
+    (tmp_path / "gh" / "a/lines.dss").write_bytes(b"New Line.l1 bus1=a bus2=c\n")
+    (tmp_path / "gh" / "common.dss").unlink()
+    with pytest.raises(ChecksumError, match=r"2 cached file\(s\) .* \(a/lines\.dss, common\.dss\)"):
+        fetch_source(source, root=tmp_path)
+    assert is_fetched(source, tmp_path)  # the marker alone still says fetched
+    fetch_source(source, root=tmp_path, force=True)  # --force restores it
+    assert fetch_source(source, root=tmp_path).skipped
+
+
+def test_a_copy_fetched_before_the_file_list_is_checked_against_the_manifest(
+    tmp_path: Path, web: FakeWeb
+) -> None:
+    serve_github(web, FILES)
+    source = github_source()
+    fetch_source(source, root=tmp_path)
+    (tmp_path / "gh" / ".fetch.sha256").unlink()
+    verify_cached(source, tmp_path)
+    (tmp_path / "gh" / "common.dss").write_bytes(b"changed\n")
+    with pytest.raises(ChecksumError, match=r"common\.dss"):
+        verify_cached(source, tmp_path)
 
 
 def test_corrupted_download_fails_and_installs_nothing(tmp_path: Path, web: FakeWeb) -> None:
@@ -264,8 +291,14 @@ def archives_source(name: str, blob: bytes) -> ArchivesSource:
 def test_zip_archive_is_verified_and_extracted(tmp_path: Path, web: FakeWeb) -> None:
     blob = make_zip({"Master/master.dss": b"Clear\n"})
     web.pages["https://files.test/Pack.zip"] = blob
-    fetch_source(archives_source("Pack.zip", blob), root=tmp_path)
-    assert (tmp_path / "arc" / "Pack" / "Master" / "master.dss").read_bytes() == b"Clear\n"
+    source = archives_source("Pack.zip", blob)
+    fetch_source(source, root=tmp_path)
+    master = tmp_path / "arc" / "Pack" / "Master" / "master.dss"
+    assert master.read_bytes() == b"Clear\n"
+    # extracted files are recorded at install, so a change to them is caught too
+    master.write_bytes(b"Clear\nNew Load.extra\n")
+    with pytest.raises(ChecksumError, match=r"Pack/Master/master\.dss"):
+        verify_cached(source, tmp_path)
 
 
 def test_a_cut_download_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:

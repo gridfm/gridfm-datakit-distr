@@ -18,6 +18,7 @@ from gridfm_datakit_distr.io import datakit_columns as datakit
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
 from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
+from gridfm_datakit_distr.networks.fetch import ChecksumError
 from gridfm_datakit_distr.solve import executor
 from gridfm_datakit_distr.solve.executor import (
     GenerationError,
@@ -331,8 +332,21 @@ def test_a_dataset_of_an_earlier_config_is_exported(tmp_path: Path) -> None:
     assert result.statuses == {"converged": 5}
 
 
+def test_a_changed_cached_network_stops_the_generation(tmp_path: Path) -> None:
+    """``generate`` re-checks the files that ``fetch`` installed before it writes anything."""
+    cat = catalog(tmp_path)
+    (tmp_path / "src" / ".fetch.json").write_text("{}")
+    # what fetch recorded differs from the file on disk
+    (tmp_path / "src" / ".fetch.sha256").write_text(f"{'0' * 64}  feeder/master.dss\n")
+    with pytest.raises(ChecksumError, match=r"feeder/master\.dss"):
+        generate(config(), tmp_path / "out", catalog=cat, root=tmp_path)
+    assert not (tmp_path / "out").exists()
+
+
 @pytest.mark.parametrize("network_id", ["../decoy", "/abs/decoy", ""])
-def test_export_refuses_a_network_id_that_leaves_the_output(tmp_path: Path, network_id: str) -> None:
+def test_export_refuses_a_network_id_that_leaves_the_output(
+    tmp_path: Path, network_id: str
+) -> None:
     """A dataset is outside input: its network ids become folders under ``out``, never outside."""
     manifest = Manifest.create(tmp_path / "dataset", {}, {})
     manifest.networks = [{"network_id": network_id, "network_idx": 0, "representation": None}]

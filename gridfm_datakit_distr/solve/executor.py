@@ -52,6 +52,7 @@ from gridfm_datakit_distr.io.writer import STATES_PART, DatasetWriter, part_key
 from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.model.ids import variant_id
 from gridfm_datakit_distr.networks.catalog import Catalog, Network, load_catalog
+from gridfm_datakit_distr.networks.fetch import verify_cached
 from gridfm_datakit_distr.networks.passport import build_passport
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.normalize.bases import s_base_va
@@ -173,6 +174,8 @@ def generate(
     """Generate (or resume) the dataset of ``config`` in ``out``; returns its manifest."""
     catalog = catalog or load_catalog()
     jobs = jobs_of(config, catalog)
+    for source_id in sorted({job.network.source for job in jobs}):  # once, before any write
+        verify_cached(catalog.source(source_id), root)
     manifest = _open(config, out, jobs)
     writer = DatasetWriter(out)
     passports = _network_tables(config, jobs, catalog, root, writer, manifest)

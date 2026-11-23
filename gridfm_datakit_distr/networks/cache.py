@@ -12,6 +12,9 @@ from gridfm_datakit_distr.networks.catalog import Network, SourceT
 CACHE_ENV = "GRIDFM_DISTR_CACHE"
 MARKER = ".fetch.json"
 """File written in a source directory once all its files are verified."""
+INSTALLED = ".fetch.sha256"
+"""SHA-256 of every file installed in a source directory (``sha256sum`` format), checked by
+``fetch.verify_cached`` before each use."""
 
 
 def cache_root() -> Path:

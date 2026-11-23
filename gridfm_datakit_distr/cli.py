@@ -12,6 +12,7 @@ from gridfm_datakit_distr import __version__
 
 if TYPE_CHECKING:
     from gridfm_datakit_distr.config.schema import GenerationConfig
+    from gridfm_datakit_distr.networks.catalog import SourceT
     from gridfm_datakit_distr.solve.executor import Job
 
 app = typer.Typer(
@@ -128,6 +129,7 @@ def inspect(
     if not is_fetched(catalog.source(network.source), cache):
         typer.echo(f"error: run `gridfm_datakit_distr fetch {network.source}` first", err=True)
         raise typer.Exit(1)
+    _verify_cached([catalog.source(network.source)], cache)
     passport = build_passport(prepare_network(network, root=cache), catalog)
     typer.echo(inspect_text(passport), nl=False)
     if passport_dir is not None:
@@ -177,13 +179,15 @@ def validate(
             typer.echo(f"error: unknown network or source {ident!r}", err=True)
             raise typer.Exit(2)
     ids = list(dict.fromkeys(ids))
-    missing = sorted({catalog.network(i).source for i in ids} - fetched)
+    needed = sorted({catalog.network(i).source for i in ids})
+    missing = sorted(set(needed) - fetched)
     if missing:
         typer.echo(f"error: sources not fetched: {', '.join(missing)}", err=True)
         raise typer.Exit(1)
     if not ids:
         typer.echo("error: no network to validate (nothing fetched?)", err=True)
         raise typer.Exit(1)
+    _verify_cached([catalog.source(s) for s in needed], cache)
     results = []
     for network_id in ids:
         result = validate_network(catalog.network(network_id), root=cache, golden_dir=golden)
@@ -196,6 +200,18 @@ def validate(
     typer.echo(f"{len(results) - n_failed}/{len(results)} pass; summary: {summary}")
     if n_failed:
         raise typer.Exit(1)
+
+
+def _verify_cached(sources: list[SourceT], cache: Path | None) -> None:
+    """Exit 1 if a file that ``fetch`` installed for one of ``sources`` changed since."""
+    from gridfm_datakit_distr.networks.fetch import FetchError, verify_cached
+
+    for source in sources:
+        try:
+            verify_cached(source, cache)
+        except FetchError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
 
 
 @app.command()
@@ -235,6 +251,7 @@ def generate(
     from gridfm_datakit_distr.config.load import ConfigError, load_config
     from gridfm_datakit_distr.networks.cache import is_fetched
     from gridfm_datakit_distr.networks.catalog import load_catalog
+    from gridfm_datakit_distr.networks.fetch import FetchError
     from gridfm_datakit_distr.scenarios.profiles import profile_issues
     from gridfm_datakit_distr.solve.executor import GenerationError, jobs_of
     from gridfm_datakit_distr.solve.executor import generate as run_generation
@@ -283,7 +300,7 @@ def generate(
         return
     try:
         manifest = run_generation(config, out, catalog=catalog, root=cache)
-    except GenerationError as exc:
+    except (GenerationError, FetchError) as exc:  # FetchError: a cached file changed since fetch
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
     failed = [u for u in manifest.units.values() if u.status != "done"]

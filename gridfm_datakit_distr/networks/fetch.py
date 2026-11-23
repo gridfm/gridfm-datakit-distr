@@ -26,7 +26,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from gridfm_datakit_distr import __version__
-from gridfm_datakit_distr.networks.cache import MARKER, cache_root, is_fetched, source_dir
+from gridfm_datakit_distr.networks.cache import (
+    INSTALLED,
+    MARKER,
+    cache_root,
+    is_fetched,
+    read_marker,
+    source_dir,
+)
 from gridfm_datakit_distr.networks.catalog import (
     ArchivesSource,
     CatalogError,
@@ -34,6 +41,7 @@ from gridfm_datakit_distr.networks.catalog import (
     GithubSource,
     SourceT,
     format_manifest,
+    parse_manifest,
     safe_relative_path,
 )
 
@@ -206,6 +214,45 @@ def _raise_if(problems: list[str], source_id: str, error: type[FetchError]) -> N
         raise error(f"{source_id}: {len(problems)} problem(s):\n  {shown}{more}")
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _installed_files(directory: Path) -> dict[str, str]:
+    """SHA-256 of every file under ``directory`` (extracted ones included), by relative path."""
+    return {
+        p.relative_to(directory).as_posix(): _sha256(p)
+        for p in sorted(directory.rglob("*"))
+        if p.is_file()
+    }
+
+
+def verify_cached(source: SourceT, root: Path | None = None) -> None:
+    """Raise :class:`ChecksumError` if a file that ``fetch`` installed for ``source`` is missing
+    or changed since. A copy fetched by an earlier version, which recorded no file list, is
+    checked against the manifest; a source without a fetch marker has nothing to check."""
+    if read_marker(source.id, root) is None:
+        return
+    directory = source_dir(source.id, root)
+    listed = directory / INSTALLED
+    expected = (
+        parse_manifest(listed.read_text(encoding="utf-8"), origin=str(listed))
+        if listed.is_file()
+        else source.manifest
+    )
+    changed = [
+        rel
+        for rel, digest in sorted(expected.items())
+        if not (directory / rel).is_file() or _sha256(directory / rel) != digest
+    ]
+    if changed:
+        shown = ", ".join(changed[:5]) + (f" and {len(changed) - 5} more" if changed[5:] else "")
+        raise ChecksumError(
+            f"{source.id}: {len(changed)} cached file(s) changed since fetch ({shown}); "
+            f"restore them with `gridfm_datakit_distr fetch --force {source.id}`"
+        )
+
+
 def _write(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -325,6 +372,7 @@ def fetch_source(
     root = root if root is not None else cache_root()
     target = source_dir(source.id, root)
     if from_path is None and not (force or allow_unverified) and is_fetched(source, root):
+        verify_cached(source, root)
         return FetchResult(source.id, target, len(source.manifest), skipped=True)
 
     root.mkdir(parents=True, exist_ok=True)
@@ -352,6 +400,8 @@ def fetch_source(
             "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "generator_version": __version__,
         }
+        installed = format_manifest(_installed_files(staging))  # what verify_cached checks
+        (staging / INSTALLED).write_text(installed, encoding="utf-8")
         (staging / MARKER).write_text(json.dumps(marker, indent=2), encoding="utf-8")
         if target.exists():
             trash = root / f".trash-{source.id}-{uuid.uuid4().hex}"
