@@ -233,8 +233,8 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 
 - [ ] Storage, dispatchable generators and wind units, in the scenarios and as OPF controls (the
   OPF controls the PV units only).
-- [ ] PV availability per unit (orientation, shading, units off) and PV output from irradiance
-  data by location and date.
+- [ ] PV orientation and PV output from irradiance data by location and date (per-unit shading
+  and outages: `scenarios.pv_profile.availability`).
 - [ ] More variability, ordered by how much each moves the labels: unbalanced source voltage,
   multiple earthing of the neutral, upstream network strength, voltage-dependent (ZIP) loads, a
   factor shared by the line lengths of a feeder, inverter volt-var and volt-watt.

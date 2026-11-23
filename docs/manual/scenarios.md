@@ -49,8 +49,9 @@ For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario:
   every day, no location or date;
 - `c`, the cloud cover (`scenarios.pv_profile.cloudiness`, uniform 0–1), one per scenario for the
   whole network; `1 − 0.75 c^3.4` is the Kasten–Czeplak relation for global irradiance;
-- `a`, the unit's availability (`scenarios.pv_profile.availability`), drawn per unit and scenario:
-  orientation, shading, or 0 for a unit out of service. The default 1 gives every unit of a
+- `a`, the unit's availability (`scenarios.pv_profile.availability`), drawn per unit and scenario
+  independently: shading, or 0 for a unit out of service (not orientation, which would shift a
+  unit's daily shape the same way in every scenario). The default 1 gives every unit of a
   variant the same share of its kWp in a scenario, so their outputs are proportional across
   scenarios; a distribution breaks that, e.g. `{distribution: choice, values: [0, 1], weights:
   [0.05, 0.95]}` puts one unit in twenty out of service;

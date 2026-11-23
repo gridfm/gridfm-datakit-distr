@@ -423,7 +423,7 @@ class PVProfile(_Config):
     availability: FractionSpec = Field(
         default=Fixed(1.0),
         description="Factor on each unit's available power, drawn per unit and scenario "
-        "(orientation, shading, a unit out of service at 0). With 1 every unit of a variant "
+        "(shading, or 0 for a unit out of service). With 1 every unit of a variant "
         "delivers the same share of its kWp in a scenario; a distribution makes their outputs "
         "differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for "
         "units out of service.",
