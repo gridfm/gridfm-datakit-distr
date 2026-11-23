@@ -21,9 +21,8 @@ from gridfm_datakit_distr.opf.problem import (
     PowerFlowStart,
     economic,
     power_base,
-    winding_va,
 )
-from gridfm_datakit_distr.opf.support import unsupported_reason
+from gridfm_datakit_distr.opf.support import unsupported_reason, winding_va
 from gridfm_datakit_distr.opf.verify import TOLERANCE_PU, verify, voltage_gap
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 from tests.circuits import DELTA_DELTA, LATERAL, OPF_DEVICES, write_circuit

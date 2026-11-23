@@ -21,7 +21,7 @@ def test_the_slice_config_gives_the_uk_limits_on_a_csiro_feeder(
     network_master: Callable[[str], Path],
 ) -> None:
     pytest.importorskip("casadi")
-    from gridfm_datakit_distr.opf.problem import vpn_bounds
+    from gridfm_datakit_distr.opf.support import vpn_bounds
 
     network_master("csiro_enwl/n05_f8")
     config = load_config(REPO / "scripts" / "config" / "opf_slice.yaml")

@@ -21,7 +21,8 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
-from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult, pair_nominal_v
+from gridfm_datakit_distr.opf.problem import OPFProblem, OPFResult
+from gridfm_datakit_distr.opf.support import pair_nominal_v
 from gridfm_datakit_distr.scenarios.controls import (
     MAX_CONTROL_ITER,
     apply_state,
