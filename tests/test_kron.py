@@ -91,26 +91,30 @@ def runner_and_variant(
     targets = collect_targets(prepare_network(net, options, tmp_path))
     result = generate_variant(
         net, targets, cfg.variants, 5, 0, options=options, root=tmp_path, der=cfg.der.pv,
-        storage=cfg.der.storage,
+        storage=cfg.der.storage, dg_kw=5.0 if cfg.der.dg.enabled else None,
     )  # fmt: skip
     return VariantRunner(net, result, cfg, 0, root=tmp_path), result, net
 
 
-def test_the_view_holds_the_storage_setpoints(tmp_path: Path) -> None:
+def test_the_view_holds_the_storage_and_dg_setpoints(tmp_path: Path) -> None:
+    der = {"pv": {"penetration": 1.0}, "storage": {"share": 1.0}, "dg": {"enabled": True}}
     runner, result, net = runner_and_variant(
-        tmp_path, VARIANT_FEEDER, der={"pv": {"penetration": 1.0}, "storage": {"share": 1.0}},
-        controls={"mode": "as_is"},
-    )  # fmt: skip
+        tmp_path, VARIANT_FEEDER, der=der, controls={"mode": "as_is"}
+    )
     assert runner.storage is not None
+    assert runner.dg is not None
     view = KronView(runner, net, result, root=tmp_path)
     o = runner.run(2)
     assert o.pf_status == "converged", o.message
     assert o.bess_p_w is not None
+    assert o.dg_p_w is not None
     assert np.abs(o.bess_p_w).max() > 100.0
+    assert o.dg_p_w.max() > 100.0
     k = view.solve(o, runner.registry.states.get(o.state_id or ""))
     assert k.status == "converged", k.message
     api = view.ctx.api
-    for unit, p_w in zip(runner.storage.units, o.bess_p_w, strict=True):
+    units = runner.storage.units + runner.dg.units
+    for unit, p_w in zip(units, np.r_[o.bess_p_w, o.dg_p_w], strict=True):
         api.Circuit.SetActiveElement(unit.generator)
         delivered = -float(np.asarray(api.CktElement.Powers())[0::2].sum()) * 1e3
         assert delivered == pytest.approx(p_w, rel=1e-6, abs=1e-6)

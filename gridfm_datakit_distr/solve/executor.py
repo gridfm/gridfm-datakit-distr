@@ -29,7 +29,7 @@ import threading
 from collections import Counter
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from multiprocessing import get_context
 from pathlib import Path
@@ -63,6 +63,7 @@ from gridfm_datakit_distr.solve.tables import (
     variant_tables,
     variant_ybus_table,
 )
+from gridfm_datakit_distr.variants.dg import dg_capacity
 from gridfm_datakit_distr.variants.generate import VariantResult, generate_variant
 from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
 from gridfm_datakit_distr.views.kron import KronView
@@ -83,6 +84,9 @@ class Job:
     network_idx: int
     network: Network
     representation: str | None
+    dg_kw: float | None = None
+    """Capacity of the network's dispatchable generators (kW), computed once by
+    :func:`generate`; None: no DG."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +182,7 @@ def generate(
         verify_cached(catalog.source(source_id), root)
     manifest = _open(config, out, jobs)
     writer = DatasetWriter(out)
-    passports = _network_tables(config, jobs, catalog, root, writer, manifest)
+    passports, jobs = _network_tables(config, jobs, catalog, root, writer, manifest)
     manifest.add_units(plan_units(config, jobs))
     todo = [u for u in manifest.units.values() if u.status != "done"]
     width = config.settings.contexts_per_process
@@ -243,11 +247,12 @@ def _network_tables(
     root: Path | None,
     writer: DatasetWriter,
     manifest: Manifest,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[Job]]:
     """Passports and ``catalog/networks`` (the networks are loaded once here: a network that
-    does not load stops the run before any unit)."""
+    does not load stops the run before any unit); with ``der.dg``, the capacity of each
+    network's dispatchable generators, recorded in the manifest and carried by its job."""
     options = prepare_options(config)
-    passports = []
+    passports, ready = [], []
     for j, job in enumerate(jobs):
         prepared = prepare_network(job.network, options, root)
         passport = build_passport(prepared, catalog)
@@ -257,11 +262,17 @@ def _network_tables(
             from gridfm_datakit_distr.opf.support import unsupported_reason
 
             manifest.networks[j]["opf_not_supported"] = unsupported_reason(prepared.model)
+        if config.der.dg.enabled:
+            vmax = config.networks.voltage_limits.vmax_pu
+            dg = dg_capacity(job.network, collect_targets(prepared), vmax, options, root)
+            manifest.networks[j]["dg"] = dg.record()
+            job = replace(job, dg_kw=dg.kw)
+        ready.append(job)
     manifest.save()
     writer.write_table(
         "catalog/networks", networks_table(passports, manifest.networks), schema.CATALOG_NETWORKS
     )
-    return passports
+    return passports, ready
 
 
 def _record(manifest: Manifest, units: dict[str, Unit], results: Sequence[UnitResult]) -> None:
@@ -394,7 +405,7 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
     i, seed = task.job.network_idx, config.settings.seed
     variant = generate_variant(
         network, targets, config.variants, seed, k, options=options, root=root,
-        der=config.der.pv, storage=config.der.storage, keep_prepared=True,
+        der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw, keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":

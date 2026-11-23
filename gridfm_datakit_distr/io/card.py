@@ -89,6 +89,15 @@ def dataset_card(
             if opf_statuses is not None
             else []
         ),
+        *(
+            [
+                "- Dispatchable generators (`manifest.json` `networks[].dg`): "
+                + "; ".join(_dg(n) for n in manifest.networks if "dg" in n)
+                + "."
+            ]
+            if any("dg" in n for n in manifest.networks)
+            else []
+        ),
         f"- Work units: {sum(units.values())} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(units.items()))
         + ").",
@@ -111,3 +120,14 @@ def dataset_card(
     for citation in sorted({p["citation"] for p in passports}):
         lines.append(f"- {citation}")
     return "\n".join(lines) + "\n"
+
+
+def _dg(network: Mapping[str, Any]) -> str:
+    """One network's dispatchable generators: units and capacity, or the status without them."""
+    dg = network["dg"]
+    if dg["status"] != "ok":
+        return f"`{network['network_id']}` none ({dg['status']})"
+    return (
+        f"`{network['network_id']}` {dg['n_units']} of {dg['p_max_w'] / 1e3:.4g} kW "
+        f"(bound: {dg['binding']})"
+    )

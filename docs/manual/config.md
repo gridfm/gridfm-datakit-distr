@@ -205,6 +205,19 @@ stored energy to value, so storage is an OPF control only over time sequences.
 | `der.storage.share` | value spec, ≥ 0 and ≤ 1 | `0.0` | Share of the PV customers with a storage unit, drawn per variant: each PV customer gets one with that probability. `0` (default): no storage, and every output is the same as without this section. |
 | `der.storage.kw` | value spec, > 0 | `{distribution: uniform, low: 3.0, high: 5.0}` | Power rating (kW) of each unit, drawn per unit and variant; its `s_rated_va`. Assumption, no source: the range of common residential battery inverters. |
 
+### `der.dg`
+
+Dispatchable generators ([Variants](variants.md#dispatchable-generators)), as in the DG
+case study of Geth, Claeys and Deconinck (PSCC 2022): one unit at every 4th load (in name
+order), every unit with the same capacity `P^max`, the smallest at which they congest the
+network (computed per network, recorded in `manifest.json`). A unit is an OpenDSS generator
+`Generator.dg_<load>` on the load's nodes; its set-point is drawn per scenario
+(`scenarios.dg_profile`) and the OPF dispatches it within `0 <= p, q <= P^max`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `der.dg.enabled` | boolean | `false` | Place the network's dispatchable generators in every variant. `false` (default): none, and every output is the same as without this section. |
+
 ## `scenarios`
 
 Operating points of each variant ([Scenarios](scenarios.md)); each scenario draws from its
@@ -254,6 +267,15 @@ Storage set-points per scenario ([Scenarios](scenarios.md#storage-set-points)).
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `scenarios.storage_profile.setpoint` | value spec, ≥ -1 and ≤ 1 | `{distribution: uniform, low: -1.0, high: 1.0}` | Active power of each unit as a fraction of its rating, drawn per unit and scenario: positive discharging, negative charging; no reactive power. Assumption, no source: any operating point within the rating, with no state of charge (a snapshot has none). |
+
+### `scenarios.dg_profile`
+
+Set-points of the dispatchable generators per scenario
+([Scenarios](scenarios.md#dispatchable-generators)).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scenarios.dg_profile.setpoint` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Active power of each unit in the power flow as a fraction of its capacity `P^max`, drawn per unit and scenario; no reactive power. Assumption, no source: the source gives the OPF's bounds only, so any point within them. In the OPF the units are dispatched. |
 
 ## `controls`
 

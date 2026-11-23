@@ -173,6 +173,7 @@ def test_stream_codes_are_stable() -> None:
         "OPF_COSTS": 8,
         "PV_AVAILABILITY": 9,
         "STORAGE_SETPOINT": 10,
+        "DG_SETPOINT": 11,
     }
 
 

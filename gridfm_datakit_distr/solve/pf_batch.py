@@ -3,8 +3,8 @@
 A :class:`VariantRunner` loads a variant once (catalog recipe plus its edit script, normalised) and
 runs scenarios by index. Each scenario:
 
-1. draws its loads (profile provider), PV outputs (at the profile's time of day), storage
-   set-points and source voltage from its own streams;
+1. draws its loads (profile provider), PV outputs (at the profile's time of day), storage and
+   DG set-points and source voltage from its own streams;
 2. sets them (``Loads``/``Generators`` setters, ``Vsources.PU``);
 3. resets the controls to the variant's compiled state, then settles or keeps them;
 4. solves with ``ControlMode=OFF``; a non-converged solve is retried once with ``MaxIterations``
@@ -47,9 +47,11 @@ from gridfm_datakit_distr.scenarios.controls import (
     settle,
 )
 from gridfm_datakit_distr.scenarios.der import (
+    DGSetpoints,
     PVDraw,
     PVOutputs,
     StorageSetpoints,
+    dg_units,
     pv_units,
     storage_units,
 )
@@ -101,7 +103,7 @@ def set_setpoints(
     source: str,
     v_src: float,
 ) -> None:
-    """Set the customers' loads and the DER generators (PV, then storage; W, var) and the
+    """Set the customers' loads and the DER generators (PV, storage, DG; W, var) and the
     source's voltage (pu) in the engine; ``der_p_w`` None leaves the generators as they are."""
     for j, p, q in zip(load_idx, load_p_w, load_q_var, strict=True):
         api.Loads.Idx(j)
@@ -120,12 +122,13 @@ def der_setpoints(
     pv_p_w: NDArray[np.float64] | None,
     pv_q_var: NDArray[np.float64] | None,
     bess_p_w: NDArray[np.float64] | None,
+    dg_p_w: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
     """The DER generators' setpoints in :attr:`VariantRunner.der_generators` order (PV, then
-    storage at q = 0); None without units."""
+    storage and DG at q = 0); None without units."""
     pv = [] if pv_p_w is None or pv_q_var is None else [(pv_p_w, pv_q_var)]
-    bess = [] if bess_p_w is None else [(bess_p_w, np.zeros(bess_p_w.size))]
-    parts = pv + bess
+    fixed = [(p, np.zeros(p.size)) for p in (bess_p_w, dg_p_w) if p is not None]
+    parts = pv + fixed
     if not parts:
         return None, None
     return np.concatenate([p for p, _ in parts]), np.concatenate([q for _, q in parts])
@@ -154,6 +157,8 @@ class ScenarioOutcome:
     pv_p_avail_w: NDArray[np.float64] | None
     bess_p_w: NDArray[np.float64] | None = None
     """Storage set-points (W, discharging positive; q = 0), in ``runner.storage.units`` order."""
+    dg_p_w: NDArray[np.float64] | None = None
+    """DG set-points (W; q = 0), in ``runner.dg.units`` order."""
     n_off_setpoint: int = 0
     pf_iterations: int = 0
     residual_rel: float | None = None
@@ -204,8 +209,12 @@ class VariantRunner:
         self.pv = PVOutputs(units, config.der.pv, config.scenarios.pv_profile) if units else None
         bess = storage_units(variant.perturbation)
         self.storage = StorageSetpoints(bess, config.scenarios.storage_profile) if bess else None
-        self.der_generators = tuple(u.generator for u in units) + tuple(u.generator for u in bess)
-        """The DER generators: PV units, then storage units (the rows of ``scenarios/der``)."""
+        dg = dg_units(variant.perturbation)
+        self.dg = DGSetpoints(dg, config.scenarios.dg_profile) if dg else None
+        names = [u.generator for u in units] + [u.generator for u in (*bess, *dg)]
+        self.der_generators = tuple(names)
+        """The DER generators: PV units, storage units, then DG (the rows of
+        ``scenarios/der``)."""
         n = len(self.customers)
         self.der_penetration = len(units) / n if n else 0.0
         self.initial_state = read_state(self.ctx, self.variant_id, "as_is")
@@ -246,7 +255,8 @@ class VariantRunner:
             rng = scenario_rng(seed, net, k, s, ScenarioStream.SOURCE_VOLTAGE)
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
             bess = self.storage.draw(seed, net, k, s) if self.storage is not None else None
-            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess)
+            dg = self.dg.draw(seed, net, k, s) if self.dg is not None else None
+            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg)
             self._set(draws)
             self._draws, self._note = draws, None
             state, status = self._controls(s)
@@ -283,7 +293,10 @@ class VariantRunner:
     def _set(self, draws: _Draws) -> None:
         pv = draws.pv
         der_p, der_q = der_setpoints(
-            pv.p_w if pv is not None else None, pv.q_var if pv is not None else None, draws.bess
+            pv.p_w if pv is not None else None,
+            pv.q_var if pv is not None else None,
+            draws.bess,
+            draws.dg,
         )
         set_setpoints(
             self.ctx.api, self._load_idx, draws.p_w, draws.q_var, self._der_idx, der_p, der_q,
@@ -440,6 +453,7 @@ class VariantRunner:
             pv_q_var=None if pv is None else pv.q_var,
             pv_p_avail_w=None if pv is None else pv.p_avail_w,
             bess_p_w=draws.bess,
+            dg_p_w=draws.dg,
             n_off_setpoint=n_off,
             pf_iterations=iterations,
             residual_rel=rel,
@@ -460,16 +474,21 @@ class _Draws:
     v_src: float
     bess: NDArray[np.float64] | None
     """Storage set-points (W)."""
+    dg: NDArray[np.float64] | None = None
+    """DG set-points (W)."""
 
 
 def _scaled(draws: _Draws, factor: float) -> _Draws:
-    """``draws`` with every load, PV and storage setpoint times ``factor`` (source voltage
+    """``draws`` with every load, PV, storage and DG setpoint times ``factor`` (source voltage
     unchanged)."""
     pv = draws.pv
     if pv is not None:
         pv = replace(pv, p_w=factor * pv.p_w, q_var=factor * pv.q_var)
     bess = None if draws.bess is None else factor * draws.bess
-    return replace(draws, p_w=factor * draws.p_w, q_var=factor * draws.q_var, pv=pv, bess=bess)
+    dg = None if draws.dg is None else factor * draws.dg
+    return replace(
+        draws, p_w=factor * draws.p_w, q_var=factor * draws.q_var, pv=pv, bess=bess, dg=dg
+    )
 
 
 class _Iterations:

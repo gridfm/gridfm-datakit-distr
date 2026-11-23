@@ -446,14 +446,15 @@ def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path
         assert table.equals(pq.read_table(alone / f"{name}.parquet")), name
 
 
-def test_storage_enters_the_exported_der_columns(tmp_path: Path) -> None:
+def test_storage_and_dg_enter_the_exported_der_columns(tmp_path: Path) -> None:
     """The positive-sequence export reads every ``scenarios/der`` row: storage at its set-point
-    in ``x_der_p_mw`` and ``x_der_p_avail_mw``; the stored tables with storage reproduce the
-    stored voltages (closed loop) and the export keeps datakit's power balance."""
+    in ``x_der_p_mw`` and ``x_der_p_avail_mw``, a DG at its set-point and its capacity; the stored
+    tables with storage and DG reproduce the stored voltages (closed loop) and the export keeps
+    datakit's power balance."""
     data = copy.deepcopy(CONFIG)
     data["networks"]["include"] = ["t/feeder"]
     data["variants"]["n_variants"] = 1
-    data["der"] = {"pv": {"penetration": 1.0}, "storage": {"share": 1.0}}
+    data["der"] = {"pv": {"penetration": 1.0}, "storage": {"share": 1.0}, "dg": {"enabled": True}}
     out = tmp_path / "out"
     generate(GenerationConfig.model_validate(data), out, catalog=catalog(tmp_path), root=tmp_path)
     [result] = export_posseq(out, tmp_path / "export")
@@ -469,7 +470,7 @@ def test_storage_enters_the_exported_der_columns(tmp_path: Path) -> None:
     for sc in reader.scenarios(ids):
         assert closed_loop(sc).max_dv_pu <= 1e-6
     der = pq.read_table(out / "scenarios" / "der").to_pylist()
-    assert {r["der_type"] for r in der} == {"pv", "bess"}
+    assert {r["der_type"] for r in der} == {"pv", "bess", "dg"}
     expected: dict[int, list[float]] = {}
     for r in der:
         e = expected.setdefault(r["scenario_id"], [0.0, 0.0])

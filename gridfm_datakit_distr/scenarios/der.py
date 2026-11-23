@@ -1,4 +1,5 @@
-"""PV and storage units of a variant and their output per scenario.
+"""PV units, storage units and dispatchable generators of a variant and their output per
+scenario.
 
 Placement is part of the variant (``variants/perturbation.py``): ``Generator.pv_<load>`` on its
 customer's nodes, ``model=1`` (constant P and Q within the load window).
@@ -21,6 +22,10 @@ Storage units (``Generator.bess_<load>``, placed with PV customers) are fixed at
 scenario, ``p = setpoint · kW``, ``setpoint`` drawn per unit from ``STORAGE_SETPOINT`` (positive:
 discharging), ``q = 0``. ``p_avail_w`` of a storage unit is its set-point: it has nothing to
 curtail.
+
+Dispatchable generators (``Generator.dg_<load>``, at every 4th customer, ``variants/dg.py``) are
+set per scenario to ``p = setpoint · P^max``, ``setpoint`` drawn per unit from ``DG_SETPOINT``,
+``q = 0``: the power flow's operating point; the OPF dispatches them.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from gridfm_datakit_distr.config.schema import PV, PVProfile, StorageProfile
+from gridfm_datakit_distr.config.schema import PV, DGProfile, PVProfile, StorageProfile
 from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.variants.perturbation import Perturbation
@@ -146,26 +151,39 @@ class PVOutputs:
 
 
 @dataclass(frozen=True, slots=True)
-class StorageUnit:
+class RatedUnit:
+    """A generator with a power rating at a customer: a storage unit or a DG."""
+
     generator: str
-    """``Generator.bess_<load>``."""
+    """``Generator.bess_<load>`` or ``Generator.dg_<load>``."""
     load: str
     kw: float
-    """Power rating (kW)."""
+    """Power rating (kW): a storage unit's rating, a DG's capacity ``P^max``."""
 
 
-def storage_units(p: Perturbation) -> tuple[StorageUnit, ...]:
-    """The storage units a variant's perturbation placed, ordered by customer."""
+def _units(prefix: str, placed: dict[str, float]) -> tuple[RatedUnit, ...]:
     return tuple(
-        StorageUnit(f"Generator.bess_{load.split('.', 1)[1]}", load, kw)
-        for load, kw in sorted(p.storage_kw.items())
+        RatedUnit(f"Generator.{prefix}_{load.split('.', 1)[1]}", load, kw)
+        for load, kw in sorted(placed.items())
     )
+
+
+def storage_units(p: Perturbation) -> tuple[RatedUnit, ...]:
+    """The storage units a variant's perturbation placed, ordered by customer."""
+    return _units("bess", p.storage_kw)
+
+
+def dg_units(p: Perturbation) -> tuple[RatedUnit, ...]:
+    """The dispatchable generators of a variant, ordered by customer."""
+    return _units("dg", p.dg_kw)
 
 
 class StorageSetpoints:
     """The set-points of a variant's storage units, scenario by scenario."""
 
-    def __init__(self, units: Sequence[StorageUnit], profile: StorageProfile) -> None:
+    stream = ScenarioStream.STORAGE_SETPOINT
+
+    def __init__(self, units: Sequence[RatedUnit], profile: StorageProfile | DGProfile) -> None:
         self.units = tuple(units)
         self.profile = profile
         self.rated_w = np.array([1e3 * u.kw for u in self.units], dtype=np.float64)
@@ -175,5 +193,12 @@ class StorageSetpoints:
         spec = self.profile.setpoint
         if isinstance(spec, Fixed):
             return spec.value * self.rated_w
-        rng = scenario_rng(seed, net, k, s, ScenarioStream.STORAGE_SETPOINT)
+        rng = scenario_rng(seed, net, k, s, self.stream)
         return np.array([float(spec.sample(rng)) for _ in self.units]) * self.rated_w
+
+
+class DGSetpoints(StorageSetpoints):
+    """The power-flow set-points of a variant's DG, scenario by scenario (W): a fraction of the
+    capacity drawn per unit from their own stream."""
+
+    stream = ScenarioStream.DG_SETPOINT

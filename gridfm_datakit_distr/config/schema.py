@@ -371,11 +371,27 @@ class Storage(_Config):
     )
 
 
+class DG(_Config):
+    """Dispatchable generators ([Variants](variants.md#dispatchable-generators)), as in the DG
+    case study of Geth, Claeys and Deconinck (PSCC 2022): one unit at every 4th load (in name
+    order), every unit with the same capacity `P^max`, the smallest at which they congest the
+    network (computed per network, recorded in `manifest.json`). A unit is an OpenDSS generator
+    `Generator.dg_<load>` on the load's nodes; its set-point is drawn per scenario
+    (`scenarios.dg_profile`) and the OPF dispatches it within `0 <= p, q <= P^max`."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Place the network's dispatchable generators in every variant. `false` "
+        "(default): none, and every output is the same as without this section.",
+    )
+
+
 class DER(_Config):
     """Distributed energy resources added to every variant."""
 
     pv: PV = PV()
     storage: Storage = Storage()
+    dg: DG = DG()
 
 
 class SyntheticProfiles(_Config):
@@ -471,6 +487,19 @@ class StorageProfile(_Config):
     )
 
 
+class DGProfile(_Config):
+    """Set-points of the dispatchable generators per scenario
+    ([Scenarios](scenarios.md#dispatchable-generators))."""
+
+    setpoint: FractionSpec = Field(
+        default=Uniform(0.0, 1.0),
+        description="Active power of each unit in the power flow as a fraction of its capacity "
+        "`P^max`, drawn per unit and scenario; no reactive power. Assumption, no source: the "
+        "source gives the OPF's bounds only, so any point within them. In the OPF the units "
+        "are dispatched.",
+    )
+
+
 class Scenarios(_Config):
     """Operating points of each variant ([Scenarios](scenarios.md)); each scenario draws from its
     own streams."""
@@ -483,6 +512,7 @@ class Scenarios(_Config):
     profiles: Profiles = Profiles()
     pv_profile: PVProfile = PVProfile()
     storage_profile: StorageProfile = StorageProfile()
+    dg_profile: DGProfile = DGProfile()
     source_voltage_pu: PositiveSpec = Field(
         default=Uniform(0.98, 1.05),
         description="Source voltage magnitude (pu of the source's base voltage), drawn per "

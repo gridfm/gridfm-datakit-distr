@@ -12,6 +12,9 @@ Each quantity draws from its own stream of the variant's seed, in name order:
 - phase reallocation: ``round(fraction · n)`` of the ``n`` eligible single-phase loads, chosen
   uniformly, each moved to one of the other phases of its bus, neutral kept.
 
+Dispatchable generators are not drawn: one at every :data:`DG_EVERY`-th customer
+(:func:`dg_sites`), at the network's capacity (``variants/dg.py``), the same in every variant.
+
 :func:`check_edits` compares the line Yprims of the realised variant with the perturbation.
 """
 
@@ -27,10 +30,12 @@ from gridfm_datakit_distr.config.schema import PV, Storage, Variants
 from gridfm_datakit_distr.config.value_spec import Fixed
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel
 from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
-from gridfm_datakit_distr.variants.targets import LineTarget, VariantTargets
+from gridfm_datakit_distr.variants.targets import CustomerTarget, LineTarget, VariantTargets
 
 _IDENTITY = Fixed(1.0)
 _NO_PV = Fixed(0.0)
+DG_EVERY = 4
+"""A dispatchable generator at every 4th load (Geth, Claeys and Deconinck, PSCC 2022)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +67,9 @@ class Perturbation:
     """Drawn share of the PV customers with a storage unit."""
     storage_kw: dict[str, float] = field(default_factory=dict)
     """Customer load -> power rating of its storage unit (kW)."""
+    dg_kw: dict[str, float] = field(default_factory=dict)
+    """Customer load -> capacity ``P^max`` of its dispatchable generator (kW), not drawn: the
+    network's."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -76,6 +84,7 @@ class Perturbation:
             ("pv_reactive_fraction", self.pv_reactive_fraction),
             ("pv_reactive_threshold", self.pv_reactive_threshold),
             ("storage_kw", self.storage_kw),
+            ("dg_kw", self.dg_kw),
         ):
             if values:
                 data[key] = values
@@ -96,10 +105,12 @@ def sample_perturbation(
     *,
     der: PV | None = None,
     storage: Storage | None = None,
+    dg_kw: float | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
-    ``attempt``); with ``der``, the PV units of its customers too, and with ``storage`` the
-    storage units of the customers with PV."""
+    ``attempt``); with ``der``, the PV units of its customers too, with ``storage`` the
+    storage units of the customers with PV, and with ``dg_kw`` a dispatchable generator of that
+    capacity (kW) at each of :func:`dg_sites`."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -133,10 +144,18 @@ def sample_perturbation(
             phases[t.element] = (t.bus1(t.phase), t.bus1(new))
     rho, kwp, pf, fraction, threshold = _pv(der, targets, seed, net, k, attempt)
     share, storage_kw = _storage(storage, targets, set(kwp), seed, net, k, attempt)
+    dg = {c.element: dg_kw for c in dg_sites(targets)} if dg_kw is not None else {}
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
-        share, storage_kw,
+        share, storage_kw, dg,
     )  # fmt: skip
+
+
+def dg_sites(targets: VariantTargets) -> tuple[CustomerTarget, ...]:
+    """The customers with a dispatchable generator: the 4th, 8th, ... in the order of
+    :attr:`VariantTargets.customers` (every enabled load, in name order). Our reading: the
+    source gives neither an order nor a start."""
+    return targets.customers[DG_EVERY - 1 :: DG_EVERY]
 
 
 def _storage(
@@ -205,9 +224,9 @@ def _pv(
 def edit_script(
     p: Perturbation, targets: VariantTargets, window: tuple[float, float] = (0.6, 1.5)
 ) -> list[str]:
-    """OpenDSS commands realising ``p``: lines, grounding points, loads, PV units, then storage
-    units (on their customer's nodes, after its phase move; output set per scenario; constant
-    power within the load window ``window``, pu), each in name order."""
+    """OpenDSS commands realising ``p``: lines, grounding points, loads, PV units, storage units,
+    then dispatchable generators (on their customer's nodes, after its phase move; output set per
+    scenario; constant power within the load window ``window``, pu), each in name order."""
     script = []
     for t in targets.lines:
         alpha = p.line_length.get(t.element, 1.0)
@@ -226,7 +245,7 @@ def edit_script(
     for load in targets.loads:
         if load.element in p.phases:
             script.append(f"Edit {load.element} bus1={p.phases[load.element][1]}")
-    for prefix, placed in (("pv", p.pv_kwp), ("bess", p.storage_kw)):
+    for prefix, placed in (("pv", p.pv_kwp), ("bess", p.storage_kw), ("dg", p.dg_kw)):
         for c in targets.customers:
             if c.element in placed:
                 bus1 = p.phases[c.element][1] if c.element in p.phases else c.bus1

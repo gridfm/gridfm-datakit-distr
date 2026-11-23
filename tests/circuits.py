@@ -372,6 +372,38 @@ OPF_LOADS = {
 }
 
 
+# Dispatchable generators: an 11/0.4 kV transformer (100 kVA, neutral grounded through Rneut)
+# feeding a four-wire feeder with ten single-phase loads, defined out of name order: in name
+# order (h1, h10, h2, ...) the 4th and 8th are h3 and h7; in the engine's order h2 and h4.
+DG_FEEDER = {
+    "master.dss": """\
+Clear
+New Circuit.dg basekv=11 pu=1.0 phases=3 bus1=mv angle=0 MVAsc3=100 MVAsc1=100
+New Transformer.t windings=2 Buses=[mv.1.2.3 lv.1.2.3.4] Conns=[Delta Wye] kVs=[11 0.4]
+~ kVAs=[100 100] XHL=4 %Rs=[0.5 0.5] Rneut=1 Xneut=0
+New Linecode.lc4 nphases=4 units=km
+~ rmatrix=(0.5 | 0.1 0.5 | 0.1 0.1 0.5 | 0.1 0.1 0.1 0.6)
+~ xmatrix=(0.3 | 0.1 0.3 | 0.1 0.1 0.3 | 0.1 0.1 0.1 0.35)
+~ cmatrix=(0 | 0 0 | 0 0 0 | 0 0 0 0)
+New Line.l1 bus1=lv.1.2.3.4 bus2=b1.1.2.3.4 phases=4 linecode=lc4 length=0.15 units=km
+New Line.l2 bus1=b1.1.2.3.4 bus2=b2.1.2.3.4 phases=4 linecode=lc4 length=0.15 units=km
+New Line.l3 bus1=b2.1.2.3.4 bus2=b3.1.2.3.4 phases=4 linecode=lc4 length=0.15 units=km
+New Load.h5 bus1=b2.2.4 phases=1 kV=0.23 kW=3 kvar=1 model=1
+New Load.h1 bus1=b1.1.4 phases=1 kV=0.23 kW=3 kvar=1 model=1
+New Load.h10 bus1=b3.1.4 phases=1 kV=0.23 kW=2 kvar=0.5 model=1
+New Load.h2 bus1=b1.2.4 phases=1 kV=0.23 kW=4 kvar=1 model=1
+New Load.h9 bus1=b3.3.4 phases=1 kV=0.23 kW=3 kvar=1 model=1
+New Load.h3 bus1=b1.3.4 phases=1 kV=0.23 kW=2 kvar=0.5 model=1
+New Load.h8 bus1=b3.2.4 phases=1 kV=0.23 kW=3 kvar=1 model=1
+New Load.h4 bus1=b2.1.4 phases=1 kV=0.23 kW=3 kvar=1 model=1
+New Load.h7 bus1=b3.1.4 phases=1 kV=0.23 kW=4 kvar=1 model=1
+New Load.h6 bus1=b2.3.4 phases=1 kV=0.23 kW=2 kvar=0.5 model=1
+Set VoltageBases=[11 0.4]
+CalcVoltageBases
+""",
+}
+
+
 def opf_catalog(root: Path) -> Catalog:
     """A catalog of three networks under ``root/src``: ``t/lv`` (:data:`OPF_LOADS`) and ``t/mvlv``
     (:data:`MV_LV_RNEUT`, with a transformer) inside the OPF's scope, ``t/other``
@@ -387,6 +419,22 @@ def opf_catalog(root: Path) -> Catalog:
         "t/lv": Network(id="t/lv", source="src", master="lv/master.dss"),
         "t/mvlv": Network(id="t/mvlv", source="src", master="mvlv/master.dss"),
         "t/other": Network(id="t/other", source="src", master="other/master.dss"),
+    }
+    return Catalog(sources={"src": source}, networks=networks)
+
+
+def dg_catalog(root: Path) -> Catalog:
+    """A catalog of two networks under ``root/src``: ``t/dg`` (:data:`DG_FEEDER`, two DG sites)
+    and ``t/lv`` (:data:`OPF_LOADS`, three loads: no DG site)."""
+    write_circuit(root / "src" / "dg", DG_FEEDER)
+    write_circuit(root / "src" / "lv", OPF_LOADS)
+    source = ArchivesSource(
+        kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
+        citation="-", archives={},
+    )  # fmt: skip
+    networks = {
+        "t/dg": Network(id="t/dg", source="src", master="dg/master.dss"),
+        "t/lv": Network(id="t/lv", source="src", master="lv/master.dss"),
     }
     return Catalog(sources={"src": source}, networks=networks)
 

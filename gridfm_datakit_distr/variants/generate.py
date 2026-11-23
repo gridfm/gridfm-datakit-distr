@@ -129,6 +129,7 @@ def readback_mismatches(p: Perturbation, prepared: PreparedNetwork) -> list[str]
         return None if e is None else e.terminals[0]
 
     units = [("pv", load) for load in p.pv_kwp] + [("bess", load) for load in p.storage_kw]
+    units += [("dg", load) for load in p.dg_kw]
     for prefix, load in units:
         generator = f"Generator.{prefix}_{load.split('.', 1)[1]}"
         if nodes_of(generator) is None or nodes_of(generator) != nodes_of(load):
@@ -147,10 +148,12 @@ def generate_variant(
     root: Path | None = None,
     der: PV | None = None,
     storage: Storage | None = None,
+    dg_kw: float | None = None,
     keep_prepared: bool = False,
 ) -> VariantResult:
     """Variant ``k`` of ``network``; with ``der``, the PV units of its customers, with
-    ``storage`` the storage units of those with PV. Its draws depend
+    ``storage`` the storage units of those with PV, with ``dg_kw`` the network's dispatchable
+    generators at that capacity (kW). Its draws depend
     on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
     carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
@@ -159,7 +162,9 @@ def generate_variant(
     opts = options or PrepareOptions()
     failures: list[str] = []
     for attempt in range(MAX_ATTEMPTS):
-        p = sample_perturbation(config, targets, seed, net, k, attempt, der=der, storage=storage)
+        p = sample_perturbation(
+            config, targets, seed, net, k, attempt, der=der, storage=storage, dg_kw=dg_kw
+        )
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)
         deviation = check_edits(p, targets, prepared.model)

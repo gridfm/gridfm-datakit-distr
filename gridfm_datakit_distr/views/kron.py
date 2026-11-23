@@ -206,7 +206,9 @@ class KronView:
         if self.identity:
             return KronOutcome("converged", outcome.v)
         try:
-            der_p, der_q = der_setpoints(outcome.pv_p_w, outcome.pv_q_var, outcome.bess_p_w)
+            der_p, der_q = der_setpoints(
+                outcome.pv_p_w, outcome.pv_q_var, outcome.bess_p_w, outcome.dg_p_w
+            )
             set_setpoints(
                 self.ctx.api, self._load_idx, outcome.load_p_w, outcome.load_q_var, self._der_idx,
                 der_p, der_q, self._source, outcome.source_v_pu,

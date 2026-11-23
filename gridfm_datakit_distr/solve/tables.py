@@ -123,8 +123,10 @@ def chunk_tables(
     der_idx = np.array([index[g] for g in runner.der_generators], dtype=np.int32)
     pv_units = runner.pv.units if runner.pv is not None else ()
     bess_units = runner.storage.units if runner.storage is not None else ()
-    der_type = ["pv"] * len(pv_units) + ["bess"] * len(bess_units)
-    rated = np.array([u.s_rated_va for u in pv_units] + [1e3 * u.kw for u in bess_units])
+    dg_units = runner.dg.units if runner.dg is not None else ()
+    der_type = ["pv"] * len(pv_units) + ["bess"] * len(bess_units) + ["dg"] * len(dg_units)
+    dg_max = np.array([1e3 * u.kw for u in dg_units])
+    rated = np.r_[[u.s_rated_va for u in pv_units], [1e3 * u.kw for u in bess_units], dg_max]
     engines = json.dumps({k: v for k, v in versions.items() if k != "generator"}, sort_keys=True)
     meta = [
         {
@@ -176,10 +178,11 @@ def chunk_tables(
     )
     der_parts = []
     for o in drawn:
-        p, q = der_setpoints(o.pv_p_w, o.pv_q_var, o.bess_p_w)
+        p, q = der_setpoints(o.pv_p_w, o.pv_q_var, o.bess_p_w, o.dg_p_w)
         if p is None:
             continue
-        p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w) if a is not None]  # storage: its p
+        dg_avail = None if o.dg_p_w is None else dg_max  # storage: its p; DG: its capacity
+        p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w, dg_avail) if a is not None]
         der_parts.append(
             pa.table(
                 {

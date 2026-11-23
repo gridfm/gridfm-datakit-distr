@@ -27,6 +27,7 @@ from gridfm_datakit_distr.config.value_spec import ValueSpec
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork
 from gridfm_datakit_distr.scenarios.profiles import customers_of
 from gridfm_datakit_distr.solve.extraction import build_plan
+from gridfm_datakit_distr.variants.perturbation import DG_EVERY
 
 SECONDS = (3.7e-3, 0.03e-6, 22.4e-6)
 """Seconds per scenario: constant, per node, per customer (measured without views)."""
@@ -79,6 +80,7 @@ def estimate_network(prepared: PreparedNetwork, config: GenerationConfig) -> Net
     controls = bool(api.RegControls.Count() or api.CapControls.Count())
     pv = customers * mean_of(config.der.pv.penetration)
     pv *= 1 + mean_of(config.der.storage.share)  # storage units: rows of `der` too
+    pv += customers // DG_EVERY if config.der.dg.enabled else 0  # DG rows
     b = BYTES[config.settings.float_precision]
     size = b["meta"] + b["node"] * nodes + b["load"] * customers + b["der"] * pv
     if config.labels.element_currents:
