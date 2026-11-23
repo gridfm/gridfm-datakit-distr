@@ -186,6 +186,8 @@ def list_remote(source: SourceT, discover: bool = False) -> list[RemoteFile]:
             safe_relative_path(item.path)
         except CatalogError as exc:
             raise FetchError(f"{source.id}: the remote offers an unsafe path: {exc}") from exc
+        if not item.url.startswith("https://"):  # urllib would also open file:// and others
+            raise FetchError(f"{source.id}: {item.path}: not an https URL: {item.url}")
     return files
 
 

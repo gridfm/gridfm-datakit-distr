@@ -228,14 +228,25 @@ def test_csiro_listing_sizes_and_excludes(tmp_path: Path, web: FakeWeb) -> None:
         fetch_source(without_readme, root=tmp_path, force=True)
 
 
-def test_unsafe_remote_path_is_rejected(tmp_path: Path, web: FakeWeb) -> None:
-    listing = [{"filename": "../escape.dss", "fileSize": 1, "link": {"href": "https://s3.test/x"}}]
+@pytest.mark.parametrize(
+    ("filename", "href", "message"),
+    [
+        ("../escape.dss", "https://s3.test/x", "unsafe path"),
+        ("x.dss", "file:///home/user/.ssh/id_rsa", "not an https URL"),
+        ("x.dss", "http://s3.test/x", "not an https URL"),
+    ],
+)
+def test_unsafe_remote_path_or_url_is_rejected(
+    tmp_path: Path, web: FakeWeb, filename: str, href: str, message: str
+) -> None:
+    listing = [{"filename": filename, "fileSize": 1, "link": {"href": href}}]
     web.pages["https://dap.test/ws/collections/7v1/data"] = json.dumps({"file": listing}).encode()
     source = CsiroDapSource(
         id="dap", kind="csiro_dap", collection=7, version=1, api_base="https://dap.test/ws", **META
     )
-    with pytest.raises(FetchError, match="unsafe path"):
+    with pytest.raises(FetchError, match=message):
         fetch_source(source, root=tmp_path, allow_unverified=True)
+    assert web.requests == ["https://dap.test/ws/collections/7v1/data"]  # only the listing
 
 
 # ---------------------------------------------------------------- local copies
