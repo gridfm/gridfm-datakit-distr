@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from gridfm_datakit_distr.config.schema import PV, PVProfile, Variants
+from gridfm_datakit_distr.config.value_spec import Fixed
 from gridfm_datakit_distr.model.electrical import GROUND
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
@@ -190,6 +191,56 @@ def test_outputs_follow_the_profile_and_the_rating(
     free = [fleet.draw(SEED, 0, 0, s, time_s=None).hour for s in range(20)]  # synthetic loads
     assert len(set(free)) == 20
     assert all(0 <= h < 24 for h in free)
+
+
+def test_the_default_availability_changes_nothing(
+    base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
+) -> None:
+    fleet, _ = outputs(base, targets)
+    assert fleet.profile.availability == Fixed(1.0)
+    explicit = PVOutputs(fleet.units, fleet.spec, PVProfile(availability=1.0))
+    for s in range(5):
+        a = fleet.draw(SEED, 0, 0, s, time_s=11 * 3600)
+        b = explicit.draw(SEED, 0, 0, s, time_s=11 * 3600)
+        kwp = np.array([u.kwp for u in fleet.units])
+        expected = 1e3 * kwp * clear_sky(11.0) * cloud_factor(a.cloudiness)
+        assert np.array_equal(a.p_avail_w, expected)  # bit for bit as before availability
+        assert np.array_equal(a.p_avail_w, b.p_avail_w)
+
+
+def test_a_drawn_availability_varies_per_unit(
+    base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
+) -> None:
+    fleet, _ = outputs(base, targets)
+    spec = {"distribution": "uniform", "low": 0.5, "high": 1.0}
+    varied = PVOutputs(fleet.units, fleet.spec, PVProfile(availability=spec))
+    kwp = np.array([u.kwp for u in fleet.units])
+    shares = []
+    for s in range(10):
+        draw = varied.draw(SEED, 0, 0, s, time_s=12 * 3600)
+        assert draw.cloudiness == fleet.draw(SEED, 0, 0, s, time_s=12 * 3600).cloudiness
+        share = draw.p_avail_w / (1e3 * kwp * cloud_factor(draw.cloudiness))
+        assert ((share >= 0.5) & (share < 1.0)).all()
+        assert np.array_equal(draw.p_avail_w, varied.draw(SEED, 0, 0, s, 12 * 3600).p_avail_w)
+        shares.append(share)
+    ratio = np.array(shares)[:, 0] / np.array(shares)[:, 1]
+    assert np.ptp(ratio) > 0.1  # two units' outputs are no longer proportional across scenarios
+
+
+def test_a_unit_out_of_service_injects_nothing(
+    base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
+) -> None:
+    fleet, _ = outputs(base, targets)
+    spec = {"distribution": "choice", "values": [0.0, 1.0], "weights": [0.5, 0.5]}
+    varied = PVOutputs(fleet.units, fleet.spec, PVProfile(availability=spec))
+    draws = [varied.draw(SEED, 0, 0, s, time_s=12 * 3600) for s in range(5)]
+    off = np.concatenate([d.p_avail_w == 0 for d in draws])
+    assert off.any()
+    assert not off.all()
+    for d in draws:
+        out = d.p_avail_w == 0
+        assert not d.p_w[out].any()
+        assert not d.q_var[out].any()
 
 
 def test_an_undersized_inverter_clips_the_output(

@@ -32,6 +32,7 @@ scenarios:
       local_sigma: 0.3 # lognormal noise on each customer's load
   pv_profile:
     cloudiness: {distribution: uniform, low: 0.0, high: 1.0} # one cloud cover per scenario
+    availability: 1.0 # factor per unit and scenario; a distribution makes units differ
 
 controls:
   mode: static_settle # settle regulators and capacitors, jitter the taps, settle again, freeze

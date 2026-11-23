@@ -169,6 +169,7 @@ def test_stream_codes_are_stable() -> None:
         "TAP_JITTER": 6,
         "CUSTOMER_TIMES": 7,
         "OPF_COSTS": 8,
+        "PV_AVAILABILITY": 9,
     }
 
 

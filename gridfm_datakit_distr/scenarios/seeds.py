@@ -58,6 +58,8 @@ class ScenarioStream(IntEnum):
     """Per-customer profile times (``same_timestamp: false``); PV keeps ``PROFILE_TIME``."""
     OPF_COSTS = 8
     """Cost coefficients of the OPF's preset ``sampled``."""
+    PV_AVAILABILITY = 9
+    """Availability of each PV unit (``scenarios.pv_profile.availability``)."""
 
 
 def network_key(network_id: str) -> int:

@@ -44,11 +44,16 @@ be `off_setpoint`). The stored setpoints therefore determine the voltages
 
 For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario:
 
-- available power `p_avail = kWp · clear_sky(h) · (1 − 0.75 c^3.4)`;
+- available power `p_avail = kWp · clear_sky(h) · (1 − 0.75 c^3.4) · a`;
 - `clear_sky(h) = max(0, cos(π (h − 12) / 12))`: sunrise 6:00, noon peak, sunset 18:00, the same
   every day, no location or date;
 - `c`, the cloud cover (`scenarios.pv_profile.cloudiness`, uniform 0–1), one per scenario for the
   whole network; `1 − 0.75 c^3.4` is the Kasten–Czeplak relation for global irradiance;
+- `a`, the unit's availability (`scenarios.pv_profile.availability`), drawn per unit and scenario:
+  orientation, shading, or 0 for a unit out of service. The default 1 gives every unit of a
+  variant the same share of its kWp in a scenario, so their outputs are proportional across
+  scenarios; a distribution breaks that, e.g. `{distribution: choice, values: [0, 1], weights:
+  [0.05, 0.95]}` puts one unit in twenty out of service;
 - `h`, the time of day of the load profile when all customers share one time (the profile's start
   taken as midnight). Otherwise (`synthetic` loads, or `same_timestamp: false`) `h` is uniform
   over 24 h, independent of the loads: half of such scenarios fall at night and have no PV

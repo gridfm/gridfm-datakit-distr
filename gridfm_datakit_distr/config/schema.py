@@ -406,7 +406,7 @@ class Profiles(_Config):
 
 class PVProfile(_Config):
     """PV output per scenario: available power = kWp · clear-sky shape of the hour · cloud
-    factor, injected up to the inverter rating ([Scenarios](scenarios.md))."""
+    factor · availability, injected up to the inverter rating ([Scenarios](scenarios.md))."""
 
     provider: Literal["synthetic_clear_sky"] = Field(
         default="synthetic_clear_sky",
@@ -419,6 +419,14 @@ class PVProfile(_Config):
         default=Uniform(0.0, 1.0),
         description="Cloud cover fraction `c`, drawn per scenario for the whole network; the "
         "clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %.",
+    )
+    availability: FractionSpec = Field(
+        default=Fixed(1.0),
+        description="Factor on each unit's available power, drawn per unit and scenario "
+        "(orientation, shading, a unit out of service at 0). With 1 every unit of a variant "
+        "delivers the same share of its kWp in a scenario; a distribution makes their outputs "
+        "differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for "
+        "units out of service.",
     )
 
 

@@ -3,13 +3,14 @@
 Placement is part of the variant (``variants/perturbation.py``): ``Generator.pv_<load>`` on its
 customer's nodes, ``model=1`` (constant P and Q within the load window).
 
-Output per scenario: ``p_avail = kWp · clear_sky(hour) · cloud_factor(cloudiness)``, injected up to
-the inverter rating, ``p = min(p_avail, s_rated)`` with ``s_rated = inverter_kva_per_kwp · kWp``
-(clipping; no curtailment in PF labels); ``q = -p · tan(acos(pf))`` (the inverter absorbs reactive
-power below unit power factor), limited so that ``p² + q² ≤ s_rated²``. The hour is the time of
-day of the load profile when the scenario has one (seconds since the profile start, taken as
+Output per scenario: ``p_avail = kWp · clear_sky(hour) · cloud_factor(cloudiness) · a``, injected
+up to the inverter rating, ``p = min(p_avail, s_rated)`` with ``s_rated = inverter_kva_per_kwp ·
+kWp`` (clipping; no curtailment in PF labels); ``q = -p · tan(acos(pf))`` (the inverter absorbs
+reactive power below unit power factor), limited so that ``p² + q² ≤ s_rated²``. The hour is the
+time of day of the load profile when the scenario has one (seconds since the profile start, taken as
 midnight), else drawn uniformly from the scenario's ``PROFILE_TIME`` stream; cloudiness, one per
-scenario for the whole network, from ``PV_OUTPUT``.
+scenario for the whole network, from ``PV_OUTPUT``; the availability ``a``, one per unit and
+scenario from ``PV_AVAILABILITY`` (a fixed value draws nothing).
 
 ``clear_sky`` is a synthetic equinox shape, ``max(0, cos(π (h - 12) / 12))``: sunrise 6:00, solar
 noon 12:00, sunset 18:00, no location or date. ``cloud_factor`` is the Kasten-Czeplak relation for
@@ -126,7 +127,13 @@ class PVOutputs:
             hour = (int(time_s) % DAY_S) / 3600.0
         rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_OUTPUT)
         cloudiness = float(self.profile.cloudiness.sample(rng))
-        p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness)
+        spec = self.profile.availability
+        if isinstance(spec, Fixed):
+            availability: float | NDArray[np.float64] = spec.value
+        else:
+            rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_AVAILABILITY)
+            availability = np.array([float(spec.sample(rng)) for _ in self.units])
+        p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness) * availability
         p = np.minimum(p_avail, self._rated)  # inverter clipping when kVA < kWp
         q_limit = np.sqrt(np.maximum(self._rated**2 - p**2, 0.0))
         q = -np.minimum(p * self._tan, q_limit)

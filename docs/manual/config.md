@@ -226,12 +226,13 @@ and `pf` per customer and scenario. The loads' nominal reactive powers are not u
 ### `scenarios.pv_profile`
 
 PV output per scenario: available power = kWp · clear-sky shape of the hour · cloud
-factor, injected up to the inverter rating ([Scenarios](scenarios.md)).
+factor · availability, injected up to the inverter rating ([Scenarios](scenarios.md)).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `scenarios.pv_profile.provider` | one of `synthetic_clear_sky` | `synthetic_clear_sky` | `synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and 18:00, no date or location. The hour `h` is the load profile's time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios fall at night, with no PV output. |
 | `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %. |
+| `scenarios.pv_profile.availability` | value spec, ≥ 0 and ≤ 1 | `1.0` | Factor on each unit's available power, drawn per unit and scenario (orientation, shading, a unit out of service at 0). With 1 every unit of a variant delivers the same share of its kWp in a scenario; a distribution makes their outputs differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for units out of service. |
 
 ## `controls`
 

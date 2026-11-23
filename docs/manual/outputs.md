@@ -349,7 +349,7 @@ tables determine the voltages.
 | `element_idx` | int32 | DER element (OpenDSS `Generator` in v1) |
 | `der_type` | string | `pv`, `bess`, `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
 | `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive) |
-| `p_avail_w` | float32/64 | available active power (PV: from irradiance/profile × size) |
+| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output)) |
 | `s_rated_va` | float32/64 | inverter rating |
 
 ---
