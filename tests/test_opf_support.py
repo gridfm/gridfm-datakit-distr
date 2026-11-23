@@ -14,6 +14,7 @@ from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.opf.support import floating_buses, unsupported_reason
 from tests.circuits import (
     ALL_CLASSES,
+    DG_FEEDER,
     FOUR_WIRE,
     MV_LV_FLOATING,
     MV_LV_FLOATING_CAPACITIVE,
@@ -41,9 +42,17 @@ def test_transformers_and_delta_loads_are_covered(tmp_path: Path) -> None:
 def test_pv_systems_storage_and_other_generators_are_not_covered(tmp_path: Path) -> None:
     reason = unsupported_reason(model_of(tmp_path, ALL_CLASSES))
     assert reason is not None
-    assert "generator that is not a PV or storage unit: Generator.g" in reason
+    assert "generator that is not a PV, storage or DG unit: Generator.g" in reason
     assert "pvsystem not covered by the OPF yet: PVSystem.pv" in reason
     assert "storage not covered by the OPF yet: Storage.st" in reason
+
+
+def test_dispatchable_generators_are_covered(tmp_path: Path) -> None:
+    dg = "New Generator.dg_h3 bus1=b1.3.4 phases=1 kV=0.23 kW=5 kvar=0 model=1\n"
+    circuit = {"master.dss": DG_FEEDER["master.dss"].replace("Set Volt", dg + "Set Volt")}
+    model = model_of(tmp_path, circuit)
+    assert "Generator.dg_h3" in {e.name for e in model.elements}
+    assert unsupported_reason(model) is None
 
 
 def test_the_power_flow_path_does_not_import_casadi() -> None:
@@ -51,6 +60,7 @@ def test_the_power_flow_path_does_not_import_casadi() -> None:
         "import sys\n"
         "import gridfm_datakit_distr.cli, gridfm_datakit_distr.solve.executor\n"
         "import gridfm_datakit_distr.solve.pf_batch, gridfm_datakit_distr.opf.support\n"
+        "import gridfm_datakit_distr.variants.dg\n"
         "assert 'casadi' not in sys.modules, 'casadi imported'\n"
     )
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

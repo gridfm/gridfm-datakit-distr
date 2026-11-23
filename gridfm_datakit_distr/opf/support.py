@@ -5,10 +5,11 @@ elements (lines, switches, transformers, capacitors, reactors) enter through the
 the network state, with one voltage source grounded at its second terminal, loads, PV units
 (``Generator.pv_<load>``) and storage units (``Generator.bess_<load>``, fixed at their set-point)
 connected wye (phases to a neutral node or to ground) or delta, on any number of phases
-(:func:`~gridfm_datakit_distr.model.ground.unit_branches`). Other generators, PV systems and
-``Storage`` elements are not covered yet. Also the OPF's bounds evaluated at given voltages
-(:func:`vpn_bounds`, :func:`winding_va`), usable without the OPF. No CasADi here: the check runs
-without the ``opf`` extra.
+(:func:`~gridfm_datakit_distr.model.ground.unit_branches`), and dispatchable generators
+(``Generator.dg_<load>``). Other generators, PV systems and ``Storage`` elements are not covered
+yet. Also the OPF's bounds evaluated at given voltages (:func:`vpn_bounds`, :func:`winding_va`),
+which the capacity of the dispatchable generators uses without the OPF. No CasADi here: the
+check runs without the ``opf`` extra.
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ PV_PREFIX = "generator.pv_"
 BESS_PREFIX = "generator.bess_"
 """Storage units, ``Generator.bess_<load>``: fixed injections in the OPF."""
 FloatArray = NDArray[np.float64]
+DG_PREFIX = "generator.dg_"
+"""Dispatchable generators, ``Generator.dg_<load>``: controls of the OPF, after the PV units."""
 PD_CLASSES = frozenset({"line", "switch", "transformer", "capacitor", "reactor"})
 """Power-delivery classes: they enter through their admittances at the network state."""
 MAX_NAMES = 3
@@ -84,8 +87,10 @@ def _reason(model: ElectricalModel, element: Element) -> str | None:
     if cls == "vsource":
         grounded = all(n == GROUND for terminal in element.terminals[1:] for n in terminal)
         return None if grounded else "voltage source not grounded at its second terminal"
-    if cls == "generator" and not element.name.lower().startswith((PV_PREFIX, BESS_PREFIX)):
-        return "generator that is not a PV or storage unit"
+    if cls == "generator" and not element.name.lower().startswith(
+        (PV_PREFIX, BESS_PREFIX, DG_PREFIX)
+    ):
+        return "generator that is not a PV, storage or DG unit"
     if cls in ("load", "generator"):
         covered = unit_branches(model, element) is not None
         return None if covered else f"{cls} with a connection not covered by the OPF"

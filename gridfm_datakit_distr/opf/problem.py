@@ -1,8 +1,9 @@
 """The OPF problem of one network state: a nodal current-voltage NLP solved with Ipopt (CasADi).
 
 Unknowns: the node voltages in rectangular coordinates, one current per branch of every load,
-storage unit and PV unit, and the active and reactive power of each PV unit. A storage unit is
-fixed at its set-point: a load of minus its power. Constraints:
+storage unit, PV unit and dispatchable generator (DG), and the active and reactive power of each
+PV unit and DG (the controls, PV units first). A storage unit is fixed at its set-point: a load of
+minus its power. Constraints:
 
 - Kirchhoff's current law at every node, ``(Y_state + Y_s) V - Y_s E = C_g I_g - C_l I_l``,
   linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus` (lines,
@@ -10,14 +11,17 @@ fixed at its set-point: a load of minus its power. Constraints:
   admittance and ideal voltages (:class:`Source`);
 - each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.model.ground.unit_branches`:
   wye, delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's
-  constant power (a storage unit's: minus its set-point), the PV unit's ``p + jq``;
+  constant power (a storage unit's: minus its set-point), the control's ``p + jq``;
 - PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max``
   (the unit's reactive limit);
+- DG: ``0 <= p <= p_max`` and ``0 <= q <= p_max``, box bounds without a rating circle (Geth,
+  Claeys and Deconinck, PSCC 2022);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
   has no neutral node), per unit of the node's nominal voltage;
 - ``|S| <= rating`` into winding 1 of every transformer with a rating.
 
-Objective: ``sum_k (c2_k p_k^2 + c1_k p_k)`` over the source and the PV units (:class:`Costs`),
+Objective: ``sum_k (c2_k p_k^2 + c1_k p_k)`` over the source, the PV units and the DG
+(:class:`Costs`),
 ``p_k`` the active power element ``k`` delivers; the source's is that of its ideal voltages,
 ``Re sum E conj(Y_s (E - V_s))``. The model is built once per network state; the source voltage
 and the costs are CasADi parameters, the loads, PV limits and ratings enter as the bounds of the
@@ -30,7 +34,7 @@ Requires the ``opf`` extra (CasADi).
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import casadi as ca
@@ -41,7 +45,12 @@ from numpy.typing import ArrayLike, NDArray
 from gridfm_datakit_distr.extract.source import Source
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 from gridfm_datakit_distr.model.ground import conventional_zones, unit_branches
-from gridfm_datakit_distr.opf.support import BESS_PREFIX, unsupported_reason, vpn_bounds
+from gridfm_datakit_distr.opf.support import (
+    BESS_PREFIX,
+    DG_PREFIX,
+    unsupported_reason,
+    vpn_bounds,
+)
 
 S_BASE_VA = 1e3
 """Default and smallest power base of the NLP's scaling (VA): :func:`power_base`."""
@@ -57,18 +66,25 @@ FloatArray = NDArray[np.float64]
 @dataclass(frozen=True, slots=True, eq=False)
 class Costs:
     """Coefficients of ``c2 p^2 + c1 p`` per controllable element: the source, then the PV units
-    in :attr:`OPFProblem.pv_names` order; ``p`` in W, ``c1`` per W, ``c2`` per W^2."""
+    in :attr:`OPFProblem.pv_names` order, then the DG in :attr:`OPFProblem.dg_names` order; ``p``
+    in W, ``c1`` per W, ``c2`` per W^2."""
 
     c1: FloatArray
     c2: FloatArray
 
 
-def economic(n_pv: int) -> Costs:
-    """Preset ``economic``: source ``c1 = 1``, everything else 0. The objective is then the power
-    the source delivers (W): the minimum import."""
-    c1 = np.zeros(1 + n_pv)
-    c1[0] = 1.0
-    return Costs(c1=c1, c2=np.zeros(1 + n_pv))
+DG_C1 = 0.1
+"""``c1`` of a DG in the preset ``economic``: a tenth of the source's, as Geth, Claeys and
+Deconinck (PSCC 2022, DG case study: "ten times smaller than the generation cost of the reference
+bus generator")."""
+
+
+def economic(n_pv: int, n_dg: int = 0) -> Costs:
+    """Preset ``economic``: source ``c1 = 1``, DG ``c1 = DG_C1``, everything else 0. Without DG
+    the objective is the power the source delivers (W): the minimum import. Export counts as
+    negative import: with DG the optimum can export."""
+    c1 = np.r_[1.0, np.zeros(n_pv), np.full(n_dg, DG_C1)]
+    return Costs(c1=c1, c2=np.zeros(1 + n_pv + n_dg))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -90,6 +106,10 @@ class OPFResult:
     source_p_w: float
     """Active power the source delivers at the returned point (W): that of its ideal voltages,
     behind its impedance (the ``p`` of the source's cost)."""
+    dg_p_w: FloatArray = field(default_factory=lambda: np.zeros(0))
+    """Active power each DG injects (W), in :attr:`OPFProblem.dg_names` order."""
+    dg_q_var: FloatArray = field(default_factory=lambda: np.zeros(0))
+    """Reactive power each DG injects (var)."""
 
     @property
     def solved(self) -> bool:
@@ -122,7 +142,8 @@ class OPFProblem:
         """Zones whose voltage to ground is a numerical convention: only differences count."""
         generators = _devices(model, "generator")
         bess = [e for e in generators if e.name.lower().startswith(BESS_PREFIX)]
-        pvs = [e for e in generators if not e.name.lower().startswith(BESS_PREFIX)]
+        dgs = [e for e in generators if e.name.lower().startswith(DG_PREFIX)]
+        pvs = [e for e in generators if not e.name.lower().startswith((BESS_PREFIX, DG_PREFIX))]
         loads = _devices(model, "load")
         self.load_names = tuple(e.name for e in loads)
         """Load elements by name: the order of the scenario's customers."""
@@ -132,11 +153,16 @@ class OPFProblem:
         loads = loads + bess  # a storage unit is a load of minus its set-point
         self.pv_names = tuple(e.name for e in pvs)
         """PV generators by name: the order of the variant's PV units."""
+        self.dg_names = tuple(e.name for e in dgs)
+        """Dispatchable generators by name, the controls after the PV units: the order of the
+        network's DG."""
+        self._n_pv = len(pvs)
+        controls = pvs + dgs
         rated = [e for e in _devices(model, "transformer") if e.rating_va]
         self.transformer_names = tuple(e.name for e in rated)
         """Transformers whose apparent power at winding 1 is bounded by their rating."""
-        n, nl, ng, nt = model.n_nodes, len(loads), len(pvs), len(rated)
-        lb, gb = _branches(model, loads), _branches(model, pvs)
+        n, nl, ng, nt = model.n_nodes, len(loads), len(controls), len(rated)
+        lb, gb = _branches(model, loads), _branches(model, controls)
         self._lb, self._gb = lb, gb
         self._n, self._nl, self._ng = n, nl, ng
         self._load_share = _shares(lb, nl)  # (branches, loads): 1 / n_branches
@@ -219,7 +245,8 @@ class OPFProblem:
         """The NLP's variables at a power-flow solution, per unit as the problem scales them."""
         v = start.v / self._vb
         il = _branch_currents(v, self._vb, self._lb, load_pu)
-        g = (np.asarray(start.pv_p_w) + 1j * np.asarray(start.pv_q_var)) / self._s_base
+        p = np.r_[np.asarray(start.pv_p_w), np.asarray(start.dg_p_w)]
+        g = (p + 1j * np.r_[np.asarray(start.pv_q_var), np.asarray(start.dg_q_var)]) / self._s_base
         ig = _branch_currents(v, self._vb, self._gb, g)
         parts = [v.real, v.imag, il.real, il.imag, ig.real, ig.imag, g.real, g.imag]
         return np.asarray(np.concatenate(parts), dtype=np.float64)
@@ -236,6 +263,7 @@ class OPFProblem:
         pv_q_max_var: ArrayLike | None = None,
         start: PowerFlowStart | None = None,
         bess_p_w: ArrayLike = (),
+        dg_p_max_w: ArrayLike = (),
     ) -> OPFResult:
         """Solve one scenario from a flat start (source voltages ``source_v_pu · E``, neutral 0),
         or from ``start``, a power-flow solution of the same scenario.
@@ -243,16 +271,21 @@ class OPFProblem:
         Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA), each
         drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
         unit (default: the rating alone); ``bess_p_w``: the storage units' fixed set-points in
-        :attr:`bess_names` order (W, discharging positive, q = 0). The status is returned, never
-        raised.
+        :attr:`bess_names` order (W, discharging positive, q = 0); ``dg_p_max_w``: the DG's
+        capacities in :attr:`dg_names` order (W), the bound of both ``p`` and ``q``. The status is
+        returned, never raised.
         """
         n, nc, ng, s = self._n, self._n_customers, self._ng, self._s_base
-        nb = self._nl - nc
+        nb, npv = self._nl - nc, self._n_pv
+        nd = ng - npv
         pl = np.r_[_vector(load_p_w, nc, "load_p_w"), -_vector(bess_p_w, nb, "bess_p_w")] / s
         ql = np.r_[_vector(load_q_var, nc, "load_q_var"), np.zeros(nb)] / s
-        p_avail = _vector(pv_p_avail_w, ng, "pv_p_avail_w") / s
-        s_rated = _vector(pv_s_rated_va, ng, "pv_s_rated_va") / s
-        q_max = s_rated if pv_q_max_var is None else _vector(pv_q_max_var, ng, "pv_q_max_var") / s
+        p_max = _vector(dg_p_max_w, nd, "dg_p_max_w") / s
+        p_avail = np.r_[_vector(pv_p_avail_w, npv, "pv_p_avail_w") / s, p_max]
+        s_rated = _vector(pv_s_rated_va, npv, "pv_s_rated_va") / s
+        q_pv = s_rated if pv_q_max_var is None else _vector(pv_q_max_var, npv, "pv_q_max_var") / s
+        q_lo, q_hi = np.r_[-q_pv, np.zeros(nd)], np.r_[q_pv, p_max]
+        s_rated = np.r_[s_rated, np.full(nd, np.inf)]  # DG: no rating circle
         c1, c2 = _vector(costs.c1, 1 + ng, "c1"), _vector(costs.c2, 1 + ng, "c2") * s
         free = np.full(2 * n + 2 * self._nlb + 2 * self._ngb, np.inf)
         plb, qlb = self._load_share @ pl, self._load_share @ ql
@@ -261,8 +294,8 @@ class OPFProblem:
         pv_rows = np.zeros(2 * self._ngb)
         t_hi = self._s_rated2 / s**2
         bounds = {
-            "lbx": np.r_[-free, np.zeros(ng), -q_max],
-            "ubx": np.r_[free, p_avail, q_max],
+            "lbx": np.r_[-free, np.zeros(ng), q_lo],
+            "ubx": np.r_[free, p_avail, q_hi],
             "lbg": np.r_[zeros, plb, qlb, pv_rows, lo, np.full(ng + self._nt, -np.inf)],
             "ubg": np.r_[zeros, plb, qlb, pv_rows, hi, s_rated**2, t_hi],
         }
@@ -284,20 +317,24 @@ class OPFProblem:
             iterations=int(stats["iter_count"]),
             t_solve_s=t_solve,
             v=(x[:n] + 1j * x[n : 2 * n]).astype(np.complex128) * self._vb,
-            pv_p_w=x[o : o + ng] * s,
-            pv_q_var=x[o + ng :] * s,
+            pv_p_w=x[o : o + npv] * s,
+            pv_q_var=x[o + ng : o + ng + npv] * s,
             source_p_w=float(self._p_source(x, par)) * s,
+            dg_p_w=x[o + npv : o + ng] * s,
+            dg_q_var=x[o + ng + npv :] * s,
         )
 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class PowerFlowStart:
-    """A power-flow solution of the scenario as the NLP's start: node voltages (V) and the PV
-    units' outputs (W, var), in the problem's orders."""
+    """A power-flow solution of the scenario as the NLP's start: node voltages (V), the PV
+    units' and the DG's outputs (W, var), in the problem's orders."""
 
     v: NDArray[np.complex128]
     pv_p_w: FloatArray
     pv_q_var: FloatArray
+    dg_p_w: FloatArray = field(default_factory=lambda: np.zeros(0))
+    dg_q_var: FloatArray = field(default_factory=lambda: np.zeros(0))
 
 
 def power_base(load_va: ArrayLike) -> float:

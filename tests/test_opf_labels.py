@@ -25,6 +25,7 @@ from gridfm_datakit_distr.io.writer import DatasetWriter
 from gridfm_datakit_distr.opf.labels import NO_FREE_VARIABLE
 from gridfm_datakit_distr.opf.problem import SOLVED
 from gridfm_datakit_distr.solve.executor import generate
+from tests.circuits import dg_catalog
 from tests.circuits import opf_catalog as catalog
 from tests.test_executor import same_dataset
 
@@ -208,6 +209,81 @@ def test_storage_stays_at_its_setpoint_in_the_opf(tmp_path: Path) -> None:
     ]
     assert moved
     assert all(np.sign(d) == np.sign(p) for d, p in moved)
+
+
+DG_ONLY: dict[str, Any] = {
+    "networks.include": ["t/dg"],
+    "der.pv.penetration": 0.0,
+    "settings.float_precision": "full",
+    # a lower bound the uncontrolled loads cross: class B scenarios without DG
+    "networks.voltage_limits": {"vmin_pu": 0.97, "vmax_pu": 1.10},
+}
+
+
+def test_dg_are_dispatched_until_a_bound_is_active(tmp_path: Path) -> None:
+    """Geth et al.'s setup: DG ten times cheaper than the source raise their output until an
+    operational bound is active. Every scenario is solved and verified in OpenDSS, including the
+    class-B ones that had nothing to move without DG."""
+    out, without = tmp_path / "out", tmp_path / "without"
+    generate(config(**DG_ONLY, **{"der.dg": {"enabled": True}}), out,
+             catalog=dg_catalog(tmp_path), root=tmp_path)  # fmt: skip
+    generate(config(**DG_ONLY), without, catalog=dg_catalog(tmp_path), root=tmp_path)
+    base = {r["scenario_id"]: r for r in read(without, "opf/opf_meta").to_pylist()}
+    assert NO_FREE_VARIABLE in {r["opf_status"] for r in base.values()}
+    opf = {r["scenario_id"]: r for r in read(out, "opf/opf_meta").to_pylist()}
+    assert opf.keys() == base.keys()
+    assert {r["opf_status"] for r in opf.values()} == {SOLVED}
+    assert all(r["verified"] and r["verify_max_dv_pu"] <= 1e-6 for r in opf.values())
+    assert all(r["curtailment_w"] == 0.0 for r in opf.values())  # PV only
+    active = ("n_vmin_active", "n_vmax_active", "n_rating_active")
+    assert all(sum(r[k] for k in active) >= 1 for r in opf.values())
+    (net,) = Manifest.load(out).networks
+    p_max = net["dg"]["p_max_w"]
+    der = read(out, "scenarios/der").to_pylist()
+    dg_idx = {r["element_idx"] for r in der if r["der_type"] == "dg"}
+    assert len(dg_idx) == 2
+    rows = read(out, "opf/opf_der").to_pylist()
+    assert {r["element_idx"] for r in rows} == dg_idx
+    assert len(rows) == 2 * len(opf)
+    assert {(r["c1"], r["c2"], r["q_max_var"]) for r in rows} == {(0.1, 0.0, p_max)}
+    tol = 1e-6 * p_max
+    assert all(-tol <= r["p_w"] <= p_max + tol and -tol <= r["q_var"] <= p_max + tol for r in rows)
+    assert sum(r["p_w"] for r in rows) > 0.1 * p_max
+    for sid, r in opf.items():  # the objective is the source's power plus a tenth of the DG's
+        p = sum(d["p_w"] for d in rows if d["scenario_id"] == sid)
+        assert r["objective"] == pytest.approx(r["source_p_w"] + 0.1 * p, rel=1e-6, abs=1e-3)
+
+
+def test_sampled_dg_costs_come_after_the_pv_costs(tmp_path: Path) -> None:
+    """``sampled`` draws the DG costs after those of the source and the PV units: enabling DG
+    leaves every other coefficient as it was."""
+    common = {
+        "networks.include": ["t/dg"], "der.pv.penetration": 1.0, "der.pv.kwp": 3.0,
+        "labels.opf.costs": "sampled",
+        "labels.opf.sampled": {"dg_c1": {"distribution": "uniform", "low": 0.05, "high": 0.2}},
+    }  # fmt: skip
+    out, without = tmp_path / "out", tmp_path / "without"
+    generate(config(**common, **{"der.dg": {"enabled": True}}), out,
+             catalog=dg_catalog(tmp_path), root=tmp_path)  # fmt: skip
+    generate(config(**common), without, catalog=dg_catalog(tmp_path), root=tmp_path)
+    der = read(out, "scenarios/der").to_pylist()
+    dg_idx = {r["element_idx"] for r in der if r["der_type"] == "dg"}
+    rows = read(out, "opf/opf_der").to_pylist()
+    dg = [r for r in rows if r["element_idx"] in dg_idx]
+    assert dg
+    assert all(0.05 <= r["c1"] < 0.2 and r["c2"] == 0.0 for r in dg)
+    assert len({r["c1"] for r in dg}) == len(dg)  # per unit and scenario
+    pv = {(r["scenario_id"], r["element_idx"]): r["c1"] for r in rows if r not in dg}
+    pv_without = {
+        (r["scenario_id"], r["element_idx"]): r["c1"]
+        for r in read(without, "opf/opf_der").to_pylist()
+    }
+    both = pv.keys() & pv_without.keys()
+    assert both
+    assert all(pv[k] == pv_without[k] for k in both)
+    meta = {r["scenario_id"]: r for r in read(out, "opf/opf_meta").to_pylist()}
+    meta_without = {r["scenario_id"]: r for r in read(without, "opf/opf_meta").to_pylist()}
+    assert all(meta[s]["source_c1"] == meta_without[s]["source_c1"] for s in meta)
 
 
 def test_without_opf_labels_casadi_is_not_imported(tmp_path: Path) -> None:

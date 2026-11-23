@@ -48,9 +48,13 @@ from gridfm_datakit_distr.solve.tables import concat_cast
 ACTIVE_REL = 1e-6
 """A limit is counted active when the solution is within this relative distance of it."""
 NO_FREE_VARIABLE = "no_free_variable"
-"""Status of a class-B scenario whose PV units are all fixed: none placed, or none with available
-power or a reactive range. Not solved: nothing can move to remove the violation."""
-NO_FREE_MESSAGE = "PV units all fixed (none, or no power or reactive range): nothing can move"
+"""Status of a class-B scenario without a dispatchable generator whose PV units are all fixed:
+none placed, or none with available power or a reactive range. Not solved: nothing can move to
+remove the violation."""
+NO_FREE_MESSAGE = (
+    "no dispatchable generator and PV units all fixed (none, or no power or reactive range): "
+    "nothing can move"
+)
 MAX_CACHED_PROBLEMS = 4
 """OPF problems kept, those of the most recent states (about 6.5 MiB each on IEEE 13): with
 regulators nearly every scenario meets a new state."""
@@ -69,9 +73,9 @@ class OPFRow:
     curtailment_w: float | None = None
     """``sum(p_pf - p_opf)`` over the PV units (W), against the uncontrolled dispatch."""
     costs: Costs | None = None
-    """The scenario's cost coefficients (source first)."""
+    """The scenario's cost coefficients (source first, then the PV units, then the DG)."""
     q_max_var: FloatArray | None = None
-    """The largest |q| each PV unit could dispatch (var)."""
+    """The largest |q| each PV unit could dispatch (var), then each DG's capacity."""
     active: tuple[int, int, int] | None = None
     """Limits active at the solution: voltages at their lower and upper bounds, transformers at
     their rating (within :data:`ACTIVE_REL` of the bound)."""
@@ -98,6 +102,10 @@ class OPFLabeller:
         index = {e.name: e.idx for e in model.elements}
         self.pv_idx = np.array([index[u.generator] for u in units], dtype=np.int32)
         self.s_rated_va = np.array([u.s_rated_va for u in units], dtype=np.float64)
+        self.dg_units = runner.dg.units if runner.dg is not None else ()
+        self.dg_idx = np.array([index[u.generator] for u in self.dg_units], dtype=np.int32)
+        self.dg_p_max_w = np.array([1e3 * u.kw for u in self.dg_units], dtype=np.float64)
+        """Capacity of each DG (W): the bound of its ``p`` and ``q``."""
         limits = config.networks.voltage_limits
         self.limits_pu = (limits.vmin_pu, limits.vmax_pu)
         self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, *self.limits_pu)
@@ -118,7 +126,8 @@ class OPFLabeller:
         p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else np.zeros(0)
         bess = o.bess_p_w if o.bess_p_w is not None else np.zeros(0)
         q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
-        if opf_class == "B" and not np.any((p_avail > 0) | (q_max > 0)):
+        free = np.any((p_avail > 0) | (q_max > 0)) or np.any(self.dg_p_max_w > 0)
+        if opf_class == "B" and not free:
             # No free variable: the NLP is the power flow's square system, which Ipopt solves while
             # ignoring the bounds (`Feasible_Point_Found`); the violation stands by construction.
             return OPFRow(o.scenario_id, NO_FREE_VARIABLE, opf_class, NO_FREE_MESSAGE, costs=costs)
@@ -129,7 +138,7 @@ class OPFLabeller:
                 return problem.solve(
                     source_v_pu=o.source_v_pu, load_p_w=o.load_p_w, load_q_var=o.load_q_var,
                     pv_p_avail_w=p_avail, pv_s_rated_va=self.s_rated_va, costs=costs,
-                    pv_q_max_var=q_max, start=start, bess_p_w=bess,
+                    pv_q_max_var=q_max, start=start, bess_p_w=bess, dg_p_max_w=self.dg_p_max_w,
                 )  # fmt: skip
 
             result = solve()
@@ -140,10 +149,13 @@ class OPFLabeller:
                 # unfinished (seen on IEEE 13, 34, 123).
                 assert o.v is not None
                 empty = np.zeros(len(self.units))
+                n_dg = len(self.dg_units)
                 pf = PowerFlowStart(
                     v=o.v,
                     pv_p_w=o.pv_p_w if o.pv_p_w is not None else empty,
                     pv_q_var=o.pv_q_var if o.pv_q_var is not None else empty,
+                    dg_p_w=o.dg_p_w if o.dg_p_w is not None else np.zeros(n_dg),
+                    dg_q_var=np.zeros(n_dg),
                 )
                 retry = solve(pf)
                 result = replace(retry, t_solve_s=result.t_solve_s + retry.t_solve_s)
@@ -158,6 +170,7 @@ class OPFLabeller:
         p_pf = o.pv_p_w if o.pv_p_w is not None else np.zeros(0)
         curtailment = float(np.sum(p_pf - result.pv_p_w))
         active = self._active(problem, result, str(o.state_id)) if result.solved else None
+        q_max = np.r_[q_max, self.dg_p_max_w]
         return OPFRow(
             o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs,
             q_max, active, start,
@@ -180,16 +193,19 @@ class OPFLabeller:
 
     def costs_of(self, sid: int) -> Costs:
         """The cost coefficients of scenario ``sid``: the preset ``economic``, or ``sampled``
-        drawn from the scenario's ``OPF_COSTS`` stream (source c1, c2, then c1 and c2 per unit)."""
-        n = len(self.units)
+        drawn from the scenario's ``OPF_COSTS`` stream (source c1, c2, then c1 and c2 per PV unit,
+        then c1 and c2 per DG)."""
+        n, n_dg = len(self.units), len(self.dg_units)
         if self.preset == "economic":
-            return economic(n)
+            return economic(n, n_dg)
         s = split_scenario_id(sid)[2]
         rng = scenario_rng(self.seed, self.runner.net, self.runner.k, s, ScenarioStream.OPF_COSTS)
         spec = self.sampled
         source = [float(spec.source_c1.sample(rng)), float(spec.source_c2.sample(rng))]
         c1 = [float(spec.pv_c1.sample(rng)) for _ in range(n)]
         c2 = [float(spec.pv_c2.sample(rng)) for _ in range(n)]
+        c1 += [float(spec.dg_c1.sample(rng)) for _ in range(n_dg)]  # after: PV draws unchanged
+        c2 += [float(spec.dg_c2.sample(rng)) for _ in range(n_dg)]
         return Costs(c1=np.array([source[0], *c1]), c2=np.array([source[1], *c2]))
 
     def _problem(self, state_id: str) -> OPFProblem:
@@ -202,11 +218,12 @@ class OPFLabeller:
             runner = self.runner
             customers = tuple(c.element for c in runner.customers)
             pv = tuple(u.generator for u in (runner.pv.units if runner.pv is not None else ()))
-            bess = runner.der_generators[len(pv) :]
-            if (problem.load_names, problem.pv_names, problem.bess_names) != (
-                customers, pv, bess,
+            bess = tuple(u.generator for u in (runner.storage.units if runner.storage else ()))
+            dg = tuple(u.generator for u in self.dg_units)
+            if (problem.load_names, problem.pv_names, problem.bess_names, problem.dg_names) != (
+                customers, pv, bess, dg,
             ):  # fmt: skip
-                raise ValueError("the OPF's loads, PV or storage units differ from the scenario's")
+                raise ValueError("the OPF's loads or DER units differ from the scenario's")
             if len(self._problems) >= MAX_CACHED_PROBLEMS:
                 self._problems.pop(next(iter(self._problems)))  # the oldest
             self._problems[state_id] = problem
@@ -227,8 +244,8 @@ class OPFLabeller:
         return "A" if inside and rated else "B"
 
     def tables(self, rows: Sequence[OPFRow], precision: schema.Precision) -> dict[str, pa.Table]:
-        """``opf/opf_meta`` for every row; ``opf/opf_der`` and ``opf/opf_node_results`` for the
-        solved scenarios."""
+        """``opf/opf_meta`` for every row; ``opf/opf_der`` (the PV units, then the DG) and
+        ``opf/opf_node_results`` for the solved scenarios."""
         meta = [
             {
                 "scenario_id": r.scenario_id,
@@ -259,7 +276,7 @@ class OPFLabeller:
         ]
         out = {"opf/opf_meta": pa.Table.from_pylist(meta, schema=schema.opf_meta(precision))}
         solved = [r for r in rows if r.result is not None and r.result.solved]
-        n_pv = self.pv_idx.size
+        der_idx = np.r_[self.pv_idx, self.dg_idx].astype(np.int32)
         n_nodes = self.runner.model.n_nodes
         der, nodes = [], []
         for r in solved:
@@ -269,10 +286,10 @@ class OPFLabeller:
             der.append(
                 pa.table(
                     {
-                        "scenario_id": np.full(n_pv, r.scenario_id, dtype=np.int64),
-                        "element_idx": self.pv_idx,
-                        "p_w": r.result.pv_p_w,
-                        "q_var": r.result.pv_q_var,
+                        "scenario_id": np.full(der_idx.size, r.scenario_id, dtype=np.int64),
+                        "element_idx": der_idx,
+                        "p_w": np.r_[r.result.pv_p_w, r.result.dg_p_w],
+                        "q_var": np.r_[r.result.pv_q_var, r.result.dg_q_var],
                         "q_max_var": r.q_max_var,
                         "c1": r.costs.c1[1:],
                         "c2": r.costs.c2[1:],

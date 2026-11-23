@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
@@ -15,6 +16,7 @@ pytest.importorskip("casadi")
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.io import schema
+from gridfm_datakit_distr.io.manifest import Manifest
 from gridfm_datakit_distr.io.writer import DatasetWriter
 from gridfm_datakit_distr.opf.problem import SOLVED
 from gridfm_datakit_distr.solve.executor import generate
@@ -105,3 +107,34 @@ def test_storage_on_the_small_opf_config(
     solved = [r for r in rows if r["opf_status"] == SOLVED]
     assert solved
     assert all(r["verified"] for r in solved)
+
+
+def test_dg_on_the_small_opf_config(network_master: Callable[[str], Path], tmp_path: Path) -> None:
+    """The getting-started OPF config with dispatchable generators: the feeder's capacity binds on
+    the voltage bound, the DG enter the power flow at their set-points, and every solved OPF
+    dispatches them and verifies."""
+    network_master("csiro_enwl/n02_f5")
+    path = Path(__file__).resolve().parents[1] / "scripts/config/opf_small.yaml"
+    data = yaml.safe_load(path.read_text())
+    data["der"]["dg"] = {"enabled": True}
+    data["settings"]["num_processes"] = 1
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out)
+    (network,) = Manifest.load(out).networks
+    assert (network["dg"]["status"], network["dg"]["binding"]) == ("ok", "voltage")
+    writer = DatasetWriter(out)
+    der = writer.read("scenarios/der")
+    assert der is not None
+    dg = pc.filter(der, pc.equal(der["der_type"], "dg"))
+    assert dg.num_rows == 5 * 10  # every 4th of the 23 loads, ten scenarios
+    dg_idx = set(dg["element_idx"].to_pylist())
+    rows, ids = rows_of(out, "csiro_enwl/n02_f5")
+    assert len(rows) == len(ids) == 10
+    solved = [r for r in rows if r["opf_status"] == SOLVED]
+    assert solved
+    assert all(r["verified"] for r in solved)
+    dispatch = writer.read("opf/opf_der")
+    assert dispatch is not None
+    mine = pc.filter(dispatch, pc.is_in(dispatch["element_idx"], pa.array(sorted(dg_idx))))
+    assert mine.num_rows == 5 * len(solved)
+    assert pc.max(mine["p_w"]).as_py() > 0

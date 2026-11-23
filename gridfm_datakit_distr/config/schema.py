@@ -544,7 +544,8 @@ class Controls(_Config):
 
 class SampledCosts(_Config):
     """Cost coefficients of the preset ``sampled``, drawn per scenario (``c2 p^2 + c1 p``, ``p``
-    in W): one pair for the source, one per PV unit. Ignored with ``costs: economic``."""
+    in W): one pair for the source, one per PV unit, one per dispatchable generator. Ignored
+    with ``costs: economic``."""
 
     source_c1: NonNegativeSpec = Field(
         default=Fixed(1.0), description="Linear cost of the source's power (per W)."
@@ -558,6 +559,16 @@ class SampledCosts(_Config):
     )
     pv_c2: NonNegativeSpec = Field(
         default=Fixed(0.0), description="Quadratic cost of each PV unit's power (per W²)."
+    )
+    dg_c1: NonNegativeSpec = Field(
+        default=Fixed(0.1),
+        description="Linear cost of each dispatchable generator's power (per W), drawn per unit "
+        "after the source's and the PV units' coefficients. Default: a tenth of the source's, as "
+        "Geth, Claeys and Deconinck (PSCC 2022).",
+    )
+    dg_c2: NonNegativeSpec = Field(
+        default=Fixed(0.0),
+        description="Quadratic cost of each dispatchable generator's power (per W²).",
     )
 
 
@@ -573,7 +584,9 @@ class OPFLabels(_Config):
     )
     costs: Literal["economic", "sampled"] = Field(
         default="economic",
-        description="Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); "
+        description="Cost preset. `economic`: source 1 per W, PV units 0 (minimum import), "
+        "dispatchable generators 0.1 (a tenth of the source's, as Geth, Claeys and Deconinck, "
+        "PSCC 2022); "
         "`sampled`: coefficients drawn per scenario from `sampled`.",
     )
     sampled: SampledCosts = SampledCosts()

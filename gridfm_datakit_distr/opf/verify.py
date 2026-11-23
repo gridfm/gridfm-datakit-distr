@@ -1,6 +1,6 @@
 """Verification of an OPF dispatch in OpenDSS.
 
-The dispatch is set on the PV generators of a context that holds the scenario (loads, storage
+The dispatch is set on the PV units and DG of a context that holds the scenario (loads, storage
 set-points and source voltage set, controls frozen), the power flow is solved with the controls off
 at the context's label tolerance, and the solution is checked: every load and generator at its set
 point (:func:`setpoint_report`), node voltages equal to the OPF's within :data:`TOLERANCE_PU`
@@ -60,8 +60,10 @@ def verify(
     """Check ``result`` (a solve of ``problem`` for the scenario ``ctx`` holds) in OpenDSS."""
     api = ctx.api
     before: list[tuple[float, float]] = []
+    names = problem.pv_names + problem.dg_names
+    p_set, q_set = np.r_[result.pv_p_w, result.dg_p_w], np.r_[result.pv_q_var, result.dg_q_var]
     try:
-        for name, p_w, q_var in zip(problem.pv_names, result.pv_p_w, result.pv_q_var, strict=True):
+        for name, p_w, q_var in zip(names, p_set, q_set, strict=True):
             api.Generators.Name(name.split(".", 1)[1])
             before.append((float(api.Generators.kW()), float(api.Generators.kvar())))
             api.Generators.kW(float(p_w) / 1e3)
@@ -75,7 +77,7 @@ def verify(
         v = ctx.ynode_voltages()[ctx.ynode_positions(n.opendss_node for n in model.nodes)]
         hold = _controls_hold(ctx, model.variant_id) if has_controls(ctx) else None
     finally:
-        for name, (kw, kvar) in zip(problem.pv_names, before, strict=False):
+        for name, (kw, kvar) in zip(names, before, strict=False):
             api.Generators.Name(name.split(".", 1)[1])
             api.Generators.kW(kw)
             api.Generators.kvar(kvar)

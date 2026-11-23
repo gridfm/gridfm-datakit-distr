@@ -304,13 +304,14 @@ OPF labels: the minimum-cost OPF of every scenario, verified in OpenDSS
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `labels.opf.enabled` | boolean | `false` | Solve and verify the OPF of every scenario. The config is refused unless the `opf` extra (CasADi) is installed. Networks outside the OPF's scope get `not_supported` rows. |
-| `labels.opf.costs` | one of `economic`, `sampled` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import); `sampled`: coefficients drawn per scenario from `sampled`. |
+| `labels.opf.costs` | one of `economic`, `sampled` | `economic` | Cost preset. `economic`: source 1 per W, PV units 0 (minimum import), dispatchable generators 0.1 (a tenth of the source's, as Geth, Claeys and Deconinck, PSCC 2022); `sampled`: coefficients drawn per scenario from `sampled`. |
 | `labels.opf.time_limit_s` | number > 0 | `300.0` | Wall-clock limit (s) of each Ipopt solve (`max_wall_time`). A scenario not solved from the flat start is solved once more from its power flow, so it can take twice this. Machine-dependent; the 3000-iteration limit is the deterministic bound. |
 
 #### `labels.opf.sampled`
 
 Cost coefficients of the preset ``sampled``, drawn per scenario (``c2 p^2 + c1 p``, ``p``
-in W): one pair for the source, one per PV unit. Ignored with ``costs: economic``.
+in W): one pair for the source, one per PV unit, one per dispatchable generator. Ignored
+with ``costs: economic``.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -318,6 +319,8 @@ in W): one pair for the source, one per PV unit. Ignored with ``costs: economic`
 | `labels.opf.sampled.source_c2` | value spec, ≥ 0 | `0.0` | Quadratic cost of the source's power (per W²). |
 | `labels.opf.sampled.pv_c1` | value spec, ≥ 0 | `{distribution: uniform, low: 0.0, high: 1.0}` | Linear cost of each PV unit's power (per W), drawn per unit. |
 | `labels.opf.sampled.pv_c2` | value spec, ≥ 0 | `0.0` | Quadratic cost of each PV unit's power (per W²). |
+| `labels.opf.sampled.dg_c1` | value spec, ≥ 0 | `0.1` | Linear cost of each dispatchable generator's power (per W), drawn per unit after the source's and the PV units' coefficients. Default: a tenth of the source's, as Geth, Claeys and Deconinck (PSCC 2022). |
+| `labels.opf.sampled.dg_c2` | value spec, ≥ 0 | `0.0` | Quadratic cost of each dispatchable generator's power (per W²). |
 
 ## `views`
 
