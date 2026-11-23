@@ -165,6 +165,8 @@ def test_the_engine_delivers_the_sampled_setpoints(tmp_path: Path) -> None:
     for s in range(4):
         o = r.run(s)
         assert o.pf_status == "converged", o.message  # the setpoint check covers them
+        assert o.residual_rel is not None
+        assert o.residual_rel < 1e-6  # Kirchhoff on the extracted admittance, storage present
         assert o.bess_p_w is not None
         assert np.array_equal(o.bess_p_w, r.storage.draw(SEED, r.net, r.k, s))
         for unit, p_w in zip(r.storage.units, o.bess_p_w, strict=True):

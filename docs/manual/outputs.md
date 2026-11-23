@@ -124,7 +124,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `network_id` | string | |
 | `variant_idx` | int32 | |
 | `seed` | uint64 | 64-bit fingerprint of the variant's seed sequence (`generate_state(1, uint64)`); draws come from the sequence fixed by `settings.seed`, the network's id (two 32-bit words of its SHA-256) and the variant index, so a network's variants and scenarios do not depend on the other networks of the dataset |
-| `perturbation` | string (JSON) | sampled parameters (line length scales, grounding resistances, phase reallocations, …) |
+| `perturbation` | string (JSON) | sampled parameters (line length scales, grounding resistances, phase reallocations, PV units `pv_kwp`, storage units `storage_kw` (kW) and `storage_share`, …) |
 | `perturbation_script_sha1` | string | hash of the OpenDSS edit script that realises the variant |
 | `n_nodes`, `n_elements` | int32 | |
 

@@ -17,6 +17,7 @@ from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.io import datakit_columns as datakit
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
+from gridfm_datakit_distr.io.reader import DatasetReader
 from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
 from gridfm_datakit_distr.networks.fetch import ChecksumError
 from gridfm_datakit_distr.solve import executor
@@ -28,6 +29,7 @@ from gridfm_datakit_distr.solve.executor import (
     plan_units,
 )
 from gridfm_datakit_distr.validate.balance import power_balance
+from gridfm_datakit_distr.validate.closed_loop import closed_loop
 from gridfm_datakit_distr.views.posseq_export import export_posseq
 from tests.circuits import VARIANT_FEEDER, write_circuit
 
@@ -446,14 +448,26 @@ def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path
 
 def test_storage_enters_the_exported_der_columns(tmp_path: Path) -> None:
     """The positive-sequence export reads every ``scenarios/der`` row: storage at its set-point
-    in ``x_der_p_mw`` and ``x_der_p_avail_mw``."""
+    in ``x_der_p_mw`` and ``x_der_p_avail_mw``; the stored tables with storage reproduce the
+    stored voltages (closed loop) and the export keeps datakit's power balance."""
     data = copy.deepcopy(CONFIG)
     data["networks"]["include"] = ["t/feeder"]
     data["variants"]["n_variants"] = 1
     data["der"] = {"pv": {"penetration": 1.0}, "storage": {"share": 1.0}}
     out = tmp_path / "out"
     generate(GenerationConfig.model_validate(data), out, catalog=catalog(tmp_path), root=tmp_path)
-    export_posseq(out, tmp_path / "export")
+    [result] = export_posseq(out, tmp_path / "export")
+    raw = result.raw_dir
+    tables = {
+        kind: pq.read_table(raw / name / "scenario_partition=0")
+        for kind, name in datakit.FILES.items()
+    }
+    assert power_balance(tables["bus"], tables["branch"]).max() < 1e-6  # MW
+    reader = DatasetReader(out)
+    ids = [r["scenario_id"] for r in reader.meta.to_pylist() if r["pf_status"] == "converged"]
+    assert len(ids) == 5
+    for sc in reader.scenarios(ids):
+        assert closed_loop(sc).max_dv_pu <= 1e-6
     der = pq.read_table(out / "scenarios" / "der").to_pylist()
     assert {r["der_type"] for r in der} == {"pv", "bess"}
     expected: dict[int, list[float]] = {}

@@ -81,10 +81,10 @@ The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-outpu
 
 1. **The edits are read back.** A variant is the network compiled with its catalog recipe plus an
    OpenDSS edit script. After compiling it, every line's Yprim must match the drawn perturbation
-   within 1e-12 (relative), and the earthing resistances, load connections and PV units must be
-   exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
+   within 1e-12 (relative), and the earthing resistances, load connections, PV and storage units
+   must be exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
    redrawn.
-2. **The base case must hold.** With its nominal loads and no PV output, the variant must converge
+2. **The base case must hold.** With its nominal loads and no PV or storage output, the variant must converge
    (C1) and pass the Kirchhoff residual check (C2) ([conformance suite](networks.md#conformance-suite)).
    If not, the whole variant is drawn again from fresh random streams: three attempts in all. The
    accepted attempt is recorded (`attempt` in `variants/variants.perturbation`). After three
