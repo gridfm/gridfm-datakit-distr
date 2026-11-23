@@ -29,7 +29,8 @@ uv run pytest -m "not slow and not julia"
 Tests are in `tests/` (unit) and `integrationtests/` (catalog networks, golden files,
 benchmarks). Markers: `slow` (> 10 s), `network_data` (needs fetched networks; skipped otherwise),
 `conformance` (catalog networks), `perf` (benchmarks, run with `-m perf`), `julia` (needs Julia,
-run with `DISTR_RUN_JULIA=1`). Lint and types:
+run with `DISTR_RUN_JULIA=1`). With `DISTR_REQUIRE_NETWORK_DATA=1`, as in CI, a `network_data`
+test fails instead of skipping when its source is not fetched. Lint and types:
 `uv run ruff check && uv run ruff format --check && uv run mypy`.
 
 ## Optional extras

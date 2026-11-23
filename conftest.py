@@ -3,7 +3,8 @@
 - ``julia`` tests run only with ``DISTR_RUN_JULIA=1`` (they need Julia and PMD).
 - ``perf`` tests run only when selected explicitly with ``-m perf`` (or ``DISTR_RUN_PERF=1``).
 - ``network_data`` tests get their files through the ``network_master`` fixture, which skips
-  them when the source is not in the cache.
+  them when the source is not in the cache, or fails them with ``DISTR_REQUIRE_NETWORK_DATA=1``
+  (CI, where every source is fetched).
 """
 
 from __future__ import annotations
@@ -42,7 +43,10 @@ def network_master() -> Callable[[str], Path]:
         network = catalog.network(network_id)
         source = catalog.source(network.source)
         if not is_fetched(source):
-            pytest.skip(f"network data missing: run `gridfm_datakit_distr fetch {source.id}`")
+            missing = f"network data missing: run `gridfm_datakit_distr fetch {source.id}`"
+            if _env_flag("DISTR_REQUIRE_NETWORK_DATA"):
+                pytest.fail(missing)
+            pytest.skip(missing)
         return master_path(network)
 
     return get
