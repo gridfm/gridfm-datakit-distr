@@ -9,6 +9,7 @@ from typing import Any
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import pytest
+import yaml
 
 pytest.importorskip("casadi")
 
@@ -79,3 +80,28 @@ def test_generate_writes_verified_opf_labels(
     nodes = DatasetWriter(out).read("scenarios/node_results", columns=["scenario_id"])
     assert nodes is not None
     assert ids <= set(nodes.column("scenario_id").to_pylist())  # power-flow labels kept
+
+
+def test_storage_on_the_small_opf_config(
+    network_master: Callable[[str], Path], tmp_path: Path
+) -> None:
+    """The getting-started OPF config with storage at half its PV customers: every scenario has
+    an OPF row, the storage set-points enter the power flow, and every solved OPF verifies."""
+    network_master("csiro_enwl/n02_f5")
+    path = Path(__file__).resolve().parents[1] / "scripts/config/opf_small.yaml"
+    data = yaml.safe_load(path.read_text())
+    data["der"]["storage"] = {"share": 0.5}
+    data["settings"]["num_processes"] = 1
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out)
+    writer = DatasetWriter(out)
+    der = writer.read("scenarios/der")
+    assert der is not None
+    bess = pc.filter(der, pc.equal(der["der_type"], "bess"))
+    assert bess.num_rows > 0
+    assert pc.max(pc.abs(bess["p_w"])).as_py() > 1e3
+    rows, ids = rows_of(out, "csiro_enwl/n02_f5")
+    assert len(rows) == len(ids) == 10
+    solved = [r for r in rows if r["opf_status"] == SOLVED]
+    assert solved
+    assert all(r["verified"] for r in solved)
