@@ -38,6 +38,7 @@ from gridfm_datakit_distr.scenarios.profiles import customers_of
 from gridfm_datakit_distr.solve.pf_batch import (
     ScenarioOutcome,
     VariantRunner,
+    der_setpoints,
     engine_indices,
     set_setpoints,
 )
@@ -196,8 +197,7 @@ class KronView:
         self._to_model = self.ctx.ynode_positions(n.opendss_node for n in self.model.nodes)
         api = self.ctx.api
         self._load_idx = engine_indices(api.Loads.AllNames(), (c.element for c in runner.customers))
-        units = runner.pv.units if runner.pv is not None else ()
-        self._pv_idx = engine_indices(api.Generators.AllNames(), (u.generator for u in units))
+        self._der_idx = engine_indices(api.Generators.AllNames(), runner.der_generators)
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
 
@@ -206,9 +206,10 @@ class KronView:
         if self.identity:
             return KronOutcome("converged", outcome.v)
         try:
+            der_p, der_q = der_setpoints(outcome.pv_p_w, outcome.pv_q_var, outcome.bess_p_w)
             set_setpoints(
-                self.ctx.api, self._load_idx, outcome.load_p_w, outcome.load_q_var, self._pv_idx,
-                outcome.pv_p_w, outcome.pv_q_var, self._source, outcome.source_v_pu,
+                self.ctx.api, self._load_idx, outcome.load_p_w, outcome.load_q_var, self._der_idx,
+                der_p, der_q, self._source, outcome.source_v_pu,
             )  # fmt: skip
             self.ctx.command("Set ControlMode=OFF")
             if state is not None:

@@ -78,6 +78,7 @@ def estimate_network(prepared: PreparedNetwork, config: GenerationConfig) -> Net
     kron_nodes = sum(n.conductor != "n" for n in model.nodes) if neutral else 0
     controls = bool(api.RegControls.Count() or api.CapControls.Count())
     pv = customers * mean_of(config.der.pv.penetration)
+    pv *= 1 + mean_of(config.der.storage.share)  # storage units: rows of `der` too
     b = BYTES[config.settings.float_precision]
     size = b["meta"] + b["node"] * nodes + b["load"] * customers + b["der"] * pv
     if config.labels.element_currents:

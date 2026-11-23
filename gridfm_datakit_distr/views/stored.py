@@ -4,10 +4,10 @@ The positive-sequence view is built from a dataset, not during generation, so ev
 comes from the stored tables:
 
 - :class:`StoredVariant`: the variant's model (rebuilt with ``model.io_parquet.from_tables``) and
-  its extraction plan, the customers and PV units in the order of ``scenarios/loads`` and
-  ``scenarios/der``, the network's frequency and power base (``catalog/networks``, or the
-  configured ``normalisation.s_base_va``), the solver tolerance of the generation, and the model
-  at any network state of the variant;
+  its extraction plan, the customers and DER units (PV and storage) in the order of
+  ``scenarios/loads`` and ``scenarios/der``, the network's frequency and power base
+  (``catalog/networks``, or the configured ``normalisation.s_base_va``), the solver tolerance of
+  the generation, and the model at any network state of the variant;
 - :class:`StoredScenario`: a converged scenario, with its voltages and the currents into the
   power-delivery elements recomputed as ``Yprim · V`` at its state, the extraction's own formula
  , so that they equal what the generation computed;
@@ -46,7 +46,8 @@ class StoredVariant:
     customer_elements: tuple[str, ...]
     """Load names, in the order of each scenario's ``scenarios/loads`` rows."""
     pv_generators: tuple[str, ...]
-    """PV generator names, in the order of each scenario's ``scenarios/der`` rows."""
+    """DER generator names (PV, then storage), in the order of each scenario's ``scenarios/der``
+    rows; the ``pv_*`` arrays of :class:`StoredScenario` follow it."""
     frequency_hz: float
     tolerance: float
     """OpenDSS ``Tolerance`` of the generation's solves."""

@@ -493,7 +493,7 @@ class PosSeqView:
         return np.array(sorted(attached), dtype=np.intp)
 
     def _der_owner(self) -> NDArray[np.int64]:
-        """Backbone bus of every PV unit."""
+        """Backbone bus of every DER unit (PV and storage: the rows of ``scenarios/der``)."""
         model = self.source.model
         by_name = {e.name: e for e in model.elements}
         out = []

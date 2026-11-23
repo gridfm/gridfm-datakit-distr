@@ -91,6 +91,7 @@ _POSITIVE = SpecRange(POSITIVE)
 _NON_NEGATIVE = SpecRange(NON_NEGATIVE)
 _FRACTION = SpecRange(NON_NEGATIVE, 1.0)
 _POWER_FACTOR = SpecRange(POSITIVE, 1.0)
+_SIGNED_FRACTION = SpecRange(Floor(-1.0, strict=False), 1.0)
 
 PositiveSpec = Annotated[
     ValueSpec, _POSITIVE, PlainValidator(_POSITIVE.parse), PlainSerializer(_dump_spec)
@@ -103,6 +104,12 @@ FractionSpec = Annotated[
 ]
 PowerFactorSpec = Annotated[
     ValueSpec, _POWER_FACTOR, PlainValidator(_POWER_FACTOR.parse), PlainSerializer(_dump_spec)
+]
+SignedFractionSpec = Annotated[
+    ValueSpec,
+    _SIGNED_FRACTION,
+    PlainValidator(_SIGNED_FRACTION.parse),
+    PlainSerializer(_dump_spec),
 ]
 
 
@@ -343,10 +350,32 @@ class PV(_Config):
     )
 
 
+class Storage(_Config):
+    """Battery storage units, placed and sized per variant, set-point per scenario
+    (`scenarios.storage_profile`). A unit is an OpenDSS generator `Generator.bess_<load>` on the
+    nodes of a customer with PV, with a signed constant power (positive: discharging into the
+    network). It is fixed at its set-point in the power flow and in the OPF: a snapshot has no
+    stored energy to value, so storage is an OPF control only over time sequences."""
+
+    share: FractionSpec = Field(
+        default=Fixed(0.0),
+        description="Share of the PV customers with a storage unit, drawn per variant: each PV "
+        "customer gets one with that probability. `0` (default): no storage, and every output "
+        "is the same as without this section.",
+    )
+    kw: PositiveSpec = Field(
+        default=Uniform(3.0, 5.0),
+        description="Power rating (kW) of each unit, drawn per unit and variant; its "
+        "`s_rated_va`. Assumption, no source: the range of common residential battery "
+        "inverters.",
+    )
+
+
 class DER(_Config):
     """Distributed energy resources added to every variant."""
 
     pv: PV = PV()
+    storage: Storage = Storage()
 
 
 class SyntheticProfiles(_Config):
@@ -430,6 +459,18 @@ class PVProfile(_Config):
     )
 
 
+class StorageProfile(_Config):
+    """Storage set-points per scenario ([Scenarios](scenarios.md#storage-set-points))."""
+
+    setpoint: SignedFractionSpec = Field(
+        default=Uniform(-1.0, 1.0),
+        description="Active power of each unit as a fraction of its rating, drawn per unit and "
+        "scenario: positive discharging, negative charging; no reactive power. Assumption, no "
+        "source: any operating point within the rating, with no state of charge (a snapshot "
+        "has none).",
+    )
+
+
 class Scenarios(_Config):
     """Operating points of each variant ([Scenarios](scenarios.md)); each scenario draws from its
     own streams."""
@@ -441,6 +482,7 @@ class Scenarios(_Config):
     )
     profiles: Profiles = Profiles()
     pv_profile: PVProfile = PVProfile()
+    storage_profile: StorageProfile = StorageProfile()
     source_voltage_pu: PositiveSpec = Field(
         default=Uniform(0.98, 1.05),
         description="Source voltage magnitude (pu of the source's base voltage), drawn per "

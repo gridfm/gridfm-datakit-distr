@@ -24,7 +24,7 @@ from gridfm_datakit_distr.io.writer import STATES_PART
 from gridfm_datakit_distr.model import io_parquet
 from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.model.state import NetworkState
-from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner
+from gridfm_datakit_distr.solve.pf_batch import ScenarioOutcome, VariantRunner, der_setpoints
 from gridfm_datakit_distr.variants.generate import VariantResult, variants_table
 
 
@@ -120,11 +120,11 @@ def chunk_tables(
     element_currents = runner.config.labels.element_currents
     index = {e.name: e.idx for e in runner.model.elements}
     load_idx = np.array([index[c.element] for c in runner.customers], dtype=np.int32)
-    pv_idx = np.array(
-        [index[u.generator] for u in (runner.pv.units if runner.pv is not None else ())],
-        dtype=np.int32,
-    )
-    rated = np.array([u.s_rated_va for u in runner.pv.units] if runner.pv is not None else [])
+    der_idx = np.array([index[g] for g in runner.der_generators], dtype=np.int32)
+    pv_units = runner.pv.units if runner.pv is not None else ()
+    bess_units = runner.storage.units if runner.storage is not None else ()
+    der_type = ["pv"] * len(pv_units) + ["bess"] * len(bess_units)
+    rated = np.array([u.s_rated_va for u in pv_units] + [1e3 * u.kw for u in bess_units])
     engines = json.dumps({k: v for k, v in versions.items() if k != "generator"}, sort_keys=True)
     meta = [
         {
@@ -174,24 +174,26 @@ def chunk_tables(
         ],
         schema.loads(precision),
     )
-    tables["scenarios/der"] = concat_cast(
-        [
+    der_parts = []
+    for o in drawn:
+        p, q = der_setpoints(o.pv_p_w, o.pv_q_var, o.bess_p_w)
+        if p is None:
+            continue
+        p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w) if a is not None]  # storage: its p
+        der_parts.append(
             pa.table(
                 {
-                    "scenario_id": np.full(pv_idx.size, o.scenario_id, dtype=np.int64),
-                    "element_idx": pv_idx,
-                    "der_type": ["pv"] * pv_idx.size,
-                    "p_w": o.pv_p_w,
-                    "q_var": o.pv_q_var,
-                    "p_avail_w": o.pv_p_avail_w,
+                    "scenario_id": np.full(der_idx.size, o.scenario_id, dtype=np.int64),
+                    "element_idx": der_idx,
+                    "der_type": der_type,
+                    "p_w": p,
+                    "q_var": q,
+                    "p_avail_w": np.concatenate(p_avail),
                     "s_rated_va": rated,
                 },
             )
-            for o in drawn
-            if o.pv_p_w is not None
-        ],
-        schema.der(precision),
-    )
+        )
+    tables["scenarios/der"] = concat_cast(der_parts, schema.der(precision))
     converged = [o for o in outcomes if o.pf_status == "converged"]
     n_nodes = len(runner.model.nodes)
     node_idx = np.arange(n_nodes, dtype=np.int32)

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gridfm_datakit_distr.config.schema import PV, Variants
+from gridfm_datakit_distr.config.schema import PV, Storage, Variants
 from gridfm_datakit_distr.config.value_spec import Fixed
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel
 from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
@@ -58,6 +58,10 @@ class Perturbation:
     pv_reactive_threshold: dict[str, float] = field(default_factory=dict)
     """Customer load -> available power (fraction of the rating) below which its inverter gives
     no reactive power in the OPF, when drawn."""
+    storage_share: float = 0.0
+    """Drawn share of the PV customers with a storage unit."""
+    storage_kw: dict[str, float] = field(default_factory=dict)
+    """Customer load -> power rating of its storage unit (kW)."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -71,11 +75,14 @@ class Perturbation:
             ("pv_power_factor", self.pv_power_factor),
             ("pv_reactive_fraction", self.pv_reactive_fraction),
             ("pv_reactive_threshold", self.pv_reactive_threshold),
+            ("storage_kw", self.storage_kw),
         ):
             if values:
                 data[key] = values
         if self.pv_penetration:
             data["pv_penetration"] = self.pv_penetration
+        if self.storage_share:
+            data["storage_share"] = self.storage_share
         return json.dumps(data, sort_keys=True)
 
 
@@ -88,9 +95,11 @@ def sample_perturbation(
     attempt: int = 0,
     *,
     der: PV | None = None,
+    storage: Storage | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
-    ``attempt``); with ``der``, the PV units of its customers too."""
+    ``attempt``); with ``der``, the PV units of its customers too, and with ``storage`` the
+    storage units of the customers with PV."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -123,9 +132,36 @@ def sample_perturbation(
             new = t.candidates[int(rng.integers(len(t.candidates)))]
             phases[t.element] = (t.bus1(t.phase), t.bus1(new))
     rho, kwp, pf, fraction, threshold = _pv(der, targets, seed, net, k, attempt)
+    share, storage_kw = _storage(storage, targets, set(kwp), seed, net, k, attempt)
     return Perturbation(
-        attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold
-    )
+        attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
+        share, storage_kw,
+    )  # fmt: skip
+
+
+def _storage(
+    spec: Storage | None,
+    targets: VariantTargets,
+    pv: set[str],
+    seed: int,
+    net: int,
+    k: int,
+    attempt: int,
+) -> tuple[float, dict[str, float]]:
+    """Share, then one uniform draw and one rating per customer whatever the share and the PV
+    placement: a unit at one share is there, with the same rating, at every higher one."""
+    if spec is None or spec.share == _NO_PV or not pv:
+        return 0.0, {}
+    rng = variant_rng(seed, net, k, VariantStream.STORAGE_PLACEMENT, attempt)
+    share = float(spec.share.sample(rng))
+    chosen = rng.random(len(targets.customers)) < share
+    rng = variant_rng(seed, net, k, VariantStream.STORAGE_SIZE, attempt)
+    sizes = [float(spec.kw.sample(rng)) for _ in targets.customers]
+    return share, {
+        c.element: kw
+        for c, kw, on in zip(targets.customers, sizes, chosen, strict=True)
+        if on and c.element in pv
+    }
 
 
 def _pv(
@@ -169,9 +205,9 @@ def _pv(
 def edit_script(
     p: Perturbation, targets: VariantTargets, window: tuple[float, float] = (0.6, 1.5)
 ) -> list[str]:
-    """OpenDSS commands realising ``p``: lines, grounding points, loads, PV units (on their
-    customer's nodes, after its phase move; output set per scenario; constant power within the
-    load window ``window``, pu), each in name order."""
+    """OpenDSS commands realising ``p``: lines, grounding points, loads, PV units, then storage
+    units (on their customer's nodes, after its phase move; output set per scenario; constant
+    power within the load window ``window``, pu), each in name order."""
     script = []
     for t in targets.lines:
         alpha = p.line_length.get(t.element, 1.0)
@@ -190,13 +226,15 @@ def edit_script(
     for load in targets.loads:
         if load.element in p.phases:
             script.append(f"Edit {load.element} bus1={p.phases[load.element][1]}")
-    for c in targets.customers:
-        if c.element in p.pv_kwp:
-            bus1 = p.phases[c.element][1] if c.element in p.phases else c.bus1
-            script.append(
-                f"New Generator.pv_{c.name} bus1={bus1} phases={c.phases} kV={c.kv!r} "
-                f"conn={c.conn} kW=0 kvar=0 model=1 vminpu={window[0]!r} vmaxpu={window[1]!r}"
-            )
+    for prefix, placed in (("pv", p.pv_kwp), ("bess", p.storage_kw)):
+        for c in targets.customers:
+            if c.element in placed:
+                bus1 = p.phases[c.element][1] if c.element in p.phases else c.bus1
+                script.append(
+                    f"New Generator.{prefix}_{c.name} bus1={bus1} phases={c.phases} "
+                    f"kV={c.kv!r} conn={c.conn} kW=0 kvar=0 model=1 vminpu={window[0]!r} "
+                    f"vmaxpu={window[1]!r}"
+                )
     return script
 
 

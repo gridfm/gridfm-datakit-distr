@@ -42,6 +42,10 @@ class VariantStream(IntEnum):
     DER_POWER_FACTOR = 7
     DER_REACTIVE_FRACTION = 8
     DER_REACTIVE_THRESHOLD = 9
+    STORAGE_PLACEMENT = 10
+    """Which PV customers get a storage unit (``der.storage.share``)."""
+    STORAGE_SIZE = 11
+    """Power rating of each storage unit (``der.storage.kw``)."""
 
 
 class ScenarioStream(IntEnum):
@@ -60,6 +64,8 @@ class ScenarioStream(IntEnum):
     """Cost coefficients of the OPF's preset ``sampled``."""
     PV_AVAILABILITY = 9
     """Availability of each PV unit (``scenarios.pv_profile.availability``)."""
+    STORAGE_SETPOINT = 10
+    """Set-point of each storage unit (``scenarios.storage_profile.setpoint``)."""
 
 
 def network_key(network_id: str) -> int:

@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 import pyarrow as pa
 
-from gridfm_datakit_distr.config.schema import PV, Variants
+from gridfm_datakit_distr.config.schema import PV, Storage, Variants
 from gridfm_datakit_distr.extract.injections import injections
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
@@ -128,8 +128,9 @@ def readback_mismatches(p: Perturbation, prepared: PreparedNetwork) -> list[str]
         e = elements.get(name)
         return None if e is None else e.terminals[0]
 
-    for load in p.pv_kwp:
-        generator = f"Generator.pv_{load.split('.', 1)[1]}"
+    units = [("pv", load) for load in p.pv_kwp] + [("bess", load) for load in p.storage_kw]
+    for prefix, load in units:
+        generator = f"Generator.{prefix}_{load.split('.', 1)[1]}"
         if nodes_of(generator) is None or nodes_of(generator) != nodes_of(load):
             out.append(f"{generator}: not on the nodes of {load}")
     return out
@@ -145,9 +146,11 @@ def generate_variant(
     options: PrepareOptions | None = None,
     root: Path | None = None,
     der: PV | None = None,
+    storage: Storage | None = None,
     keep_prepared: bool = False,
 ) -> VariantResult:
-    """Variant ``k`` of ``network``; with ``der``, the PV units of its customers. Its draws depend
+    """Variant ``k`` of ``network``; with ``der``, the PV units of its customers, with
+    ``storage`` the storage units of those with PV. Its draws depend
     on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
     carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
@@ -156,7 +159,7 @@ def generate_variant(
     opts = options or PrepareOptions()
     failures: list[str] = []
     for attempt in range(MAX_ATTEMPTS):
-        p = sample_perturbation(config, targets, seed, net, k, attempt, der=der)
+        p = sample_perturbation(config, targets, seed, net, k, attempt, der=der, storage=storage)
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)
         deviation = check_edits(p, targets, prepared.model)

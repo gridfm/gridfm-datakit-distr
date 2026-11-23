@@ -158,6 +158,8 @@ def test_stream_codes_are_stable() -> None:
         "DER_POWER_FACTOR": 7,
         "DER_REACTIVE_FRACTION": 8,
         "DER_REACTIVE_THRESHOLD": 9,
+        "STORAGE_PLACEMENT": 10,
+        "STORAGE_SIZE": 11,
     }
     assert {s.name: int(s) for s in ScenarioStream} == {
         "PROFILE_TIME": 0,
@@ -170,6 +172,7 @@ def test_stream_codes_are_stable() -> None:
         "CUSTOMER_TIMES": 7,
         "OPF_COSTS": 8,
         "PV_AVAILABILITY": 9,
+        "STORAGE_SETPOINT": 10,
     }
 
 

@@ -1,4 +1,4 @@
-"""PV units of a variant and their output per scenario.
+"""PV and storage units of a variant and their output per scenario.
 
 Placement is part of the variant (``variants/perturbation.py``): ``Generator.pv_<load>`` on its
 customer's nodes, ``model=1`` (constant P and Q within the load window).
@@ -16,6 +16,11 @@ scenario from ``PV_AVAILABILITY`` (a fixed value draws nothing).
 noon 12:00, sunset 18:00, no location or date. ``cloud_factor`` is the Kasten-Czeplak relation for
 global irradiance, ``1 - 0.75 · c^3.4`` with ``c`` the cloud cover fraction (Kasten and Czeplak,
 Solar Energy 24, 1980).
+
+Storage units (``Generator.bess_<load>``, placed with PV customers) are fixed at a set-point per
+scenario, ``p = setpoint · kW``, ``setpoint`` drawn per unit from ``STORAGE_SETPOINT`` (positive:
+discharging), ``q = 0``. ``p_avail_w`` of a storage unit is its set-point: it has nothing to
+curtail.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from gridfm_datakit_distr.config.schema import PV, PVProfile
+from gridfm_datakit_distr.config.schema import PV, PVProfile, StorageProfile
 from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.variants.perturbation import Perturbation
@@ -138,3 +143,37 @@ class PVOutputs:
         q_limit = np.sqrt(np.maximum(self._rated**2 - p**2, 0.0))
         q = -np.minimum(p * self._tan, q_limit)
         return PVDraw(hour, cloudiness, p_avail, p, q)
+
+
+@dataclass(frozen=True, slots=True)
+class StorageUnit:
+    generator: str
+    """``Generator.bess_<load>``."""
+    load: str
+    kw: float
+    """Power rating (kW)."""
+
+
+def storage_units(p: Perturbation) -> tuple[StorageUnit, ...]:
+    """The storage units a variant's perturbation placed, ordered by customer."""
+    return tuple(
+        StorageUnit(f"Generator.bess_{load.split('.', 1)[1]}", load, kw)
+        for load, kw in sorted(p.storage_kw.items())
+    )
+
+
+class StorageSetpoints:
+    """The set-points of a variant's storage units, scenario by scenario."""
+
+    def __init__(self, units: Sequence[StorageUnit], profile: StorageProfile) -> None:
+        self.units = tuple(units)
+        self.profile = profile
+        self.rated_w = np.array([1e3 * u.kw for u in self.units], dtype=np.float64)
+
+    def draw(self, seed: int, net: int, k: int, s: int) -> NDArray[np.float64]:
+        """Active power of each unit in scenario ``s`` (W, discharging positive)."""
+        spec = self.profile.setpoint
+        if isinstance(spec, Fixed):
+            return spec.value * self.rated_w
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.STORAGE_SETPOINT)
+        return np.array([float(spec.sample(rng)) for _ in self.units]) * self.rated_w
