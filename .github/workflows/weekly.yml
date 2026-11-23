@@ -1,0 +1,61 @@
+name: Weekly
+
+# What the per-push workflows leave out: the slow catalog tests, the Julia/PowerModelsDistribution
+# cross-checks and the column names of the released gridfm-datakit. Also runs when this file
+# changes, so that a change to it is tested on its branch.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"  # Mondays, 03:17 UTC
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/weekly.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  slow-and-julia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      GRIDFM_DISTR_CACHE: ${{ github.workspace }}/.network-cache
+      DISTR_REQUIRE_NETWORK_DATA: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --extra opf --extra julia
+      - name: RAR5 extractor for the EDP archives
+        run: sudo apt-get update && sudo apt-get install -y 7zip
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: .network-cache
+          key: networks-v2-${{ hashFiles('gridfm_datakit_distr/networks/catalog.yaml', 'gridfm_datakit_distr/networks/manifests/*.sha256') }}
+      - name: Fetch networks (verified; a cached copy is checked against what fetch recorded)
+        run: uv run --extra opf --extra julia gridfm_datakit_distr fetch epri_ieee csiro_enwl edp
+      - name: Slow catalog tests
+        run: uv run --extra opf --extra julia pytest -m "network_data and slow and not julia and not perf"
+      - name: Julia and PowerModelsDistribution
+        if: ${{ !cancelled() }}
+        run: uv run --extra opf --extra julia gridfm_datakit_distr setup-julia
+      - name: Julia cross-checks
+        if: ${{ !cancelled() }}
+        env:
+          DISTR_RUN_JULIA: "1"
+        run: uv run --extra opf --extra julia pytest -m julia
+
+  datakit-columns:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --extra opf
+      # An import error here fails the job, where the test itself would only be skipped.
+      - run: uv run --extra opf --with gridfm-datakit python -c "import gridfm_datakit.utils.column_names"
+      - run: uv run --extra opf --with gridfm-datakit pytest tests/test_posseq.py -k installed_datakit

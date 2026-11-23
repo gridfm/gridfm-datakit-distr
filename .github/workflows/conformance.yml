@@ -1,7 +1,9 @@
 name: Conformance
 
 # Network data are fetched with checksum verification and cached by the catalog fingerprint
-# (catalog.yaml and the manifests): a catalog change refreshes the cache.
+# (catalog.yaml and the manifests): a catalog change refreshes the cache. A cached copy is checked
+# against the file list that fetch recorded; the key's version forces a fresh copy when the cache
+# layout changes.
 
 on:
   push:
@@ -18,20 +20,21 @@ jobs:
     timeout-minutes: 120
     env:
       GRIDFM_DISTR_CACHE: ${{ github.workspace }}/.network-cache
+      DISTR_REQUIRE_NETWORK_DATA: "1"
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3  # no moving v10 tag exists
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: "3.11"
           enable-cache: true
       - run: uv sync --locked --extra opf
       - name: RAR5 extractor for the EDP archives
         run: sudo apt-get update && sudo apt-get install -y 7zip
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: .network-cache
-          key: networks-${{ hashFiles('gridfm_datakit_distr/networks/catalog.yaml', 'gridfm_datakit_distr/networks/manifests/*.sha256') }}
-      - name: Fetch networks (verified; a no-op when cached)
+          key: networks-v2-${{ hashFiles('gridfm_datakit_distr/networks/catalog.yaml', 'gridfm_datakit_distr/networks/manifests/*.sha256') }}
+      - name: Fetch networks (verified; a cached copy is checked against what fetch recorded)
         run: uv run --extra opf gridfm_datakit_distr fetch epri_ieee csiro_enwl edp
       - name: Conformance tests
         run: uv run --extra opf pytest -m "network_data and not slow and not julia and not perf"
@@ -39,7 +42,7 @@ jobs:
         run: >-
           uv run --extra opf gridfm_datakit_distr validate $(cat integrationtests/golden/networks.txt)
           --golden integrationtests/golden --out validation
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         if: always()
         with:
           name: validation
