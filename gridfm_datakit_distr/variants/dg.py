@@ -60,7 +60,8 @@ class DGCapacity:
     status: str
     """``ok``; ``no_site`` (fewer than 4 loads); ``voltage_at_bound`` (a voltage at or above the
     upper bound without DG); ``no_binding_limit`` (nothing reached by the last scan point);
-    ``not_converged`` (a power flow did not converge before a limit was reached);
+    ``not_converged`` (a solve of the search did not converge before it found a point at a limit:
+    a doubling step can step past the limit to a diverging point, as on EDP urban);
     ``off_setpoint`` (at ``P^max`` a unit or a load leaves its set-point)."""
     n_units: int
     p_max_w: float | None = None

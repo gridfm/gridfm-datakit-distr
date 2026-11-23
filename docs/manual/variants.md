@@ -106,8 +106,10 @@ places them in every variant of every network. What the paper does not fix is ou
   DG); the dataset card lists them, and `variants/variants.perturbation` holds `dg_kw` per load.
   A network without a capacity gets no DG, with its status: `no_site` (fewer than 4 loads),
   `voltage_at_bound` (a voltage at or above the upper bound without DG), `no_binding_limit`
-  (nothing reached at the largest `P` of the scan), `not_converged` (a power flow diverged before
-  a limit was reached) or `off_setpoint`.
+  (nothing reached at the largest `P` of the scan), `not_converged` (a solve of the search
+  diverged before it found a point at a limit) or `off_setpoint`. A doubling step can step past
+  the limit to a diverging point: on EDP urban a transformer reaches its rating between 2 and 2.5
+  times `s`, the solve at 4 times diverges, and the network gets no DG.
 
 ## Checks and failures
 
