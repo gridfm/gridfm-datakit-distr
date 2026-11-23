@@ -442,3 +442,38 @@ def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path
         table = pq.read_table(both / f"{name}.parquet")
         table = table.filter(pa.compute.is_in(table["state_id"], pa.array(sorted(mine))))
         assert table.equals(pq.read_table(alone / f"{name}.parquet")), name
+
+
+def test_storage_enters_the_exported_der_columns(tmp_path: Path) -> None:
+    """The positive-sequence export reads every ``scenarios/der`` row: storage at its set-point
+    in ``x_der_p_mw`` and ``x_der_p_avail_mw``."""
+    data = copy.deepcopy(CONFIG)
+    data["networks"]["include"] = ["t/feeder"]
+    data["variants"]["n_variants"] = 1
+    data["der"] = {"pv": {"penetration": 1.0}, "storage": {"share": 1.0}}
+    out = tmp_path / "out"
+    generate(GenerationConfig.model_validate(data), out, catalog=catalog(tmp_path), root=tmp_path)
+    export_posseq(out, tmp_path / "export")
+    der = pq.read_table(out / "scenarios" / "der").to_pylist()
+    assert {r["der_type"] for r in der} == {"pv", "bess"}
+    expected: dict[int, list[float]] = {}
+    for r in der:
+        e = expected.setdefault(r["scenario_id"], [0.0, 0.0])
+        e[0] += r["p_w"] / 1e6
+        e[1] += r["p_avail_w"] / 1e6
+    parts = [
+        pq.read_table(p)
+        for p in (tmp_path / "export").rglob("*.parquet")
+        if p.is_file() and "x_der_p_mw" in pq.read_schema(p).names
+    ]
+    assert parts
+    got: dict[int, list[float]] = {}
+    for t in parts:
+        for r in t.select(["x_scenario_id", "x_der_p_mw", "x_der_p_avail_mw"]).to_pylist():
+            g = got.setdefault(r["x_scenario_id"], [0.0, 0.0])
+            g[0] += r["x_der_p_mw"]
+            g[1] += r["x_der_p_avail_mw"]
+    assert got
+    for sid, (p, avail) in got.items():
+        assert p == pytest.approx(expected[sid][0], abs=1e-9)
+        assert avail == pytest.approx(expected[sid][1], abs=1e-9)
