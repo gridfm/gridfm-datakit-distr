@@ -112,6 +112,15 @@ above (`origin` `static_settle+ramp` or `static_settle+ramp+jitter`). If the ram
 scenario is `not_converged` and `pf_message` says how far the ramp got. A scenario that settles
 directly never enters the ramp.
 
+**Not a time series.** Each scenario's taps are settled from the compiled state, not carried over
+from an earlier time. A real regulator keeps its tap while the voltage stays in its band, so its
+position depends on how the load got there. Compared with a quasi-static time series over a week
+of hourly household profiles on IEEE 13 and IEEE 34, the default (`J = 2`) visits every tap
+position the time series visits, but with different frequencies, and the per node-phase voltage
+quantiles (1 %, 50 %, 99 %) differ by one to two tap steps (0.006 to 0.012 pu). Every label is the
+exact power flow at its state; the mix of states is not the one a feeder goes through over time.
+Only networks with regulators are affected.
+
 ## Power flow and statuses
 
 Every solve starts from the same point (`Set Mode=Snap`), with OpenDSS `Tolerance` =
