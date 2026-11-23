@@ -1,15 +1,16 @@
 # Variants
 
 A *variant* is a perturbed copy of a catalog network: its parameters, the phases of some customers
-and its rooftop PV units are drawn once, then many [scenarios](scenarios.md) are solved on it.
+and its rooftop PV and storage units are drawn once, then many [scenarios](scenarios.md) are solved on it.
 Variant `k` of network `n` is stored as `n/v{k:04d}` with what was drawn
 ([Outputs §4](outputs.md#4-variant-level)). Keys: [`variants`](config.md#variants),
 [`variants.admittance`](config.md#variantsadmittance),
-[`variants.phase_reallocation`](config.md#variantsphase_reallocation), [`der.pv`](config.md#derpv).
+[`variants.phase_reallocation`](config.md#variantsphase_reallocation), [`der.pv`](config.md#derpv),
+[`der.storage`](config.md#derstorage).
 
 **Defaults.** 4 variants per network, each with every line length scaled by its own factor
 uniform in 0.9–1.1, 20 % of the movable single-phase customers moved to another phase, and PV at a
-share of the customers drawn uniformly in 0–0.8. Earthing resistances and neutral impedances stay
+share of the customers drawn uniformly in 0–0.8; no storage. Earthing resistances and neutral impedances stay
 as in the source. The source network itself is never a variant; this gives one variant equal to it:
 
 ```yaml
@@ -33,6 +34,7 @@ fixes it).
 | Earthing resistance | `variants.admittance.grounding_resistance_ohm` | existing earth electrodes: wye transformer windings grounded through `Rneut ≥ 0`, grounding reactors (neutral to ground) | their resistance (Ω); `null` keeps the source's |
 | Phase reallocation | `variants.phase_reallocation` | enabled single-phase loads with one phase conductor, at a bus that has another phase | `fraction` of them (rounded), chosen uniformly, each moved to one of the other phases of its bus, chosen uniformly; its neutral connection is kept |
 | Rooftop PV | `der.pv` | every enabled load (a *customer*) | PV units: [below](#rooftop-pv) |
+| Storage | `der.storage` | the customers with PV | storage units: [below](#storage) |
 
 Not perturbed: switches (impedance and state; topology never changes), a grounding reactor that
 bonds the neutral to a source's star point (CSIRO's `Reactor.grounding`, which carries the whole
@@ -62,6 +64,18 @@ multi-phase loads. A perturbation without elements to act on does nothing, and i
   OPF may dispatch ([OPF labels](opf.md#the-problem)).
 
 The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-output)).
+
+## Storage
+
+- **Placement.** The share (`der.storage.share`, 0 by default: no storage) is drawn once per
+  variant; each customer with PV then gets a storage unit when its own uniform draw is below it.
+  As for PV, placement is monotone in the share, with the same rating at every share.
+- **Unit.** An OpenDSS generator `Generator.bess_<load>` on its customer's nodes, connected as its
+  PV unit, constant P within the load voltage window, with a signed set-point per scenario
+  ([Scenarios](scenarios.md#storage-set-points)). Not an OpenDSS `Storage` element: that element
+  idles itself silently when its stored energy reaches a limit, which a snapshot cannot track.
+- **Rating.** `kw` per unit (uniform 3–5 kW by default, an assumption: the range of common
+  residential battery inverters); stored as its `s_rated_va`.
 
 ## Checks and failures
 

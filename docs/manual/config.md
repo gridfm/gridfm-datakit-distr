@@ -192,6 +192,19 @@ unit sits on the load's nodes (after any phase move), constant P, Q within the l
 | `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | OPF only: largest reactive power of each inverter, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per unit and variant. |
 | `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | OPF only: a unit whose available power is below this fraction of its rating gives no reactive power (IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant. |
 
+### `der.storage`
+
+Battery storage units, placed and sized per variant, set-point per scenario
+(`scenarios.storage_profile`). A unit is an OpenDSS generator `Generator.bess_<load>` on the
+nodes of a customer with PV, with a signed constant power (positive: discharging into the
+network). It is fixed at its set-point in the power flow and in the OPF: a snapshot has no
+stored energy to value, so storage is an OPF control only over time sequences.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `der.storage.share` | value spec, ≥ 0 and ≤ 1 | `0.0` | Share of the PV customers with a storage unit, drawn per variant: each PV customer gets one with that probability. `0` (default): no storage, and every output is the same as without this section. |
+| `der.storage.kw` | value spec, > 0 | `{distribution: uniform, low: 3.0, high: 5.0}` | Power rating (kW) of each unit, drawn per unit and variant; its `s_rated_va`. Assumption, no source: the range of common residential battery inverters. |
+
 ## `scenarios`
 
 Operating points of each variant ([Scenarios](scenarios.md)); each scenario draws from its
@@ -233,6 +246,14 @@ factor · availability, injected up to the inverter rating ([Scenarios](scenario
 | `scenarios.pv_profile.provider` | one of `synthetic_clear_sky` | `synthetic_clear_sky` | `synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and 18:00, no date or location. The hour `h` is the load profile's time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios fall at night, with no PV output. |
 | `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %. |
 | `scenarios.pv_profile.availability` | value spec, ≥ 0 and ≤ 1 | `1.0` | Factor on each unit's available power, drawn per unit and scenario (shading, or 0 for a unit out of service). With 1 every unit of a variant delivers the same share of its kWp in a scenario; a distribution makes their outputs differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for units out of service. |
+
+### `scenarios.storage_profile`
+
+Storage set-points per scenario ([Scenarios](scenarios.md#storage-set-points)).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scenarios.storage_profile.setpoint` | value spec, ≥ -1 and ≤ 1 | `{distribution: uniform, low: -1.0, high: 1.0}` | Active power of each unit as a fraction of its rating, drawn per unit and scenario: positive discharging, negative charging; no reactive power. Assumption, no source: any operating point within the rating, with no state of charge (a snapshot has none). |
 
 ## `controls`
 

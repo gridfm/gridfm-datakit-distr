@@ -347,10 +347,12 @@ tables determine the voltages.
 |---|---|---|
 | `scenario_id` | int64 | |
 | `element_idx` | int32 | DER element (OpenDSS `Generator` in v1) |
-| `der_type` | string | `pv`, `bess`, `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
-| `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive) |
-| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output)) |
-| `s_rated_va` | float32/64 | inverter rating |
+| `der_type` | string | `pv`, `bess` (storage, `Generator.bess_<load>`), `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
+| `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive; storage: positive discharging, negative charging, `q_var` 0) |
+| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail) |
+| `s_rated_va` | float32/64 | inverter rating (storage: its power rating `der.storage.kw`) |
+
+A scenario's rows list its variant's PV units, then its storage units, each in name order.
 
 ---
 
@@ -389,7 +391,7 @@ A single-phase equivalent of the three-phase backbone, **re-solved** in OpenDSS,
 - **Branches.** `rate_a` is the sum of the elements' ratings (0 if none: unlimited); `br_status` 1; `ang_min`, `ang_max` ∓360. Transformers: `tap` is the no-load positive-sequence ratio at the from side, the vector-group shift is not modelled (`shift` = 0; the removed shift is in `x_vector_shift_deg`). Shunts at backbone buses (capacitors) are `GS`, `BS` at 1 pu. `min_vm_pu`, `max_vm_pu` are `networks.voltage_limits`.
 - **Scenarios.** `scenario` = 0 … n − 1 over the scenarios whose view converged, in the order of `scenario_id`; partition k = `scenario` // 200. The stable key is `load_scenario_idx` = `x_scenario_id` = `scenario_id`: `scenario` changes when a dataset grows. Branch flows come from the voltages and the branch admittances (`S = V conj(Y V)` on 100 MVA).
 - **Truth.** `x_truth_Vm`, `x_truth_Va` are the positive-sequence component of the full model's voltages at the bus, in the view's reference: the source at angle 0 and each zone rotated by its cumulative vector-group shift. The component is the same for phase-to-neutral and phase-to-ground voltages, because a common-mode voltage has no positive sequence; hence one pair of columns.
-- **Extra columns** (prefix `x_`, ignored by graphkit). Bus: `x_scenario_id`, `x_truth_Vm`, `x_truth_Va`, and `x_der_p_mw`, `x_der_q_mvar`, `x_der_p_avail_mw` (DER output and available power aggregated at the bus). Branch: `x_scenario_id`, `x_vector_shift_deg`. Generator and admittance: `x_scenario_id`.
+- **Extra columns** (prefix `x_`, ignored by graphkit). Bus: `x_scenario_id`, `x_truth_Vm`, `x_truth_Va`, and `x_der_p_mw`, `x_der_q_mvar`, `x_der_p_avail_mw` (DER output and available power aggregated at the bus: PV and storage, a storage unit counted at its set-point in both). Branch: `x_scenario_id`, `x_vector_shift_deg`. Generator and admittance: `x_scenario_id`.
 
 The export reproduces to the last bit the view that earlier versions computed during the generation (checked on IEEE 13, CSIRO n21_f3 and EDP industrial). The exception is `x_der_*`, within 3e-10 relative, because the export reads the stored float32 setpoints.
 
@@ -445,7 +447,7 @@ One row per scenario of the dataset.
 
 ### `opf/opf_der`
 
-The dispatch of every PV unit, for the scenarios with `opf_status = Solve_Succeeded`.
+The dispatch of every PV unit, for the scenarios with `opf_status = Solve_Succeeded`. Storage units have no rows: the OPF keeps them at their set-points, stored in `scenarios/der`.
 
 | Column | Type | Description |
 |---|---|---|

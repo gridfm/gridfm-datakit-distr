@@ -64,6 +64,15 @@ The unit injects `p = min(p_avail, s_rated)` (an inverter smaller than its panel
 `q = −p · tan(acos(pf))`, limited to `p² + q² ≤ s_rated²`. The power flow never curtails: that is
 the OPF's job ([OPF labels](opf.md)).
 
+## Storage set-points
+
+Each storage unit ([Variants](variants.md#storage)) is fixed at `p = setpoint · kW` per scenario,
+with `setpoint` (`scenarios.storage_profile.setpoint`, uniform in −1 to 1 by default) drawn per
+unit and scenario: positive discharging into the network, negative charging; `q = 0`. A snapshot
+has no state of charge, so any set-point within the rating is admitted, at any hour; the unit is
+fixed in the power flow and in the OPF ([OPF labels](opf.md#the-problem)). In `scenarios/der` its
+rows have `der_type` `bess` and `p_avail_w` equal to `p_w`.
+
 ## Source voltage
 
 `scenarios.source_voltage_pu`: the magnitude of the variant's voltage source, drawn per scenario

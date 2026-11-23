@@ -36,7 +36,7 @@ counterpart of [gridfm-datakit](https://github.com/gridfm/gridfm-datakit).
   reference set of 35): all pass but one CSIRO feeder, `n13_f4`, which does not converge at its
   nominal loads.
 * **Structural variants**: line lengths, neutral impedances, earthing resistances, phases of
-  single-phase customers, rooftop PV placement and size.
+  single-phase customers, rooftop PV placement and size, battery storage (off by default).
 * **Operating scenarios**: synthetic or measured load profiles, PV output from time of day and
   cloud cover, source voltage, regulator taps and capacitor states settled per scenario from
   jittered starting taps.
@@ -231,8 +231,9 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 
 # TODO
 
-- [ ] Storage, dispatchable generators and wind units, in the scenarios and as OPF controls (the
-  OPF controls the PV units only).
+- [ ] Dispatchable generators and wind units, in the scenarios and as OPF controls (the OPF
+  controls the PV units only), and storage as an OPF control, which needs time sequences of
+  scenarios (storage is now fixed at a set-point per scenario: `der.storage`).
 - [ ] PV orientation and PV output from irradiance data by location and date (per-unit shading
   and outages: `scenarios.pv_profile.availability`).
 - [ ] More variability, ordered by how much each moves the labels: unbalanced source voltage,
