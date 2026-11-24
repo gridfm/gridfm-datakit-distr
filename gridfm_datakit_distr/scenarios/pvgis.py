@@ -5,8 +5,11 @@ One ``seriescalc`` request per location and PV-parameter set (``pvcalculation=1`
 ``peakpower=1``, every configured year, JSON) gives the hourly power ``P`` (W) of a 1 kWp
 system, with PVGIS's temperature model and system loss. ``fetch --config`` downloads it into
 ``<cache>/pvgis/<key>.json`` (``key``: the first 16 hex digits of the SHA-256 of the request URL)
-and records the file's SHA-256 next to it (``<key>.json.sha256``, ``sha256sum`` format). Every
-later use checks the file against it: a changed file is an error, never a silent download.
+and records the file's SHA-256 next to it (``<key>.json.sha256``, in the ``sha256sum`` format
+of the network manifests). Every later use checks the file against it: a changed file is an
+error, never a silent download. ``fetch.verify_cached`` does not apply: it checks a catalog
+source against the hashes pinned in the package, and a series, requested for the user's
+locations, has none until it is downloaded.
 
 Timestamps are taken as UTC (``seriescalc`` does not say; the sun height agrees). A record stands
 for the hour that starts at its ``HH:00``: SARAH3 values are stamped about HH:10 and taken by
@@ -42,6 +45,7 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import PVGIS, PVGISLocation, PVProfile
 from gridfm_datakit_distr.networks.cache import cache_root
+from gridfm_datakit_distr.networks.catalog import CatalogError, format_manifest, parse_manifest
 from gridfm_datakit_distr.networks.fetch import USER_AGENT
 
 API = "https://re.jrc.ec.europa.eu/api/v5_3/seriescalc"
@@ -145,7 +149,7 @@ def fetch_series(
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_name(f".{path.name}.tmp")
     staged.write_bytes(data)
-    _checksum_path(path).write_text(f"{series.sha256}  {path.name}\n", encoding="utf-8")
+    _checksum_path(path).write_text(format_manifest({path.name: series.sha256}), encoding="utf-8")
     staged.replace(path)
     return path, series, True
 
@@ -207,16 +211,21 @@ def read_series(path: Path) -> PVSeries:
     again = "download it again with `gridfm_datakit_distr fetch --config <config> --force`"
     if not path.is_file():
         raise PVGISError(f"{path}: no such PVGIS series")
-    if not listed.is_file():
+    recorded = None
+    if listed.is_file():
+        try:
+            entries = parse_manifest(listed.read_text(encoding="utf-8"), origin=str(listed))
+        except CatalogError as exc:
+            raise PVGISError(f"{exc}; {again}") from None
+        recorded = entries.get(path.name)
+    if recorded is None:
         raise PVGISError(f"{path}: no SHA-256 recorded at download ({listed.name}); {again}")
-    data = path.read_bytes()
+    data = path.read_bytes()  # hashed and parsed from the same bytes
     digest = hashlib.sha256(data).hexdigest()
-    words = listed.read_text(encoding="utf-8").split()
-    recorded = words[0] if words else ""
     if digest != recorded:
         raise PVGISError(
-            f"{path}: changed since it was downloaded (SHA-256 {digest}, recorded "
-            f"{recorded or 'nothing'}); {again}"
+            f"{path}: changed since it was downloaded (SHA-256 {digest}, recorded {recorded}); "
+            f"{again}"
         )
     return _series(_document(data, str(path)), digest, str(path))
 

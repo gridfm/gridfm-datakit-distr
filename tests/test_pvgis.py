@@ -281,6 +281,24 @@ def test_a_changed_cached_series_is_an_error_never_a_silent_download(
     assert read_series(path).sha256 == s.sha256
 
 
+@pytest.mark.parametrize(
+    ("listed", "message"),
+    [
+        ("not a checksum line\n", "expected '<sha256>  <path>'"),
+        (f"{'0' * 64}  other.json\n", "no SHA-256 recorded"),
+        ("", "no SHA-256 recorded"),
+    ],
+)
+def test_a_checksum_file_must_list_the_series(
+    tmp_path: Path, http: Callable[..., FakeHTTP], listed: str, message: str
+) -> None:
+    http([], encode(document()))
+    path, _, _ = fetch_series(one_year(), MANCHESTER, tmp_path)
+    path.with_name(path.name + ".sha256").write_text(listed)
+    with pytest.raises(PVGISError, match=message):
+        read_series(path)
+
+
 def test_rate_limits_are_retried_a_bounded_number_of_times(
     tmp_path: Path, http: Callable[..., FakeHTTP]
 ) -> None:
