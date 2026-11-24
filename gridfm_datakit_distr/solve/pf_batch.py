@@ -56,6 +56,7 @@ from gridfm_datakit_distr.scenarios.der import (
     storage_units,
 )
 from gridfm_datakit_distr.scenarios.profiles import customers_of, make_provider
+from gridfm_datakit_distr.scenarios.pvgis import series_for
 from gridfm_datakit_distr.scenarios.seeds import (
     ScenarioStream,
     network_key,
@@ -147,6 +148,8 @@ class ScenarioOutcome:
     """How this scenario's controls reached its state (null with the state)."""
     profile_source: str
     profile_time_s: int | None
+    pv_time_utc_s: int | None
+    """Start of the PVGIS hour drawn (Unix time, s); None without PV or with the clear sky."""
     der_penetration: float
     source_v_pu: float
     load_p_w: NDArray[np.float64]
@@ -208,7 +211,12 @@ class VariantRunner:
         self.customers = customers_of(prepared)
         self.loads = make_provider(config.scenarios.profiles, self.customers, network, root)
         units = pv_units(variant.perturbation, config.der.pv)
-        self.pv = PVOutputs(units, config.der.pv, config.scenarios.pv_profile) if units else None
+        profile = config.scenarios.pv_profile
+        self.pv = (
+            PVOutputs(units, config.der.pv, profile, series_for(profile, network.id, root))
+            if units
+            else None
+        )
         bess = storage_units(variant.perturbation)
         self.storage = StorageSetpoints(bess, config.scenarios.storage_profile) if bess else None
         dg = dg_units(variant.perturbation)
@@ -448,6 +456,7 @@ class VariantRunner:
             origin=None if state is None else state.origin,
             profile_source=self.loads.name,
             profile_time_s=draws.time_s,
+            pv_time_utc_s=None if pv is None else pv.time_utc_s,
             der_penetration=self.der_penetration,
             source_v_pu=draws.v_src,
             load_p_w=draws.p_w,

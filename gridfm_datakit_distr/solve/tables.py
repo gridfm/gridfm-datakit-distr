@@ -137,6 +137,7 @@ def chunk_tables(
             "origin": o.origin,
             "seed": o.seed,
             "profile_time_s": o.profile_time_s,
+            "pv_time_utc_s": o.pv_time_utc_s,
             "profile_source": o.profile_source,
             "der_penetration": o.der_penetration,
             "source_v_pu": o.source_v_pu if o.load_p_w.size else None,

@@ -56,6 +56,7 @@ from gridfm_datakit_distr.networks.fetch import verify_cached
 from gridfm_datakit_distr.networks.passport import build_passport
 from gridfm_datakit_distr.networks.prepare import prepare_network
 from gridfm_datakit_distr.normalize.bases import s_base_va
+from gridfm_datakit_distr.scenarios.pvgis import series_record
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
 from gridfm_datakit_distr.solve.tables import (
     chunk_tables,
@@ -250,12 +251,24 @@ def _network_tables(
 ) -> tuple[list[dict[str, Any]], list[Job]]:
     """Passports and ``catalog/networks`` (the networks are loaded once here: a network that
     does not load stops the run before any unit); with ``der.dg``, the capacity of each
-    network's dispatchable generators, recorded in the manifest and carried by its job."""
+    network's dispatchable generators, recorded in the manifest and carried by its job; with
+    PVGIS, each network's series, recorded in the manifest and the passport (a resumed dataset
+    refuses a series other than the one it started with)."""
     options = prepare_options(config)
     passports, ready = [], []
+    pv_profile = config.scenarios.pv_profile
     for j, job in enumerate(jobs):
         prepared = prepare_network(job.network, options, root)
         passport = build_passport(prepared, catalog)
+        if pv_profile.provider == "pvgis":
+            record = series_record(pv_profile.pvgis, job.network.id, root)
+            started = manifest.networks[j].get("pvgis", record)
+            if started["sha256"] != record["sha256"]:
+                raise GenerationError(
+                    f"{job.network.id}: the PVGIS series in the cache ({record['sha256']}) is "
+                    f"not the one this dataset started with ({started['sha256']})"
+                )
+            manifest.networks[j]["pvgis"] = passport["pv_series"] = record
         writer.write_json(f"catalog/passports/{job.network.id}.json", passport)
         passports.append(passport)
         if config.labels.opf.enabled:  # the reason a network has no OPF labels, once

@@ -175,6 +175,7 @@ def test_stream_codes_are_stable() -> None:
         "STORAGE_SETPOINT": 10,
         "DG_SETPOINT": 11,
         "DG_AVAILABILITY": 12,
+        "PV_TIME": 13,
     }
 
 

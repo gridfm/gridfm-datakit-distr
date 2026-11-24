@@ -53,6 +53,7 @@ def dataset_card(
     """The dataset's ``README.md``; ``opf_statuses`` with OPF labels."""
     config = manifest.config
     name = config["dataset_name"]
+    pvgis = [n["pvgis"] for n in manifest.networks if "pvgis" in n]
     units = Counter(u.status for u in manifest.units.values())
     lines = [
         f"# {name}",
@@ -98,6 +99,15 @@ def dataset_card(
             if any("dg" in n for n in manifest.networks)
             else []
         ),
+        *(
+            [
+                "- PV output: hourly series of PVGIS 5.3 (`manifest.json` `networks[].pvgis`): "
+                + "; ".join(_pvgis(manifest.networks))
+                + f". {pvgis[0]['attribution']} ({pvgis[0]['source_url']})."
+            ]
+            if pvgis
+            else []
+        ),
         f"- Work units: {sum(units.values())} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(units.items()))
         + ").",
@@ -111,7 +121,12 @@ def dataset_card(
         "",
         "- Only `converged` scenarios have result rows; the others are listed in "
         "`scenarios/scenario_meta` with their status.",
-        "- PV output uses a synthetic clear-sky shape without location or date.",
+        (
+            "- PV output: one hour of a PVGIS series at a location chosen in the config (no "
+            "source gives the networks' locations), drawn per scenario for the whole network."
+            if pvgis
+            else "- PV output uses a synthetic clear-sky shape without location or date."
+        ),
         "- Profile times are offsets from the start of the source profiles; no source is dated.",
         "",
         "## Citation",
@@ -131,3 +146,17 @@ def _dg(network: Mapping[str, Any]) -> str:
         f"`{network['network_id']}` {dg['n_units']} of {dg['p_max_w'] / 1e3:.4g} kW "
         f"(bound: {dg['binding']})"
     )
+
+
+def _pvgis(networks: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Each PVGIS series of the dataset: where, what PVGIS used, for which networks."""
+    series: dict[str, tuple[Mapping[str, Any], list[str]]] = {}
+    for n in networks:
+        if "pvgis" in n:
+            series.setdefault(n["pvgis"]["sha256"], (n["pvgis"], []))[1].append(n["network_id"])
+    return [
+        f"{r['latitude']}, {r['longitude']} ({r['timezone']}), {r['years'][0]}-{r['years'][1]}, "
+        f"{r['radiation_db']} and {r['meteo_db']}, slope {r['slope_deg']:g}°, azimuth "
+        f"{r['azimuth_deg']:g}° for " + ", ".join(f"`{i}`" for i in ids)
+        for r, ids in series.values()
+    ]

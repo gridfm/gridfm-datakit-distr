@@ -70,6 +70,8 @@ class ScenarioStream(IntEnum):
     """Set-point of each dispatchable generator (``scenarios.dg_profile.setpoint``)."""
     DG_AVAILABILITY = 12
     """Availability of each dispatchable generator (``scenarios.dg_profile.availability``)."""
+    PV_TIME = 13
+    """Hour of the PV series of each scenario (``scenarios.pv_profile.provider: pvgis``)."""
 
 
 def network_key(network_id: str) -> int:

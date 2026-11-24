@@ -37,8 +37,17 @@ def version() -> None:
 @app.command()
 def fetch(
     idents: Annotated[
-        list[str], typer.Argument(help="Source or network ids, e.g. ieee13, csiro_enwl, edp.")
-    ],
+        list[str] | None,
+        typer.Argument(help="Source or network ids, e.g. ieee13, csiro_enwl, edp."),
+    ] = None,
+    config_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            help="Also download the PVGIS series a generation config needs "
+            "(scenarios.pv_profile.provider: pvgis), one per location.",
+        ),
+    ] = None,
     from_file: Annotated[
         Path | None,
         typer.Option(
@@ -63,13 +72,17 @@ def fetch(
         ),
     ] = None,
 ) -> None:
-    """Download catalog sources into the cache and verify their checksums."""
+    """Download catalog sources (and a config's PVGIS series) into the cache and verify their
+    checksums."""
     from gridfm_datakit_distr.networks.catalog import load_catalog
     from gridfm_datakit_distr.networks.fetch import FetchError, fetch_source
 
+    if not idents and config_path is None:
+        typer.echo("error: give source or network ids, or --config", err=True)
+        raise typer.Exit(2)
     catalog = load_catalog()
     try:
-        sources = {src.id: src for src in (catalog.source_for(i) for i in idents)}
+        sources = {src.id: src for src in (catalog.source_for(i) for i in idents or [])}
     except KeyError as exc:
         typer.echo(f"error: {exc.args[0]}", err=True)
         raise typer.Exit(2) from exc
@@ -98,6 +111,41 @@ def fetch(
                 f"{source.id}: {len(result.unverified)} files have no manifest checksum; "
                 f"review {result.lock_file} and add it to networks/manifests/{source.id}.sha256"
             )
+    if config_path is not None:
+        _fetch_pvgis(config_path, force, cache)
+
+
+def _fetch_pvgis(config_path: Path, force: bool, cache: Path | None) -> None:
+    """Download the PVGIS series of a config, one per location (``fetch --config``)."""
+    from gridfm_datakit_distr.config.load import ConfigError, load_config, select_networks
+    from gridfm_datakit_distr.networks.catalog import load_catalog
+    from gridfm_datakit_distr.scenarios.pvgis import PVGISError, fetch_series, location_of
+
+    catalog = load_catalog()
+    try:
+        config = load_config(config_path, catalog)
+    except ConfigError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    profile = config.scenarios.pv_profile
+    if profile.provider != "pvgis":
+        typer.echo(f"{config_path}: no PVGIS series needed (provider {profile.provider})")
+        return
+    locations = {
+        location_of(profile.pvgis, s.network_id) for s in select_networks(config.networks, catalog)
+    }
+    for location in sorted(locations, key=lambda loc: (loc.lat, loc.lon)):
+        try:
+            path, series, downloaded = fetch_series(profile.pvgis, location, cache, force=force)
+        except PVGISError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+        state = "downloaded" if downloaded else "already fetched and verified"
+        typer.echo(
+            f"pvgis {location.lat}, {location.lon}: {state} ({path}; {series.radiation_db}, "
+            f"slope {series.slope_deg:g}, azimuth {series.azimuth_deg:g}, "
+            f"sha256 {series.sha256})"
+        )
 
 
 @app.command()
@@ -288,6 +336,22 @@ def generate(
     if missing:
         typer.echo(f"error: run `gridfm_datakit_distr fetch {' '.join(missing)}` first", err=True)
         raise typer.Exit(1)
+    pv_profile = config.scenarios.pv_profile
+    if pv_profile.provider == "pvgis":
+        from gridfm_datakit_distr.scenarios.pvgis import PVGISError, missing_series
+
+        try:
+            unfetched = missing_series(pv_profile.pvgis, [j.network.id for j in jobs], cache)
+        except PVGISError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(1) from exc
+        if unfetched:
+            typer.echo(
+                f"error: no PVGIS series for {', '.join(unfetched)}: run "
+                f"`gridfm_datakit_distr fetch --config {config_path}` first",
+                err=True,
+            )
+            raise typer.Exit(1)
     unserved = profile_issues(config.scenarios.profiles, [j.network for j in jobs], cache)
     if unserved:  # else every unit of these networks would fail
         where = "scenarios.profiles.provider"

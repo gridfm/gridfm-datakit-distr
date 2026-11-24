@@ -203,6 +203,7 @@ def scenario_meta(precision: Precision) -> pa.Schema:
             _nullable("origin", pa.string()),
             _required("seed", pa.uint64()),
             _nullable("profile_time_s", pa.int64()),
+            _nullable("pv_time_utc_s", pa.int64()),
             _required("profile_source", pa.string()),
             _required("der_penetration", real),
             _nullable("source_v_pu", real),

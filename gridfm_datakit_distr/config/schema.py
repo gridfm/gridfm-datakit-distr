@@ -10,7 +10,9 @@ their quantity admits. The model docstrings and field descriptions are the user 
 
 from __future__ import annotations
 
+import fnmatch
 import math
+import zoneinfo
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -20,6 +22,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     PlainValidator,
+    field_validator,
     model_validator,
 )
 
@@ -47,6 +50,8 @@ VOLTAGE_PRESETS: dict[str, tuple[float, float]] = {
 }
 """Voltage limits (pu): UK ESQCR 2002, 230 V +10 %/-6 % (216.2 to 253.0 V) at LV supply
 terminals; ANSI C84.1 Range A service voltage, +/-5 %."""
+PVGIS_YEARS = (2005, 2023)
+"""Years PVGIS 5.3 serves (SARAH3 and ERA5; the API refuses others)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,8 +338,9 @@ class PV(_Config):
     inverter_kva_per_kwp: float = Field(
         default=1.1,
         gt=0,
-        description="Inverter rating (kVA) per kWp. Active power is clipped at the rating; from "
-        "1 up it never clips (the available power never exceeds kWp).",
+        description="Inverter rating (kVA) per kWp. Active power is clipped at the rating; with "
+        "`synthetic_clear_sky` the available power never exceeds kWp, so from 1 up it never "
+        "clips (a PVGIS hour can exceed kWp).",
     )
     reactive_fraction: FractionSpec = Field(
         default=Fixed(0.44),
@@ -451,21 +457,131 @@ class Profiles(_Config):
         return self
 
 
-class PVProfile(_Config):
-    """PV output per scenario: available power = kWp · clear-sky shape of the hour · cloud
-    factor · availability, injected up to the inverter rating ([Scenarios](scenarios.md))."""
+class PVGISLocation(_Config):
+    """A point for PVGIS: latitude, longitude and the local time zone."""
 
-    provider: Literal["synthetic_clear_sky"] = Field(
+    lat: float = Field(ge=-90, le=90, description="Latitude (degrees north).")
+    lon: float = Field(ge=-180, le=180, description="Longitude (degrees east).")
+    timezone: str = Field(description="IANA time zone name, e.g. `Europe/London`.")
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, name: str) -> str:
+        try:
+            zoneinfo.ZoneInfo(name)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            raise ValueError(f"unknown IANA time zone {name!r}") from None
+        return name
+
+
+class PVGIS(_Config):
+    """Hourly PV output from PVGIS 5.3 of the EU Joint Research Centre, `provider: pvgis` only
+    (this section with another provider is an error). One `seriescalc` series per location: the
+    power `P` of a 1 kWp system, with PVGIS's temperature model and system loss, for every hour of
+    the years; `fetch --config` downloads it into the cache ([Scenarios](scenarios.md#pv-output)).
+    The keys below are PVGIS's API parameters."""
+
+    locations: Annotated[
+        dict[str, PVGISLocation],
+        DocType("mapping of network id or glob pattern to `{lat, lon, timezone}`"),
+    ] = Field(
+        default_factory=dict,
+        description="Where each network is: a catalog network id or a glob pattern "
+        "(`fnmatch`, as `networks.include`) mapped to `lat` (degrees north), `lon` (degrees "
+        "east) and `timezone` (IANA name, for the local time of day). An id wins over patterns; "
+        "two patterns matching one network are an error, as is a key matching no catalog "
+        "network. No network has a built-in location (no source gives a point): `generate` "
+        "refuses a selected network without one.",
+    )
+    startyear: int = Field(
+        default=PVGIS_YEARS[0],
+        ge=PVGIS_YEARS[0],
+        le=PVGIS_YEARS[1],
+        description="First year of the series.",
+    )
+    endyear: int = Field(
+        default=PVGIS_YEARS[1],
+        ge=PVGIS_YEARS[0],
+        le=PVGIS_YEARS[1],
+        description="Last year of the series (≥ `startyear`).",
+    )
+    loss: float = Field(
+        default=14.0,
+        ge=0,
+        lt=100,
+        description="System loss (%), PVGIS's recommended 14 by default.",
+    )
+    pvtechchoice: Literal["crystSi", "crystSi2025", "CIS", "CdTe", "Unknown"] = Field(
+        default="crystSi", description="PV technology (PVGIS's default `crystSi`)."
+    )
+    mountingplace: Literal["free", "building"] = Field(
+        default="free",
+        description="`free`: rack-mounted with air behind the modules (PVGIS's default); "
+        "`building`: building-integrated, no air behind. PVGIS places roof-mounted systems "
+        "somewhere between the two.",
+    )
+    optimalangles: bool = Field(
+        default=True,
+        description="Use PVGIS's fixed slope and azimuth with the highest yearly energy at "
+        "each location (the response reports them, `manifest.json`); `false` needs `angle` "
+        "and `aspect`.",
+    )
+    angle: int | None = Field(
+        default=None,
+        ge=0,
+        le=90,
+        description="Slope of the modules from the horizontal (whole degrees: PVGIS rounds "
+        "others); with `optimalangles: false` only.",
+    )
+    aspect: int | None = Field(
+        default=None,
+        ge=-180,
+        le=180,
+        description="Azimuth of the modules (whole degrees, 0 south, 90 west, -90 east); with "
+        "`optimalangles: false` only.",
+    )
+
+    @model_validator(mode="after")
+    def _consistent(self) -> PVGIS:
+        if self.startyear > self.endyear:
+            raise ValueError(f"startyear {self.startyear} is after endyear {self.endyear}")
+        explicit = (self.angle is not None, self.aspect is not None)
+        if self.optimalangles and any(explicit):
+            raise ValueError("angle and aspect are used only with optimalangles: false")
+        if not self.optimalangles and not all(explicit):
+            raise ValueError("optimalangles: false needs angle and aspect")
+        return self
+
+    def matching_keys(self, network_id: str) -> list[str]:
+        """The keys of ``locations`` that place a network: its id, else every pattern that
+        matches it (one is valid)."""
+        if network_id in self.locations:
+            return [network_id]
+        return [k for k in self.locations if fnmatch.fnmatchcase(network_id, k)]
+
+
+_CLOUDINESS = Uniform(0.0, 1.0)
+
+
+class PVProfile(_Config):
+    """PV output per scenario: available power = kWp · output per kWp of the provider ·
+    availability, injected up to the inverter rating ([Scenarios](scenarios.md))."""
+
+    provider: Literal["synthetic_clear_sky", "pvgis"] = Field(
         default="synthetic_clear_sky",
         description="`synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and "
-        "18:00, no date or location. The hour `h` is the load profile's time of day when the "
-        "scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios "
-        "fall at night, with no PV output.",
+        "18:00 times the cloud factor, no date or location. The hour `h` is the load profile's "
+        "time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads "
+        "half the scenarios fall at night, with no PV output. `pvgis`: one hour of the PVGIS "
+        "series of the network's location (section `pvgis`), at the load profile's local time "
+        "of day on a date drawn uniformly when the scenario has one, else any hour of the "
+        "series.",
     )
     cloudiness: FractionSpec = Field(
-        default=Uniform(0.0, 1.0),
-        description="Cloud cover fraction `c`, drawn per scenario for the whole network; the "
-        "clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %.",
+        default=_CLOUDINESS,
+        description="`synthetic_clear_sky` only (another value with `pvgis` is an error): "
+        "cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky "
+        "output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %.",
     )
     availability: FractionSpec = Field(
         default=Fixed(1.0),
@@ -475,6 +591,16 @@ class PVProfile(_Config):
         "differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for "
         "units out of service.",
     )
+    pvgis: PVGIS = PVGIS()
+
+    @model_validator(mode="after")
+    def _sections_need_their_provider(self) -> PVProfile:
+        # values, not keys: a stored config (model_dump) sets every key
+        if self.provider == "pvgis" and self.cloudiness != _CLOUDINESS:
+            raise ValueError("cloudiness is used only with provider 'synthetic_clear_sky'")
+        if self.provider != "pvgis" and self.pvgis != PVGIS():
+            raise ValueError(f"pvgis is used only with provider 'pvgis', got {self.provider!r}")
+        return self
 
 
 class StorageProfile(_Config):

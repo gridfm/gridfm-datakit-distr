@@ -46,7 +46,9 @@ This document is the contract between the generator and its consumers (models, b
 <data_dir>/<dataset_name>/
   manifest.json                    # schema_version, config_hash, versions, config (resolved, with
                                    # the seed), networks (with OPF labels: opf_not_supported; with
-                                   # der.dg: dg, the capacity of the dispatchable generators),
+                                   # der.dg: dg, the capacity of the dispatchable generators;
+                                   # with PVGIS: pvgis, the network's PV series: request URL,
+                                   # databases and angles used, SHA-256, attribution),
                                    # chunk list + status
                                    # and peak memory of the process that ran each chunk (MiB)
   README.md                        # dataset card (generated)
@@ -112,7 +114,7 @@ This document is the contract between the generator and its consumers (models, b
 
 ### `catalog/passports/<network_id>.json`
 
-Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `checksums`, `original_format`, `converter`, `normalisation` (list of applied normalisations with parameters, e.g. `{"loads.vminpu": 0.6, "loads.vmaxpu": 1.5}`), `neutral_representation`, `slack_definition`, `known_differences` (vs other engines), `excluded_elements` (if any).
+Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `checksums`, `original_format`, `converter`, `normalisation` (list of applied normalisations with parameters, e.g. `{"loads.vminpu": 0.6, "loads.vmaxpu": 1.5}`), `neutral_representation`, `slack_definition`, `known_differences` (vs other engines), `excluded_elements` (if any). With `scenarios.pv_profile.provider: pvgis` it also holds `pv_series`, the record of the network's PVGIS series in `manifest.json` (attribution "PVGIS © European Communities, 2001-2026", source URL, request URL, the radiation and meteorological databases and the angles PVGIS used, SHA-256).
 
 ---
 
@@ -287,6 +289,7 @@ The network admittance matrix of a state, `Y_state`, at node level (node indices
 | `origin` | string, nullable | how this scenario's controls reached its state: `static_settle` (settled on the scenario's setpoints), `static_settle+jitter` (the tap jitter moved the settled taps and the controls settled again, to another state), `static_settle+ramp` and `static_settle+ramp+jitter` (the same, reached by a load ramp because settling at the variant's initial taps did not converge: [scenarios](scenarios.md)), `as_is` (controls off, taps and capacitors as compiled); null when `state_id` is null. Scenarios sharing a state can have different origins |
 | `seed` | uint64 | 64-bit fingerprint of the scenario's seed sequence (keyed by `settings.seed`, the network's id, the variant and scenario indices) |
 | `profile_time_s` | int64, nullable | time of the load profile drawn, seconds since the start of the source's profile (no source is dated); null for synthetic profiles or one time per customer |
+| `pv_time_utc_s` | int64, nullable | with `scenarios.pv_profile.provider: pvgis`, the hour of the network's PVGIS series drawn for the PV units: Unix time (seconds since 1970-01-01 00:00 UTC) of the start of the hour the record stands for ([Scenarios](scenarios.md#pv-output)); null with `synthetic_clear_sky` (no date), in a variant without PV units, or when the scenario failed before its draws |
 | `profile_source` | string | provider name |
 | `der_penetration` | float32/64 | share of customers with PV in the variant |
 | `source_v_pu` | float32/64, nullable | sampled source voltage magnitude |
@@ -351,7 +354,7 @@ tables determine the voltages.
 | `element_idx` | int32 | DER element (OpenDSS `Generator` in v1) |
 | `der_type` | string | `pv`, `bess` (storage, `Generator.bess_<load>`), `dg` (dispatchable generator, `Generator.dg_<load>`), `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
 | `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive; storage: positive discharging, negative charging, `q_var` 0; DG: `scenarios.dg_profile.setpoint` × its available capacity `p_avail_w`, `q_var` 0) |
-| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail; DG: its available capacity `a · P^max`, `a` the unit's availability in the scenario, 0 when out of service, [Scenarios](scenarios.md#dispatchable-generators)) |
+| `p_avail_w` | float32/64 | available active power (PV: kWp × the provider's output per kWp × the unit's availability, the output per kWp being the clear-sky shape × cloud factor with `synthetic_clear_sky` or the PVGIS power of 1 kWp in the hour `scenario_meta.pv_time_utc_s` with `pvgis`, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail; DG: its available capacity `a · P^max`, `a` the unit's availability in the scenario, 0 when out of service, [Scenarios](scenarios.md#dispatchable-generators)) |
 | `s_rated_va` | float32/64 | inverter rating (storage: its power rating `der.storage.kw`; DG: its capacity `P^max`; the OPF's box bound of both `p` and `q`, not a circle, is `p_avail_w`) |
 
 A scenario's rows list its variant's PV units, then its storage units, then its dispatchable generators, each in name order.

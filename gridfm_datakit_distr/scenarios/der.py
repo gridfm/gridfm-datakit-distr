@@ -18,6 +18,11 @@ noon 12:00, sunset 18:00, no location or date. ``cloud_factor`` is the Kasten-Cz
 global irradiance, ``1 - 0.75 · c^3.4`` with ``c`` the cloud cover fraction (Kasten and Czeplak,
 Solar Energy 24, 1980).
 
+With ``scenarios.pv_profile.provider: pvgis`` the output per kWp is one hour of the network's PVGIS
+series instead (``scenarios/pvgis.py``): ``p_avail = kWp · P / 1 kW · a``, ``P`` the series' power
+of 1 kWp in the record drawn from ``PV_TIME``, at the load profile's local time of day when the
+scenario has one; no cloudiness is drawn. Clipping and reactive power as above.
+
 Storage units (``Generator.bess_<load>``, placed with PV customers) are fixed at a set-point per
 scenario, ``p = setpoint · kW``, ``setpoint`` drawn per unit from ``STORAGE_SETPOINT`` (positive:
 discharging), ``q = 0``. ``p_avail_w`` of a storage unit is its set-point: it has nothing to
@@ -41,6 +46,7 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import PV, DGProfile, PVProfile, StorageProfile
 from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
+from gridfm_datakit_distr.scenarios.pvgis import PVSeries, draw_record
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.variants.perturbation import Perturbation
 
@@ -111,45 +117,77 @@ def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
 class PVDraw:
     """One scenario's PV setpoints, ordered as the units."""
 
-    hour: float
-    cloudiness: float
+    hour: float | None
+    """Time of day of the clear-sky shape (h); None with a PVGIS series."""
+    cloudiness: float | None
+    """None with a PVGIS series."""
     p_avail_w: NDArray[np.float64]
     p_w: NDArray[np.float64]
     """Injected active power (generation positive)."""
     q_var: NDArray[np.float64]
     """Injected reactive power (negative: absorbed)."""
+    time_utc_s: int | None = None
+    """Start of the PVGIS hour drawn (Unix time, s); None with the clear-sky shape."""
 
 
 class PVOutputs:
-    """The outputs of a variant's PV units, scenario by scenario."""
+    """The outputs of a variant's PV units, scenario by scenario; ``series``: the network's
+    PVGIS series (``provider: pvgis``), None for the synthetic clear sky."""
 
-    def __init__(self, units: Sequence[PVUnit], spec: PV, profile: PVProfile) -> None:
+    def __init__(
+        self,
+        units: Sequence[PVUnit],
+        spec: PV,
+        profile: PVProfile,
+        series: PVSeries | None = None,
+    ) -> None:
+        if (series is None) != (profile.provider != "pvgis"):
+            raise ValueError(f"provider {profile.provider!r} with series {series!r}")
         self.units = tuple(units)
         self.spec = spec
         self.profile = profile
+        self.series = series
         self._kwp = np.array([u.kwp for u in self.units], dtype=np.float64)
         self._rated = np.array([u.s_rated_va for u in self.units], dtype=np.float64)
         self._tan = np.tan(np.arccos([u.power_factor for u in self.units]))
 
     def draw(self, seed: int, net: int, k: int, s: int, time_s: int | None) -> PVDraw:
         """Setpoints of scenario ``s``; ``time_s``: the load profile's time, if it has one."""
+        if self.series is not None:
+            return self._draw_series(self.series, seed, net, k, s, time_s)
         if time_s is None:
             hour = float(scenario_rng(seed, net, k, s, ScenarioStream.PROFILE_TIME).uniform(0, 24))
         else:
             hour = (int(time_s) % DAY_S) / 3600.0
         rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_OUTPUT)
         cloudiness = float(self.profile.cloudiness.sample(rng))
+        availability = self._availability(seed, net, k, s)
+        p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness) * availability
+        return PVDraw(hour, cloudiness, p_avail, *self._setpoints(p_avail))
+
+    def _draw_series(
+        self, series: PVSeries, seed: int, net: int, k: int, s: int, time_s: int | None
+    ) -> PVDraw:
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_TIME)
+        i = draw_record(series, rng, None if time_s is None else int(time_s) % DAY_S)
+        p_avail = self._kwp * series.p_w[i] * self._availability(seed, net, k, s)
+        time_utc_s = series.start_s + 3600 * i
+        return PVDraw(None, None, p_avail, *self._setpoints(p_avail), time_utc_s=time_utc_s)
+
+    def _availability(self, seed: int, net: int, k: int, s: int) -> float | NDArray[np.float64]:
         spec = self.profile.availability
         if isinstance(spec, Fixed):
-            availability: float | NDArray[np.float64] = spec.value
-        else:
-            rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_AVAILABILITY)
-            availability = np.array([float(spec.sample(rng)) for _ in self.units])
-        p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness) * availability
+            return spec.value
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_AVAILABILITY)
+        return np.array([float(spec.sample(rng)) for _ in self.units])
+
+    def _setpoints(
+        self, p_avail: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         p = np.minimum(p_avail, self._rated)  # inverter clipping when kVA < kWp
         q_limit = np.sqrt(np.maximum(self._rated**2 - p**2, 0.0))
         q = -np.minimum(p * self._tan, q_limit)
-        return PVDraw(hour, cloudiness, p_avail, p, q)
+        return p, q
 
 
 @dataclass(frozen=True, slots=True)

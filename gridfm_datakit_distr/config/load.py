@@ -79,8 +79,10 @@ def validate_config(
         raise ConfigError(
             source, [_issue(error) for error in exc.errors(include_url=False)]
         ) from None
+    catalog = catalog or load_catalog()
     issues = [issue for rule in _RULES for issue in rule(config)]
-    issues += _selection(config.networks, catalog or load_catalog())[1]
+    selected, found = _selection(config.networks, catalog)
+    issues += found + _pv_locations(config, [s.network_id for s in selected], catalog)
     if issues:
         raise ConfigError(source, issues)
     return config
@@ -173,6 +175,30 @@ def _opf_requirements(config: GenerationConfig) -> list[Issue]:
 
 
 _RULES: tuple[Callable[[GenerationConfig], list[Issue]], ...] = (_opf_requirements,)
+
+
+def _pv_locations(config: GenerationConfig, selected: list[str], catalog: Catalog) -> list[Issue]:
+    """PVGIS needs one location per selected network (none is built in), and every key of
+    ``locations`` must match a catalog network."""
+    pvgis = config.scenarios.pv_profile.pvgis
+    where = "scenarios.pv_profile.pvgis.locations"
+    issues = [
+        (f"{where}.{key}", f"{key!r} matches no catalog network")
+        for key in pvgis.locations
+        if not any(fnmatch.fnmatchcase(n, key) for n in catalog.networks)
+    ]
+    if config.scenarios.pv_profile.provider != "pvgis":
+        return issues
+    keys = {n: pvgis.matching_keys(n) for n in selected}
+    unplaced = [n for n, k in keys.items() if not k]
+    if unplaced:
+        issues.append((where, f"no location for {', '.join(unplaced)} (none is built in)"))
+    issues += [
+        (where, f"{n} is matched by several patterns: {', '.join(k)}")
+        for n, k in keys.items()
+        if len(k) > 1
+    ]
+    return issues
 
 
 # ------------------------------------------------------------------ error formatting

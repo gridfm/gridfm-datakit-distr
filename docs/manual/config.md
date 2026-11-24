@@ -188,7 +188,7 @@ unit sits on the load's nodes (after any phase move), constant P, Q within the l
 | `der.pv.penetration` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 0.8}` | Share of customers with PV, drawn per variant: each customer gets a unit with that probability, so the realised share (`scenario_meta.der_penetration`) varies around the draw. `0`: no PV. The default puts a voltage violation in about 6 % of the scenarios of a dataset of the whole catalog. |
 | `der.pv.kwp` | value spec, > 0 | `{distribution: uniform, low: 2.0, high: 6.0}` | Peak power (kW) of each unit, drawn per customer and variant. |
 | `der.pv.power_factor` | value spec, > 0 and ≤ 1 | `1.0` | Power factor of each inverter in the power flow, drawn per unit and variant. Below 1 the inverter absorbs reactive power, `q = -p · tan(acos(pf))`, limited to its rating. |
-| `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp. Active power is clipped at the rating; from 1 up it never clips (the available power never exceeds kWp). |
+| `der.pv.inverter_kva_per_kwp` | number > 0 | `1.1` | Inverter rating (kVA) per kWp. Active power is clipped at the rating; with `synthetic_clear_sky` the available power never exceeds kWp, so from 1 up it never clips (a PVGIS hour can exceed kWp). |
 | `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | OPF only: largest reactive power of each inverter, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per unit and variant. |
 | `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | OPF only: a unit whose available power is below this fraction of its rating gives no reactive power (IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant. |
 
@@ -251,14 +251,34 @@ and `pf` per customer and scenario. The loads' nominal reactive powers are not u
 
 ### `scenarios.pv_profile`
 
-PV output per scenario: available power = kWp · clear-sky shape of the hour · cloud
-factor · availability, injected up to the inverter rating ([Scenarios](scenarios.md)).
+PV output per scenario: available power = kWp · output per kWp of the provider ·
+availability, injected up to the inverter rating ([Scenarios](scenarios.md)).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.pv_profile.provider` | one of `synthetic_clear_sky` | `synthetic_clear_sky` | `synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and 18:00, no date or location. The hour `h` is the load profile's time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios fall at night, with no PV output. |
-| `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %. |
+| `scenarios.pv_profile.provider` | one of `synthetic_clear_sky`, `pvgis` | `synthetic_clear_sky` | `synthetic_clear_sky`: `max(0, cos(π (h - 12) / 12))` between 6:00 and 18:00 times the cloud factor, no date or location. The hour `h` is the load profile's time of day when the scenario has one, else uniform over 24 h: with `synthetic` loads half the scenarios fall at night, with no PV output. `pvgis`: one hour of the PVGIS series of the network's location (section `pvgis`), at the load profile's local time of day on a date drawn uniformly when the scenario has one, else any hour of the series. |
+| `scenarios.pv_profile.cloudiness` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | `synthetic_clear_sky` only (another value with `pvgis` is an error): cloud cover fraction `c`, drawn per scenario for the whole network; the clear-sky output is scaled by `1 - 0.75 c^3.4` (Kasten-Czeplak): 1 leaves 25 %. |
 | `scenarios.pv_profile.availability` | value spec, ≥ 0 and ≤ 1 | `1.0` | Factor on each unit's available power, drawn per unit and scenario (shading, or 0 for a unit out of service). With 1 every unit of a variant delivers the same share of its kWp in a scenario; a distribution makes their outputs differ, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for units out of service. |
+
+#### `scenarios.pv_profile.pvgis`
+
+Hourly PV output from PVGIS 5.3 of the EU Joint Research Centre, `provider: pvgis` only
+(this section with another provider is an error). One `seriescalc` series per location: the
+power `P` of a 1 kWp system, with PVGIS's temperature model and system loss, for every hour of
+the years; `fetch --config` downloads it into the cache ([Scenarios](scenarios.md#pv-output)).
+The keys below are PVGIS's API parameters.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scenarios.pv_profile.pvgis.locations` | mapping of network id or glob pattern to `{lat, lon, timezone}` | `{}` | Where each network is: a catalog network id or a glob pattern (`fnmatch`, as `networks.include`) mapped to `lat` (degrees north), `lon` (degrees east) and `timezone` (IANA name, for the local time of day). An id wins over patterns; two patterns matching one network are an error, as is a key matching no catalog network. No network has a built-in location (no source gives a point): `generate` refuses a selected network without one. |
+| `scenarios.pv_profile.pvgis.startyear` | integer ≥ 2005 and ≤ 2023 | `2005` | First year of the series. |
+| `scenarios.pv_profile.pvgis.endyear` | integer ≥ 2005 and ≤ 2023 | `2023` | Last year of the series (≥ `startyear`). |
+| `scenarios.pv_profile.pvgis.loss` | number ≥ 0 and < 100 | `14.0` | System loss (%), PVGIS's recommended 14 by default. |
+| `scenarios.pv_profile.pvgis.pvtechchoice` | one of `crystSi`, `crystSi2025`, `CIS`, `CdTe`, `Unknown` | `crystSi` | PV technology (PVGIS's default `crystSi`). |
+| `scenarios.pv_profile.pvgis.mountingplace` | one of `free`, `building` | `free` | `free`: rack-mounted with air behind the modules (PVGIS's default); `building`: building-integrated, no air behind. PVGIS places roof-mounted systems somewhere between the two. |
+| `scenarios.pv_profile.pvgis.optimalangles` | boolean | `true` | Use PVGIS's fixed slope and azimuth with the highest yearly energy at each location (the response reports them, `manifest.json`); `false` needs `angle` and `aspect`. |
+| `scenarios.pv_profile.pvgis.angle` | integer ≥ 0 and ≤ 90 or null | null | Slope of the modules from the horizontal (whole degrees: PVGIS rounds others); with `optimalangles: false` only. |
+| `scenarios.pv_profile.pvgis.aspect` | integer ≥ -180 and ≤ 180 or null | null | Azimuth of the modules (whole degrees, 0 south, 90 west, -90 east); with `optimalangles: false` only. |
 
 ### `scenarios.storage_profile`
 
