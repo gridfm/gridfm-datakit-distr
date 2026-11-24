@@ -32,7 +32,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta, timezone, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -77,7 +77,7 @@ class PVSeries:
     slope_deg: float
     azimuth_deg: float
     sha256: str
-    tz: tzinfo = timezone.utc
+    tz: tzinfo = UTC
     """The location's time zone: local time of day of the draws."""
 
 
@@ -374,8 +374,8 @@ _DAY = timedelta(days=1)
 def local_days(series: PVSeries) -> tuple[date, int]:
     """The first local date the series covers entirely and the number of such dates."""
     end_s = series.start_s + 3600 * len(series.p_w)
-    start = datetime.fromtimestamp(series.start_s, timezone.utc).astimezone(series.tz)
-    end = datetime.fromtimestamp(end_s, timezone.utc).astimezone(series.tz)
+    start = datetime.fromtimestamp(series.start_s, UTC).astimezone(series.tz)
+    end = datetime.fromtimestamp(end_s, UTC).astimezone(series.tz)
     first = start.date() if start.time() == datetime.min.time() else start.date() + _DAY
     return first, (end.date() - _DAY - first).days + 1
 
@@ -391,7 +391,7 @@ def draw_record(series: PVSeries, rng: np.random.Generator, time_of_day_s: int |
     wall = datetime(day.year, day.month, day.day, tzinfo=series.tz) + timedelta(
         seconds=time_of_day_s
     )  # wall-clock arithmetic: the zone's offset of that date and time, fold=0
-    i = (wall.astimezone(timezone.utc).timestamp() - series.start_s) // 3600
+    i = (wall.astimezone(UTC).timestamp() - series.start_s) // 3600
     if not 0 <= i < n:
         raise PVGISError(f"{wall.isoformat()} is outside the PVGIS series")
     return int(i)

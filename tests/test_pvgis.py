@@ -12,7 +12,7 @@ import json
 import re
 import urllib.error
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -37,7 +37,6 @@ from gridfm_datakit_distr.scenarios.pvgis import (
     series_path,
 )
 
-UTC = timezone.utc
 MANCHESTER = PVGISLocation(lat=53.48, lon=-2.24, timezone="Europe/London")
 
 
