@@ -11,6 +11,22 @@ import pyarrow as pa
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.manifest import Manifest
 
+# The default `der.pv.penetration`, compared by value; _PV_DENSITY's figures hold for it only.
+_PV_DENSITY_SPEC = {"distribution": "uniform", "low": 0.0, "high": 0.8}
+_PV_DENSITY = (
+    "- PV density: the share of customers with PV is drawn per variant uniform on [0, 0.8) (the "
+    "default), median 0.40. Electricity North West's 14 374 distribution substations with 5 or "
+    "more customers have a median of 0.043 MCS-certified PV installations per customer (SP "
+    "Electricity North West open data, MCS installations per substation), a lower bound since "
+    "MCS certifies only part of the installations: the default's median is about 9 times it, "
+    "and 32.5 % of its draws lie within the substations' 5-95 % range (0.003-0.263). The dataset "
+    "therefore describes mostly networks with far more PV than today's. Hence frequent reverse "
+    "flow: at the default config the feeder-head load of most of the catalog's CSIRO LV feeders "
+    "is negative at its 10th percentile over scenarios, against 0.7 % of the substations "
+    "Electricity North West monitors (SP Electricity North West open data, LV load duration "
+    "curves)."
+)
+
 
 def networks_table(
     passports: Sequence[Mapping[str, Any]], networks: Sequence[Mapping[str, Any]]
@@ -108,6 +124,7 @@ def dataset_card(
             if pvgis
             else []
         ),
+        *([_PV_DENSITY] if config["der"]["pv"]["penetration"] == _PV_DENSITY_SPEC else []),
         f"- Work units: {sum(units.values())} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(units.items()))
         + ").",

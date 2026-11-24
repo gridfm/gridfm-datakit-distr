@@ -316,3 +316,37 @@ def test_dataset_card(tmp_path: Path) -> None:
     assert "| `ieee13` | epri_ieee | BSD-3-Clause | 41 | kron |" in text
     assert "Scenarios: 6 (converged 5, not_converged 1)" in text
     assert "- IEEE PES" in text
+
+
+@pytest.mark.parametrize(
+    ("penetration", "stated"),
+    [
+        (None, True),  # the default
+        (0, False),  # no PV
+        ({"distribution": "uniform", "low": 0.0, "high": 0.5}, False),
+    ],
+)
+def test_dataset_card_pv_density(
+    tmp_path: Path, penetration: float | dict[str, Any] | None, stated: bool
+) -> None:
+    """The card states the default PV density against today's measured one, and only for it."""
+    raw = copy.deepcopy(CONFIG)
+    if penetration is not None:
+        raw["der"] = {"pv": {"penetration": penetration}}
+    config = GenerationConfig.model_validate(raw).model_dump(mode="json")
+    manifest = Manifest.create(tmp_path, config, {"generator": __version__})
+    passport = {
+        "network_id": "ieee13", "source": "epri_ieee", "license": "BSD-3-Clause",
+        "counts": {"nodes": 41}, "neutral_representation": "kron", "citation": "IEEE PES",
+    }  # fmt: skip
+    text = dataset_card(manifest, [passport], Counter({"converged": 6}))
+    phrases = [
+        "uniform on [0, 0.8)",  # the range
+        "median 0.40",
+        "median of 0.043",
+        "SP Electricity North West open data, MCS installations per substation",
+        "lower bound",
+        "reverse flow",
+        "0.7 %",
+    ]
+    assert [p in text for p in phrases] == [stated] * len(phrases)

@@ -64,6 +64,18 @@ For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario, the availab
 (`scenarios.pv_profile.provider`): a synthetic clear sky (`synthetic_clear_sky`, the default) and
 hourly series of PVGIS (`pvgis`).
 
+**Against measured penetration.** The share of customers with PV
+([`der.pv.penetration`](variants.md#rooftop-pv)) is drawn per variant uniform on [0, 0.8) by
+default, median 0.40. Electricity North West's 14 374 distribution substations with 5 or more
+customers have a median of 0.043 MCS-certified PV installations per customer (SP Electricity North
+West open data, MCS installations per substation), a lower bound since MCS certifies only part of
+the installations: the default's median is about 9 times it, and 32.5 % of its draws lie within
+the substations' 5–95 % range (0.003–0.263). A default dataset therefore describes mostly networks
+with far more PV than today's. Hence frequent reverse flow: at the default config the feeder-head
+load of most of the catalog's CSIRO LV feeders is negative at its 10th percentile over scenarios,
+against 0.7 % of the substations Electricity North West monitors (SP Electricity North West open
+data, LV load duration curves). The dataset card states this when the penetration is the default.
+
 ### Synthetic clear sky
 
 - available power `p_avail = kWp · clear_sky(h) · (1 − 0.75 c^3.4) · a`;
