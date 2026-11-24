@@ -25,19 +25,22 @@ setpoints:
 
 | Provider | Setpoints |
 |---|---|
-| `synthetic` (default) | `P = g · m · P_nominal`: `g` per scenario (`global_scale`, uniform 0.12–0.78), `m` per customer, lognormal with mean 1 (`exp(σz − σ²/2)`, `σ = local_sigma` = 0.3), so the mean load is `E[g] · P_nominal`. `Q = P · tan(acos(pf))`, lagging, with `pf` drawn per customer (`power_factor`, uniform 0.9–0.99): the source's nominal Q is not used. No time of day. |
+| `synthetic` (default) | `P = g · m · P_nominal`: `g` per scenario (`global_scale`, uniform 0.1–1.2), `m` per customer, lognormal with mean 1 (`exp(σz − σ²/2)`, `σ = local_sigma` = 0.3), so the mean load is `E[g] · P_nominal`. `Q = P · tan(acos(pf))`, lagging, with `pf` drawn per customer (`power_factor`, uniform 0.9–0.99): the source's nominal Q is not used. No time of day. |
 | `network_loadshapes` | the loads' own daily (else yearly) loadshapes, as OpenDSS reads them. A time is drawn uniformly over the profile window (the length of the shortest multi-point shape): one for all customers (`same_timestamp: true`, default, coincident demand) or one per customer (`false`). Without a Q curve, Q keeps the load's kvar/kW ratio. A customer with a one-point shape keeps that value, one without a shape its nominal value. |
 | `edp_smart_meter` | the same reader: in the EDP networks the loadshapes are the smart-meter files. The name is what `scenario_meta.profile_source` records. |
 
-**Default load scale.** The CSIRO feeders' nominal loads (about 0.9 kW per customer) are close to an
-after-diversity design peak, not a typical demand. The default `global_scale`, uniform 0.12–0.78, is
-fitted to Electricity North West's measured load-duration curves (open data, `lv_load_duration`,
-CC BY 4.0: a year of half-hourly load at each secondary substation; 6 179 substations with at
-least 20 customers). Without PV, the median over the 25 CSIRO networks of the network's P50 per
-customer is 0.41 kW, as measured (median 0.41, interquartile range 0.34–0.54 kW). Its P90 per
-customer is 0.53 kW against a measured 0.65 (0.55–0.84): each feeder draws its own factor, so the
-sum of a network's feeders spreads less than a real substation, whose feeders share the time of
-day. On other networks the nominal loads may mean something else: set `global_scale` to match.
+**Default load scale.** The CSIRO feeders' nominal loads (about 0.9 kW per customer) behave like an
+after-diversity design peak, not a typical demand: `g = 1` is the design peak. The default
+`global_scale`, uniform 0.1–1.2, is chosen to cover the states measured today and plausible heavier
+ones, not to reproduce today's distribution. Against Electricity North West's measured substation
+loads (open data, `lv_load_duration`, CC BY 4.0: a year of half-hourly load at each secondary
+substation; per customer, on the about 6 200 substations with at least 20 customers): at the
+lightest 5 % of substations a year's 10th percentile is about 0.14 of the nominal or less, which the
+floor 0.1 covers; the ceiling 1.2 lies above a year's 90th percentile at 86 % of the substations and
+leaves room for more electric heating and vehicles. The density is not matched to today: drawn
+uniformly, a dataset holds more heavy states than a year measured now; narrow the range for today's
+typical level. On other networks the nominal loads may mean something else: set `global_scale` to
+match.
 
 Only the EDP networks and the IEEE European LV feeder (`ieee_eulv`: one day at 1-minute steps)
 carry loadshapes. `generate`, with or without `--dry-run`, refuses a loadshape provider on any

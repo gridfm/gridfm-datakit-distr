@@ -138,9 +138,9 @@ for k, (bus, conductor) in enumerate(zip(nodes["bus"].to_pylist(), nodes["conduc
 Output:
 
 ```text
-671.a: 1.012 pu at    -2.2 deg
-671.b: 1.034 pu at  -121.4 deg
-671.c: 1.024 pu at   118.6 deg
+671.a: 1.004 pu at    -3.1 deg
+671.b: 1.036 pu at  -122.0 deg
+671.c: 1.019 pu at   118.3 deg
 ```
 
 ### The network admittance and the power-flow equations
@@ -200,7 +200,7 @@ print(f"no current injected at the {(~injecting).sum()} nodes where nothing conn
 Output:
 
 ```text
-source 1296.7 kW = loads 1282.3 kW + losses 14.5 kW
+source 1857.5 kW = loads 1830.3 kW + losses 27.2 kW
 no current injected at the 19 nodes where nothing connects
 ```
 
@@ -232,11 +232,11 @@ Output:
 
 ```text
 line                 kVA in   loss kW
-Line.650632            1316      6.94
-Line.632670            1020      1.50
-Line.670671             966      2.97
-Line.692675             592      1.16
-Line.632633             214      0.16
+Line.650632            1857     13.75
+Line.632670            1370      2.78
+Line.670671            1277      5.41
+Line.692675             623      1.60
+Line.632633             306      0.33
 ```
 
 ### The power flow without OpenDSS
@@ -295,7 +295,7 @@ assert gap < 0.01
 Output:
 
 ```text
-440 bus rows, 40 scenarios; largest |Vm - truth| 1.82e-03 pu
+440 bus rows, 40 scenarios; largest |Vm - truth| 2.17e-03 pu
 ```
 
 ## 5. OPF labels
@@ -357,8 +357,8 @@ Output:
 
 ```text
 status             class scenarios curtailed
-Solve_Succeeded    A             5         0
-Solve_Succeeded    B             5         3
+Solve_Succeeded    A             6         0
+Solve_Succeeded    B             4         3
 ```
 
 ### Voltages: power flow against OPF
@@ -410,9 +410,9 @@ Output:
 
 ```text
 scenario 9                    power flow     OPF   limit
-highest phase-to-neutral (V)        280.6   253.0   253.0
+highest phase-to-neutral (V)        280.0   253.0   253.0
 lowest phase-to-neutral (V)         249.6   248.7   216.2
-phases above the limit                719       0
+phases above the limit                720       0
 ```
 
 ### Dispatch: power flow against OPF
@@ -460,12 +460,12 @@ Output:
 PV unit               P pf  P OPF  Q OPF  |Q| max   (kW, kvar)
 Generator.pv_load19  14.79   0.00  -9.68     9.68
 Generator.pv_load22  14.79   0.00  -9.68     9.68
-Generator.pv_load16  14.79   3.94  -9.68     9.68
-Generator.pv_load18  14.79   4.34  -9.68     9.68
-Generator.pv_load20  14.79   4.81  -9.68     9.68
-all 23 units         340.3  189.9 -222.6
-curtailed 150.3 kW
-source: -310.0 kW (power flow), -163.8 kW (OPF)
+Generator.pv_load18  14.79   3.04  -9.68     9.68
+Generator.pv_load16  14.79   4.00  -9.68     9.68
+Generator.pv_load20  14.79   5.52  -9.68     9.68
+all 23 units         340.3  194.0 -222.6
+curtailed 146.2 kW
+source: -306.9 kW (power flow), -164.2 kW (OPF)
 ```
 
 The larger slice of five feeders is `scripts/config/opf_slice.yaml` (500 scenarios, about 22 minutes
