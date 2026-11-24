@@ -185,7 +185,7 @@ scenarios:
   profiles:
     provider: synthetic # synthetic | network_loadshapes | edp_smart_meter
     synthetic:
-      global_scale: {distribution: uniform, low: 0.12, high: 0.78} # factor on every load per scenario, fit to ENWL load
+      global_scale: {distribution: uniform, low: 0.1, high: 1.2} # factor on every load, per scenario (1: design peak)
       local_sigma: 0.3 # lognormal noise on each customer's load
   pv_profile:
     cloudiness: {distribution: uniform, low: 0.0, high: 1.0} # one cloud cover per scenario

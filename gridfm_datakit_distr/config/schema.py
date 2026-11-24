@@ -408,7 +408,7 @@ class SyntheticProfiles(_Config):
     and `pf` per customer and scenario. The loads' nominal reactive powers are not used."""
 
     global_scale: NonNegativeSpec = Field(
-        default=Uniform(0.12, 0.78),
+        default=Uniform(0.1, 1.2),
         description="Factor `g` on every nominal load, drawn per scenario.",
     )
     local_sigma: float = Field(

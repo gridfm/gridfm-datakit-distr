@@ -83,7 +83,7 @@ def test_a_minimal_config_takes_the_documented_defaults() -> None:
     assert config.variants.admittance.grounding_resistance_ohm is None
     assert config.variants.phase_reallocation.enabled
     assert config.der.pv.penetration == Uniform(0.0, 0.8)
-    assert config.scenarios.profiles.synthetic.global_scale == Uniform(0.12, 0.78)
+    assert config.scenarios.profiles.synthetic.global_scale == Uniform(0.1, 1.2)
     assert config.scenarios.source_voltage_pu == Uniform(0.98, 1.05)
     assert config.scenarios.source_unbalance == Fixed(0.0)  # balanced
     assert config.settings.num_processes is None  # all cores

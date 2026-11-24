@@ -177,12 +177,12 @@ def synthetic(**changes: object) -> SyntheticProvider:
 
 
 def test_synthetic_statistics_match_the_spec() -> None:
-    p = synthetic()  # global U(0.12, 0.78), sigma 0.3, PF U(0.9, 0.99)
+    p = synthetic()  # global U(0.1, 1.2), sigma 0.3, PF U(0.9, 0.99)
     draws = [p.draw(SEED, 0, 0, s) for s in range(3000)]
     nominal = np.array([c.p_w for c in CUSTOMERS])
     ratio = np.array([d.p_w / nominal for d in draws])  # g x m per customer
     g = np.array([d.global_scale for d in draws])
-    assert stats.kstest(g, stats.uniform(0.12, 0.66).cdf).pvalue > 1e-3
+    assert stats.kstest(g, stats.uniform(0.1, 1.1).cdf).pvalue > 1e-3
     noise = np.log(ratio / g[:, None])  # log m ~ N(-sigma^2/2, sigma^2): mean-one lognormal
     for column in noise.T:
         assert stats.kstest(column, stats.norm(-0.045, 0.3).cdf).pvalue > 1e-3
