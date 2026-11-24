@@ -243,3 +243,13 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - [ ] OPF on IEEE 37, the one catalog network it does not cover.
 - [ ] Evaluation protocol for power flow and OPF: metrics and data splits (held-out variants,
   feeders and sources).
+
+# Related Work
+
+- Ander Martinez Alonso, Evgenii Genov, Rémy Cleenwerck (EVERGi, Vrije Universiteit Brussel).
+  [GENCO meets the neutral wire: four-wire dynamic operating envelopes for low-voltage grids](https://huggingface.co/spaces/gridfm/genco-challenge/discussions/13).
+  GridFM GENCO Challenge 2026.
+  [[write-up](https://huggingface.co/spaces/gridfm/genco-challenge/discussions/13)]
+  [[code](https://github.com/ujohn33/genco-dynamic-envelopes)]
+  Extends GENCO to three-phase four-wire LV networks with a phase-aware architecture, and uses it
+  to screen dynamic operating envelopes on the ENWL1 feeder.
