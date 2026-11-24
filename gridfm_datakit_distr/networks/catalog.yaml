@@ -94,13 +94,15 @@ networks:
   # EDP masters go on to add monitors (and a 1e-7 kW dummy load at every bus), run a
   # daily simulation and export CSV files; only the network definition before the first monitor
   # redirect is compiled. Base loads are placeholders (kW = kvar = 1): each takes the mean of
-  # its daily loadshape. The voltage bases sit after the cut.
+  # its daily loadshape times one factor per network, so that they add up to the network's
+  # coincident peak over the profile window (OpenDSS's convention: base kW is the peak). The
+  # voltage bases sit after the cut.
   - id: edp/industrial
     source: edp
     master: Industrial/Master/master.dss
     neutral: mixed
     master_stop_before: redirect LV_Load_Monitor.txt
-    base_loads: loadshape_mean
+    base_loads: loadshape_coincident_peak
     extra_commands:
       - Set VoltageBases=[22 0.4]
       # LV neutrals grounded as in the rural and urban networks of the same dataset.
@@ -110,14 +112,14 @@ networks:
     master: Rural/Master/master.dss
     neutral: explicit
     master_stop_before: redirect MonBus.dss
-    base_loads: loadshape_mean
+    base_loads: loadshape_coincident_peak
     extra_commands: ["Set VoltageBases=[22 0.4]"]
   - id: edp/urban
     source: edp
     master: Urban/Master/master.dss
     neutral: explicit
     master_stop_before: redirect MonBus.dss
-    base_loads: loadshape_mean
+    base_loads: loadshape_coincident_peak
     extra_commands: ["Set VoltageBases=[22 0.4]"]
 
 # Collections expand into one network per feeder from the source manifest.

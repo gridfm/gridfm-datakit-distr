@@ -91,18 +91,28 @@ def normalize_loads(
 
 @dataclass(frozen=True, slots=True)
 class BaseLoads:
-    """What :func:`loads_from_loadshape_means` did, for the passport."""
+    """What :func:`loads_at_coincident_peak` did, for the passport."""
 
     n_loads: int
     total_kw_before: float
     total_kw: float
     total_kvar: float
+    cfactor: float
+    """Coincident peak over the profile window / sum of the loads' means (OpenDSS's ``Cfactor``)."""
+    window_h: float
+    """Duration of the profile window (h): the shortest multi-point shape."""
     commands_sha256: str
     """SHA-256 of the newline-joined ``Edit`` commands (one per load)."""
 
 
-def loads_from_loadshape_means(ctx: DssContext) -> BaseLoads:
-    """Set each enabled load's base kW and kvar to the mean of its loadshape.
+def loads_at_coincident_peak(ctx: DssContext) -> BaseLoads:
+    """Set each enabled load's base kW and kvar to ``c`` times the mean of its loadshape.
+
+    ``c`` is one factor for the network (OpenDSS's ``Cfactor``, average to peak): the maximum of
+    the loads' summed P over the profile window divided by the sum of their means, so the base
+    loads add up to the network's coincident peak. The window is the shortest multi-point shape;
+    one-point shapes are constants (as the ``network_loadshapes`` provider reads them). Each mean is
+    over the load's whole shape.
 
     The daily loadshape, else the yearly one. With ``UseActual`` the multipliers are kW and kvar;
     otherwise they scale the load's base values. Without a Q curve the load keeps its kvar/kW
@@ -118,40 +128,57 @@ def loads_from_loadshape_means(ctx: DssContext) -> BaseLoads:
             loads.append((str(api.Loads.Name()), float(api.Loads.kW()), float(api.Loads.kvar()),
                           shape))  # fmt: skip
             i = api.Loads.Next()
-    commands = []
-    total_kw = total_kvar = 0.0
+    p_kw: list[np.ndarray] = []
+    means: list[tuple[float, float]] = []
+    intervals = set()
     for name, kw, kvar, shape in loads:
         if not shape:
             raise LoadNormalisationError(f"Load.{name} has no daily or yearly loadshape")
         with ctx.engine_call(f"LoadShape {shape}"):
             api.LoadShape.Name(shape)
-            p = np.asarray(api.LoadShape.PMult(), dtype=float)
-            q = np.asarray(api.LoadShape.QMult(), dtype=float)
             actual = bool(api.LoadShape.UseActual())
+            p = np.asarray(api.LoadShape.PMult(), dtype=float) * (1.0 if actual else kw)
+            q = np.asarray(api.LoadShape.QMult(), dtype=float)
+            interval = float(api.LoadShape.SInterval())
         # QMult() reads [0.0] when the shape has no Q curve; the property text is empty.
         has_q = bool(ctx.command(f"? LoadShape.{shape}.qmult").strip())
         if p.size == 0:
             raise LoadNormalisationError(f"LoadShape.{shape} of Load.{name} has no points")
-        kw_mean = float(p.mean()) * (1.0 if actual else kw)
+        if p.size > 1:
+            intervals.add(interval)
+        kw_mean = float(p.mean())
         if has_q:
             kvar_mean = float(q.mean()) * (1.0 if actual else kvar)
         else:
             kvar_mean = kw_mean * kvar / kw if kw else 0.0
-        command = f"Edit Load.{name} kW={kw_mean!r} kvar={kvar_mean!r}"
+        p_kw.append(p)
+        means.append((kw_mean, kvar_mean))
+    if len(intervals) > 1:
+        raise LoadNormalisationError(f"loadshapes with different intervals {sorted(intervals)} s")
+    n = min((p.size for p in p_kw if p.size > 1), default=1)
+    peak = sum((p[:n] if p.size > 1 else p[0] for p in p_kw), start=np.zeros(n)).max()
+    cfactor = float(peak / sum(kw for kw, _ in means))
+    commands = []
+    total_kw = total_kvar = 0.0
+    for (name, _, _, _), (kw_mean, kvar_mean) in zip(loads, means, strict=True):
+        kw_new, kvar_new = cfactor * kw_mean, cfactor * kvar_mean
+        command = f"Edit Load.{name} kW={kw_new!r} kvar={kvar_new!r}"
         ctx.command(command)
         with ctx.engine_call(f"Loads {name}"):
             api.Loads.Name(name)
             got = (float(api.Loads.kW()), float(api.Loads.kvar()))
-        if not np.allclose(got, (kw_mean, kvar_mean), rtol=1e-12, atol=1e-12):
+        if not np.allclose(got, (kw_new, kvar_new), rtol=1e-12, atol=1e-12):
             raise LoadNormalisationError(f"{command}: Load.{name} reads {got}")
         commands.append(command)
-        total_kw += kw_mean
-        total_kvar += kvar_mean
+        total_kw += kw_new
+        total_kvar += kvar_new
     digest = hashlib.sha256("\n".join(commands).encode()).hexdigest()
     return BaseLoads(
         n_loads=len(loads),
         total_kw_before=sum(kw for _, kw, _, _ in loads),
         total_kw=total_kw,
         total_kvar=total_kvar,
+        cfactor=cfactor,
+        window_h=n * intervals.pop() / 3600 if intervals else 0.0,
         commands_sha256=digest,
     )

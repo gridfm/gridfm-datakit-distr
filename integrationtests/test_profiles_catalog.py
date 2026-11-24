@@ -63,11 +63,11 @@ def test_european_lv_on_peak(network_master: Callable[[str], Path]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("network_id", "n_loads", "hours", "n_constant"),
+    ("network_id", "n_loads", "hours", "n_constant", "cfactor"),
     [
-        ("edp/rural", 2731, 168, 0),
-        ("edp/industrial", 191, 480, 34),  # 34 meters with one reading; shapes of 480-744 h
-        pytest.param("edp/urban", 35297, 24, 0, marks=pytest.mark.slow),
+        ("edp/rural", 2731, 168, 0, 1.4836),
+        ("edp/industrial", 191, 480, 34, 1.7338),  # 34 meters with one reading; shapes of 480-744 h
+        pytest.param("edp/urban", 35297, 24, 0, 1.3229, marks=pytest.mark.slow),
     ],
 )
 def test_edp_meter_data(
@@ -76,10 +76,11 @@ def test_edp_meter_data(
     n_loads: int,
     hours: int,
     n_constant: int,
+    cfactor: float,
 ) -> None:
     network_master(network_id)
     network = load_catalog().network(network_id)
-    prepared = prepare_network(network)  # base loads: the mean of each load's shape
+    prepared = prepare_network(network)  # base loads: c times the mean of each load's shape
     customers = customers_of(prepared)
     provider = make_provider(
         Profiles.model_validate({"provider": "edp_smart_meter"}), customers, network
@@ -92,11 +93,18 @@ def test_edp_meter_data(
     assert cov.n_mapped == n_loads - n_constant  # the unmapped ones are reported by name
     assert provider.series.interval_s == 3600
     assert provider.series.times_s[-1] == hours * 3600
-    if network_id != "edp/industrial":  # full series: their mean is the base load
+    # The base loads add up to the measured coincident peak over the provider's window.
+    series = provider.series
+    measured = series.p_w.sum(axis=0) + sum(p for p, _ in series.constants.values())
+    assert sum(c.p_w for c in customers) == pytest.approx(measured.max(), rel=1e-12)
+    base = prepared.compiled.base_loads
+    assert base is not None
+    assert (base.cfactor, base.window_h) == pytest.approx((cfactor, hours), rel=1e-4)
+    if network_id != "edp/industrial":  # full series: c times their mean is the base load
         nominal = {c.element: (c.p_w, c.q_var) for c in customers}
-        means = np.stack([provider.series.p_w.mean(axis=1), provider.series.q_var.mean(axis=1)], 1)
-        expected = np.array([nominal[n] for n in provider.series.names])
-        np.testing.assert_allclose(means, expected, rtol=1e-12, atol=1e-9)
+        means = np.stack([series.p_w.mean(axis=1), series.q_var.mean(axis=1)], 1)
+        expected = np.array([nominal[n] for n in series.names])
+        np.testing.assert_allclose(base.cfactor * means, expected, rtol=1e-12, atol=1e-9)
 
 
 def test_networks_without_loadshapes_are_refused(network_master: Callable[[str], Path]) -> None:

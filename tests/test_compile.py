@@ -1,15 +1,17 @@
-"""Tests for network recipes: master cut, extra commands, base loads from loadshapes."""
+"""Tests for network recipes: master cut, extra commands, base loads at the coincident peak."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.networks.catalog import CatalogError, Network, load_catalog
 from gridfm_datakit_distr.networks.compile import PREFIX_SUFFIX, compile_network, master_prefix
-from gridfm_datakit_distr.normalize.loads import LoadNormalisationError, loads_from_loadshape_means
+from gridfm_datakit_distr.normalize.loads import LoadNormalisationError, loads_at_coincident_peak
+from gridfm_datakit_distr.scenarios.profiles.network_loadshapes import read_series
 
 # A master in the EDP style: network, then monitors and a daily simulation that writes files.
 NETWORK = """\
@@ -62,7 +64,7 @@ def test_compile_network_follows_the_recipe(tmp_path: Path) -> None:
     write(tmp_path / "src", NETWORK + "redirect MonBus.dss\r\n" + SIMULATION)
     network = Network(
         id="recipe", source="src", master="master.dss",
-        master_stop_before="redirect MonBus.dss", base_loads="loadshape_mean",
+        master_stop_before="redirect MonBus.dss", base_loads="loadshape_coincident_peak",
         extra_commands=["Set VoltageBases=[0.4]"],
     )  # fmt: skip
     ctx = DssContext.new()
@@ -77,27 +79,55 @@ def test_compile_network_follows_the_recipe(tmp_path: Path) -> None:
     assert not list(tmp_path.glob("src/*.csv"))  # no export
 
 
-def test_base_loads_are_loadshape_means(tmp_path: Path) -> None:
+def test_base_loads_are_the_coincident_peak(tmp_path: Path) -> None:
     ctx = DssContext.new()
     ctx.load(write(tmp_path, NETWORK))
-    record = loads_from_loadshape_means(ctx)
+    record = loads_at_coincident_peak(ctx)
     api = ctx.api
-    # The means of what OpenDSS simulates along each curve.
+    # The means of what OpenDSS simulates along each curve: a 2.0 kW, b 4.0, c 2.0 (sum 8.0). The
+    # window is the shortest shape (2 points): summed P (1 + 3 + 1, 2 + 5 + 3) = (5, 10) kW, so c is
+    # 10 / 8 for P and Q alike.
+    c = 10.0 / 8.0
     api.Loads.Name("a")  # multipliers: mean P 1.0 x 2 kW, mean Q 0.2 x 1 kvar
-    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((2.0, 0.2))
+    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((2.0 * c, 0.2 * c))
     api.Loads.Name("b")  # actual P (3, 5) without Q: OpenDSS set kW 5, kvar 0 (PF 1) on load
-    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((4.0, 0.0))
+    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((4.0 * c, 0.0))
     api.Loads.Name("c")  # multipliers without Q: kvar follows P at kvar/kW = 0.5
-    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((2.0, 1.0))
+    assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((2.0 * c, 1.0 * c))
     assert record.total_kw_before == pytest.approx(2.0 + 5.0 + 1.0)
-    assert (record.total_kw, record.total_kvar) == pytest.approx((8.0, 1.2))
+    assert (record.total_kw, record.total_kvar) == pytest.approx((10.0, 1.2 * c))
+    assert (record.cfactor, record.window_h) == pytest.approx((c, 2.0))  # interval=1 is 1 h
+
+
+def test_one_point_shapes_are_constants_in_the_window(tmp_path: Path) -> None:
+    one_point = "New Loadshape.flat npts=1 interval=1 mult=(4)\r\n"
+    load_d = "New Load.d bus1=b.1 phases=1 kV=0.23 kW=1 kvar=0 model=1 daily=flat\r\n"
+    ctx = DssContext.new()
+    ctx.load(write(tmp_path, NETWORK + one_point + load_d))
+    record = loads_at_coincident_peak(ctx)
+    # d adds 4 kW to every point of the window: (9, 14) kW against means 8 + 4
+    assert record.cfactor == pytest.approx(14.0 / 12.0)
+    ctx.api.Loads.Name("d")
+    assert ctx.api.Loads.kW() == pytest.approx(4.0 * 14.0 / 12.0)
+
+
+def test_profiles_keep_the_measured_values(tmp_path: Path) -> None:
+    """The base loads change; the series the profile providers draw from do not."""
+    write(tmp_path / "src", NETWORK)
+    network = Network(
+        id="recipe", source="src", master="master.dss", base_loads="loadshape_coincident_peak"
+    )
+    series = read_series(network, root=tmp_path)
+    assert series.names == ("Load.a", "Load.b", "Load.c")
+    # the shapes' first two points in W: 2 kW x (0.5, 1), actual (3, 5) kW, 1 kW x (1, 3)
+    np.testing.assert_array_equal(series.p_w, [[1e3, 2e3], [3e3, 5e3], [1e3, 3e3]])
 
 
 def test_a_load_without_loadshape_is_an_error(tmp_path: Path) -> None:
     ctx = DssContext.new()
     ctx.load(write(tmp_path, NETWORK + "New Load.d bus1=b.3 phases=1 kV=0.23 kW=1\r\n"))
     with pytest.raises(LoadNormalisationError, match=r"Load\.d has no daily or yearly loadshape"):
-        loads_from_loadshape_means(ctx)
+        loads_at_coincident_peak(ctx)
 
 
 def test_edp_networks_have_a_recipe() -> None:
@@ -105,6 +135,6 @@ def test_edp_networks_have_a_recipe() -> None:
     for member in ("industrial", "rural", "urban"):
         network = catalog.network(f"edp/{member}")
         assert network.master_stop_before is not None
-        assert network.base_loads == "loadshape_mean"
+        assert network.base_loads == "loadshape_coincident_peak"
         assert "Set VoltageBases=[22 0.4]" in network.extra_commands
     assert catalog.network("edp/industrial").neutral == "mixed"

@@ -4,7 +4,7 @@
 the EDP masters attach each meter's file to its load (``Load.Pn daily=Pn``, ``Loadshape.Pn
 PQCSVFile=PQ_csv/Pn.csv``), so the meter data are the loadshapes.
 
-Series follow the engine, read from the network compiled by its recipe without the loadshape-mean
+Series follow the engine, read from the network compiled by its recipe without the coincident-peak
 base loads, which replace the base kW the multipliers scale: the daily shape, else the yearly one;
 ``UseActual``: multipliers are kW and kvar, else they scale the base kW and kvar; without a Q curve,
 Q keeps the base kvar/kW ratio. Point ``k`` (1-based) applies at ``k · interval``. Shapes of one
@@ -81,7 +81,7 @@ class LoadshapeSeries:
 
 
 def read_series(network: Network, root: Path | None = None) -> LoadshapeSeries:
-    """Compile ``network`` without loadshape-mean base loads and read its loads' loadshapes."""
+    """Compile ``network`` without coincident-peak base loads and read its loads' loadshapes."""
     ctx = DssContext.new()
     compile_network(ctx, network.model_copy(update={"base_loads": "as_is"}), root)
     api = ctx.api

@@ -130,9 +130,12 @@ class Network(_Model):
     master_stop_before: str | None = None
     """Compile only the lines of ``master`` before this line (compared stripped, ignoring case):
     for masters that go on to run simulations and exports (EDP)."""
-    base_loads: Literal["as_is", "loadshape_mean"] = "as_is"
-    """``loadshape_mean``: each load's base kW and kvar become the mean of its daily (else yearly)
-    loadshape, for sources whose base values are placeholders (EDP: kW = kvar = 1)."""
+    base_loads: Literal["as_is", "loadshape_coincident_peak"] = "as_is"
+    """``loadshape_coincident_peak``: each load's base kW and kvar become ``c`` times the mean of
+    its daily (else yearly) loadshape, ``c`` the network's coincident peak over the profile window
+    divided by the sum of the means (``normalize.loads.loads_at_coincident_peak``), for sources
+    whose base values are placeholders (EDP: kW = kvar = 1). Base kW at the peak is OpenDSS's
+    convention, as in the other sources."""
     nominal_kv_ln: dict[float, float] = Field(default_factory=dict)
     """Nominal phase-to-neutral voltage (kV) of the buses of a voltage level, keyed by the level's
     line-to-line base (kV), where it differs from the base (e.g. a 230 V network on a 416 V base);

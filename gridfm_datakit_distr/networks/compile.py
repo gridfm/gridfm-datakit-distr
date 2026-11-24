@@ -16,7 +16,7 @@ from pathlib import Path
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.networks.cache import master_path
 from gridfm_datakit_distr.networks.catalog import CatalogError, Network
-from gridfm_datakit_distr.normalize.loads import BaseLoads, loads_from_loadshape_means
+from gridfm_datakit_distr.normalize.loads import BaseLoads, loads_at_coincident_peak
 
 PREFIX_SUFFIX = ".prefix.dss"
 """Suffix of the cut master, written next to the master so that relative redirects resolve."""
@@ -59,7 +59,8 @@ def compile_network(ctx: DssContext, network: Network, root: Path | None = None)
     if network.master_stop_before is not None:
         master = master_prefix(master, network.master_stop_before)
     ctx.load(master, network.extra_commands)
-    base_loads = loads_from_loadshape_means(ctx) if network.base_loads == "loadshape_mean" else None
+    peak = network.base_loads == "loadshape_coincident_peak"
+    base_loads = loads_at_coincident_peak(ctx) if peak else None
     return CompileRecord(
         network_id=network.id,
         master=master,
