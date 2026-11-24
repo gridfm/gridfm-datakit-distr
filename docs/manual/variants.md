@@ -75,8 +75,16 @@ The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-outpu
   PV unit, constant P within the load voltage window, with a signed set-point per scenario
   ([Scenarios](scenarios.md#storage-set-points)). Not an OpenDSS `Storage` element: that element
   idles itself silently when its stored energy reaches a limit, which a snapshot cannot track.
-- **Rating.** `kw` per unit (uniform 3–5 kW by default, an assumption: the range of common
-  residential battery inverters); stored as its `s_rated_va`.
+- **Rating.** By default (`kw` null) from the peak power of the customer's PV unit, by the rule for
+  customer batteries of NREL's SMART-DS, a synthetic dataset of US distribution networks
+  ([documentation](https://github.com/openEDI/documentation/blob/main/SMART-DS/Readme.md),
+  Appendix 1): below 4 kWp 4 kW, from 4 to 10 kWp 8 kW, from 10 to 150 kWp 25 kW, from 150 kWp
+  100 kW. The source gives the bands as "< 4", "4–10", "10–150" and "> 150" kW; that each lower
+  bound belongs to the band above it is our reading. With the default PV sizes (2–6 kWp) a unit
+  is 4 or 8 kW. SMART-DS sizes the stored energy at twice the rating (kWh = 2 × kW); a snapshot
+  has no state of charge, so it is not used. A value spec for `kw` draws the rating per unit and
+  variant instead, e.g. `{distribution: uniform, low: 3.0, high: 5.0}`. The rating is stored as
+  the unit's `s_rated_va`.
 
 ## Dispatchable generators
 
