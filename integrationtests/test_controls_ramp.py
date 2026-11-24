@@ -20,11 +20,16 @@ REPO = Path(__file__).resolve().parents[1]
 def test_a_scenario_unreachable_at_the_initial_taps_converges_after_the_ramp(
     network_master: Callable[[str], Path],
 ) -> None:
-    """Scenario 27 of variant 0 (default config, seed 42): 1.28 times the nominal load; the first
-    settling solve at taps 1.0 does not converge, the ramp lets the regulators rise."""
+    """Scenario 27 of variant 0 (seed 42, load scale U(0.2, 1.2)): 1.28 times the nominal load; the
+    first settling solve at taps 1.0 does not converge, the ramp lets the regulators rise."""
     network_master("ieee34")
     data = load_config(REPO / "scripts" / "config" / "health.yaml").model_dump(mode="json")
     data["networks"]["include"] = ["ieee34"]
+    data["scenarios"]["profiles"]["synthetic"]["global_scale"] = {  # the scale it was chosen at
+        "distribution": "uniform",
+        "low": 0.2,
+        "high": 1.2,
+    }
     data["settings"].update(num_processes=1)
     cfg = GenerationConfig.model_validate(data)
     job = executor.jobs_of(cfg, load_catalog())[0]

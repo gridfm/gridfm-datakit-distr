@@ -246,7 +246,7 @@ and `pf` per customer and scenario. The loads' nominal reactive powers are not u
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.profiles.synthetic.global_scale` | value spec, ≥ 0 | `{distribution: uniform, low: 0.2, high: 1.2}` | Factor `g` on every nominal load, drawn per scenario. |
+| `scenarios.profiles.synthetic.global_scale` | value spec, ≥ 0 | `{distribution: uniform, low: 0.12, high: 0.78}` | Factor `g` on every nominal load, drawn per scenario. |
 | `scenarios.profiles.synthetic.local_sigma` | number ≥ 0 | `0.3` | Sigma of the per-customer factor `m = exp(sigma z - sigma²/2)`, `z` standard normal, of mean 1 (so the mean load is `E[g] · P_nominal`); 0: no per-customer noise. |
 | `scenarios.profiles.synthetic.power_factor` | value spec, > 0 and ≤ 1 | `{distribution: uniform, low: 0.9, high: 0.99}` | Power factor `pf` of each load, drawn per customer and scenario. |
 
