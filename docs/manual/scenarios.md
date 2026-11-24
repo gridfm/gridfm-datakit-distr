@@ -66,6 +66,12 @@ hourly series of PVGIS (`pvgis`).
   over 24 h, independent of the loads: half of such scenarios fall at night and have no PV
   output.
 
+**Against measured weather.** The synthetic sky has the sun of an equinox overhead at noon. At
+Manchester (53.48° N; PVGIS 5.3, SARAH-3, 2005–2023, PVGIS's optimal angles, 14 % system loss) a
+1 kWp system gives on average 0.32 kW in the local noon hour and 0.10 kW over all hours, against
+0.83 kW and 0.26 kW here: at that latitude the synthetic provider overstates PV output about
+2.6 times.
+
 ### PVGIS series
 
 `provider: pvgis` takes the output per kWp from PVGIS 5.3, the photovoltaic geographical
