@@ -138,8 +138,9 @@ The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester (5
   other area stays above 0.96 pu. The published data show no open switch that would move part of
   the area to another transformer. The model is used as published, so heavy scenarios of
   `edp/urban` end `off_setpoint` or `not_converged`, recorded with their status
-  ([Scenarios](scenarios.md#power-flow-and-statuses)): with the default load range, 204 of 1000
-  scenarios, every one whose total load exceeded 1.08 times the nominal and none below 0.88.
+  ([Scenarios](scenarios.md#power-flow-and-statuses)): in a run of 1000 scenarios with the default
+  load range, one variant and no PV, 204 did, every one whose total load exceeded 1.08 times the
+  nominal and none below 0.88.
 - **PMD's own parser** differs from OpenDSS on these sources (mile = 1609.3 m, dropped grounding
   reactors), so the conformance suite has no cross-engine check (C8). Engine agreement is checked
   through the OPF labels: each dispatch is verified in OpenDSS ([OPF labels](opf.md)), and the OPF
