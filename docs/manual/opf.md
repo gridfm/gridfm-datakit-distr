@@ -22,7 +22,7 @@ For one scenario, at the network state, loads and source voltage of its power fl
 
 - **Controllable:** the source and each PV unit. A PV unit injects `0 ≤ p ≤ p_avail` (its available power in the scenario) and reactive power within its inverter rating, `p² + q² ≤ s_rated²`, and within `|q| ≤ reactive_fraction · s_rated` (default 0.44, IEEE 1547-2018 Category B); no reactive power when its available power is below `reactive_threshold · s_rated` (default 0.05). Both are [`der.pv`](config.md#derpv) value specs, drawn per variant and unit; the limit applied is stored per unit and scenario (`opf_der.q_max_var`). A unit on several phases delivers the same power on each. Each dispatchable generator ([Variants](variants.md#dispatchable-generators), `der.dg`) injects `0 ≤ p ≤ P^max` and `0 ≤ q ≤ P^max`, box bounds without a rating circle, as in the DG case study of Geth, Claeys and Deconinck (PSCC 2022), with `P^max` times the unit's availability in the scenario ([Scenarios](scenarios.md#dispatchable-generators), 1 by default): a unit out of service (availability 0) is fixed at `p = q = 0`, as a PV unit at night; `opf_der.q_max_var` holds the bound.
 - **Fixed:** the loads (constant power), the storage units at their set-points ([Scenarios](scenarios.md#storage-set-points); no reactive power), the source voltage, taps and capacitor steps. Storage is not a control here: in a single snapshot its stored energy has no value to trade against, so it becomes one only with time sequences of scenarios.
-- **Constraints:** Kirchhoff's current law on the network admittance the dataset stores (`Y_state`, [Outputs §5](outputs.md#5-network-state-level): lines, switches, transformers at their taps, capacitors, reactors) with the source as an ideal voltage behind its impedance; loads, PV units and dispatchable generators connected wye or delta, on one to three phases; each phase-to-neutral voltage magnitude (phase-to-ground at a bus without a neutral) within [`networks.voltage_limits`](config.md#networksvoltage_limits); the apparent power into winding 1 of every transformer within its rating (`variants/elements.rating_va`). Line ampacities are not constraints yet.
+- **Constraints:** Kirchhoff's current law on the network admittance the dataset stores (`Y_state`, [Outputs §5](outputs.md#5-network-state-level): lines, switches, transformers at their taps, capacitors, reactors) with the source as an ideal voltage behind its impedance, its rows written as `E − V − Z_s I = 0` (the same equations, with coefficients of order 1 instead of the source's stiff admittance, which would turn the rounding of a power-flow solution into residuals far above the solver's tolerance); loads, PV units and dispatchable generators connected wye or delta, on one to three phases; each phase-to-neutral voltage magnitude (phase-to-ground at a bus without a neutral) within [`networks.voltage_limits`](config.md#networksvoltage_limits); the apparent power into winding 1 of every transformer within its rating (`variants/elements.rating_va`). Line ampacities are not constraints yet.
 - **Objective:** `Σ (c2 p² + c1 p)` over the source, the PV units and the dispatchable generators, `p` the active power each delivers. The coefficients are stored with every scenario (`opf_meta.source_c1`, `source_c2`, `opf_der.c1`, `c2`, with the source's power in `opf_meta.source_p_w`). Two cost presets (`labels.opf.costs`): `economic` gives the source `c1 = 1` per W and the PV units 0, the minimum import, that is the largest use of the available PV power net of losses, and each dispatchable generator `c1 = 0.1` per W, ten times less than the source as in the paper; `sampled` draws the coefficients per scenario from [`labels.opf.sampled`](config.md#labelsopfsampled) (by default the source at 1 per W, each PV unit uniform in 0 to 1 per W, each dispatchable generator 0.1 per W), so that the dispatch depends on the costs, as datakit's cost perturbation does for transmission. The source's power is signed: export to the upstream grid counts as negative import, so cheaper dispatchable generators raise their output until a limit is active and may export, as in the paper, where the upstream grid is "an unbounded generator [that] models the import/export". The costs are linear only: fuel-cost models (as PGLib's) would need an import price that no source gives for a distribution feeder.
 
 The problem is the unbalanced AC OPF in current-voltage form with an explicit neutral, written on the node voltages in rectangular coordinates, and solved with Ipopt (through CasADi) from a flat start, at a tolerance of 1e-9; when that start does not end `Solve_Succeeded`, the scenario is solved again from its power-flow solution, a feasible point when the scenario is of class `A` (`opf_meta.opf_start`). It is scaled to per unit on each node's base voltage and on a power base set by the network's loads (1 kVA on LV feeders, 100 kVA to 1 MVA on MV feeders). Ipopt returns local optima: no label claims global optimality.
@@ -51,10 +51,11 @@ The OPF covers networks of lines, switches, transformers, capacitors and reactor
 `opf_class` says what the OPF had to do: `A` when the uncontrolled power flow already keeps the voltages within the limits and the transformers within their ratings (with `economic` the OPF then keeps the PV at its available power and moves the reactive power to reduce the losses), `B` when it does not, `C` without a power-flow label.
 
 A class-A scenario has a feasible point by construction (its power flow), yet a few end unsolved:
-in the campaign on the default configuration, 9 of about 6 900 class-A scenarios ended infeasible, at
-an acceptable level or at the iteration limit, all on hard MV networks (EDP rural, IEEE 123, IEEE
-8500). They are recorded with their status and carry no OPF label; the stiff admittance of the
-voltage source is the main cause found so far.
+in the campaign on the default configuration, 6 of 6 986 class-A scenarios ended at the iteration
+limit, at an acceptable level or with `Feasible_Point_Found`: on IEEE 123 (3) and a CSIRO feeder
+(1), all at night with no PV power available, so that nothing can move and the problem is the power
+flow's own equations, and on IEEE 8500 (2). They are recorded with their status and carry no OPF
+label.
 
 ## Reproducibility
 
@@ -66,11 +67,14 @@ algebra (OpenBLAS at 1 or 6 threads: identical voltages and dispatches, measured
 Across machines the numbers agree within the solvers' accuracy, not bit for bit. Measured between
 a desktop (Intel i5-9400F) and a cluster node (Intel Xeon Gold 6530) with identical library
 versions: OPF dispatches that both machines solve within 2e-8 of the largest voltage, 1e-5 W in the
-objective and 3e-7 W per PV unit, well inside the 1e-6 pu verification. Rare borderline OPF solves end with a different status: on 3
-of 11 hard EDP rural scenarios one machine returned `Solve_Succeeded` and the other
-`Infeasible_Problem_Detected` or `Solved_To_Acceptable_Level`. Such rows are recorded with their
-status and never become labels unless solved and verified, so a regenerated dataset can differ
-from the original in which of those scenarios carry OPF labels.
+objective and 3e-7 W per PV unit, well inside the 1e-6 pu verification. Rare borderline OPF solves
+can end with a different status. Before the source rows were written in impedance form (generator
+0.3.0.dev2), 3 of 11 hard EDP rural scenarios ended `Solve_Succeeded` on one machine and
+`Infeasible_Problem_Detected` or `Solved_To_Acceptable_Level` on the other; since, the EDP rural
+scenarios of that comparison end `Solve_Succeeded` on both, though not always from the same start
+or in the same number of iterations: the solver's path still depends on the machine. Rows that do
+not end `Solve_Succeeded` are recorded with their status and never become labels, so a regenerated
+dataset can differ from the original in which of such borderline scenarios carry OPF labels.
 
 `labels.opf.time_limit_s` is a wall-clock limit, so a solve that ends with
 `Maximum_WallTime_Exceeded` depends on the machine and its load. Such scenarios carry that status
