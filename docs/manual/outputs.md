@@ -128,7 +128,7 @@ Free-form but must contain: `network_id`, `source_url`, `license`, `citation`, `
 | `network_id` | string | |
 | `variant_idx` | int32 | |
 | `seed` | uint64 | 64-bit fingerprint of the variant's seed sequence (`generate_state(1, uint64)`); draws come from the sequence fixed by `settings.seed`, the network's id (two 32-bit words of its SHA-256) and the variant index, so a network's variants and scenarios do not depend on the other networks of the dataset |
-| `perturbation` | string (JSON) | sampled parameters (line length scales, grounding resistances, phase reallocations, PV units `pv_kwp`, storage units `storage_kw` (kW) and `storage_share`, dispatchable generators `dg_kw` (kW, the network's capacity, not drawn), …) |
+| `perturbation` | string (JSON) | sampled parameters (line length scales, grounding resistances, phase reallocations, PV units `pv_kwp`, storage units `storage_kw` (kW) and `storage_share`, dispatchable generators `dg_kw` (kW, the network's capacity, not drawn), with `variants.upstream` the substation `upstream`: transformer rating `rating_kva`, the source's sequence impedances `z1_ohm` (also its `Z2`) and `z0_ohm` as `[R, X]` (Ω), and `loads`, the loads standing for the substation's other feeders with their nominal `[P (W), Q (var)]`, [Variants](variants.md#upstream-substation), …) |
 | `perturbation_script_sha1` | string | hash of the OpenDSS edit script that realises the variant |
 | `n_nodes`, `n_elements` | int32 | |
 
@@ -197,7 +197,10 @@ the phase order reversed) and `source_v_pu`, `u2 = source_u2`, `θ = source_u2_a
 scenario's (`scenarios/scenario_meta`); with a balanced source (`source_u2` 0) `E_s = source_v_pu ·
 E`. `u2` and `θ` are those of the ideal voltages, behind `Y_s`: at the source bus the
 negative-sequence ratio differs by the drop of the source current across the source impedance (on
-the stiff CSIRO sources by up to about 2e-4 at 0.5–2 % drawn). One row per conductor
+the stiff CSIRO sources by up to about 2e-4 at 0.5–2 % drawn). With `variants.upstream`,
+`Y_s` is the substation's: `Z1 = Z2` and `Z0` of `variants/variants.perturbation` (`upstream`),
+`Y_s` the inverse of the matrix with `(2 Z1 + Z0) / 3` on its diagonal and `(Z0 - Z1) / 3` off it.
+One row per conductor
 of its first terminal; its second terminal is ground (a network whose Vsource is not grounded
 there, or with more than one, fails generation). With these and `Y_state` (§5), the setpoints of
 `scenarios/loads` and `scenarios/der` determine the voltages of `scenarios/node_results`: the
@@ -350,7 +353,11 @@ Connection (bus, phases, wye/delta) is static and lives in the semantic layer. T
 equally between the branches of the element's terminal (`variants/element_terminals`): wye, when
 the last conductor is a neutral or ground, one branch from each other conductor to it; delta on
 three phases, between the pairs (a, b), (b, c), (c, a); one branch between two phases. The same
-holds for `scenarios/der`. Every load is constant power (`normalisation.loads.model`), so a
+holds for `scenarios/der`. With `variants.upstream` three rows per scenario are not customers:
+the loads named in `variants/variants.perturbation` (`upstream.loads`), `Load.upstream_feeders_a`,
+`_b` and `_c` at the source bus, stand for the other feeders of the substation, each drawing the
+scenario's global load factor times its nominal power ([Variants](variants.md#upstream-substation)).
+Every load is constant power (`normalisation.loads.model`), so a
 converged scenario's loads draw exactly their setpoints (`n_off_setpoint = 0`) and the stored
 tables determine the voltages.
 

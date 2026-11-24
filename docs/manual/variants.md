@@ -6,12 +6,13 @@ Variant `k` of network `n` is stored as `n/v{k:04d}` with what was drawn
 ([Outputs §4](outputs.md#4-variant-level)). Keys: [`variants`](config.md#variants),
 [`variants.admittance`](config.md#variantsadmittance),
 [`variants.phase_reallocation`](config.md#variantsphase_reallocation), [`der.pv`](config.md#derpv),
-[`der.storage`](config.md#derstorage), [`der.dg`](config.md#derdg).
+[`der.storage`](config.md#derstorage), [`der.dg`](config.md#derdg),
+[`variants.upstream`](config.md#variantsupstream).
 
 **Defaults.** 4 variants per network, each with every line length scaled by its own factor
 uniform in 0.9–1.1, 20 % of the movable single-phase customers moved to another phase, and PV at a
-share of the customers drawn uniformly in 0–0.8; no storage and no dispatchable generators. Earthing resistances and neutral impedances stay
-as in the source. The source network itself is never a variant; this gives one variant equal to it:
+share of the customers drawn uniformly in 0–0.8; no storage, no dispatchable generators and no
+upstream substation. Earthing resistances and neutral impedances stay as in the source. The source network itself is never a variant; this gives one variant equal to it:
 
 ```yaml
 variants:
@@ -36,6 +37,7 @@ fixes it).
 | Rooftop PV | `der.pv` | every enabled load (a *customer*) | PV units: [below](#rooftop-pv) |
 | Storage | `der.storage` | the customers with PV | storage units: [below](#storage) |
 | Dispatchable generators | `der.dg` | every 4th customer | not drawn: the same units in every variant, [below](#dispatchable-generators) |
+| Upstream substation | `variants.upstream` | the source of a CSIRO feeder | the transformer rating, hence the source's impedances; the other feeders as loads at the source bus: [below](#upstream-substation) |
 
 Not perturbed: switches (impedance and state; topology never changes), a grounding reactor that
 bonds the neutral to a source's star point (CSIRO's `Reactor.grounding`, which carries the whole
@@ -119,12 +121,71 @@ places them in every variant of every network. What the paper does not fix is ou
   (nothing reached at the largest `P` of the scan), `not_converged` (the power flow diverges
   before a limit is reached) or `off_setpoint`.
 
+## Upstream substation
+
+The CSIRO feeders are supplied by an almost ideal LV source (`ISC3 = ISC1 = 100000` A at
+0.416 kV), without the MV/LV transformer, the MV network or the other feeders of their
+substation, so voltage drop and PV voltage rise are measured from a stiff point.
+`variants.upstream.enabled` (off by default) gives every variant its substation. It applies to
+the `csiro_enwl` networks only, whose substation's other feeders are in the catalog, and with
+the `synthetic` load provider only; `generate` refuses other networks before any work. No
+transformer element, node or bus is added: the source keeps its bus, base and role as slack.
+
+- **Rating.** Drawn per variant from the ratings of Electricity North West's distribution
+  transformers whose substation has about as many customers as the network (its customers: the
+  loads of all its feeders). The table counts 18 133 single-transformer substations of 25 kVA and
+  above, from ENWL's open data (CC BY 4.0): the distribution-transformer capacity register joined
+  on the substation number with the smart-meter installation counts (`TOTAL CUSTOMERS`). A
+  network draws from the substations whose customer count lies in the same octave as its own,
+  `[2^k, 2^(k+1))`, the last bin from 512 up; only the counts are in the package
+  (`gridfm_datakit_distr.variants.upstream.RATING_COUNTS`). For the 42 to 883 customers of the
+  catalog's networks the most frequent ratings are 500 kVA (from 32 to 512 customers) and
+  1000 kVA (from 512).
+- **Transformer impedance.** The short-circuit impedance `z_k` is the minimum of IEC 60076-5:2006
+  Table 1 for the rating: 4.0 % up to 630 kVA, 5.0 % from 631 to 1250 kVA, 6.0 % from 1251 to
+  2500 kVA. The resistance is `r = P_k / S_r`, `P_k` the maximum load losses of Regulation (EU)
+  548/2014 Annex I Table I.1, Tier 2 (liquid-immersed, from 1 July 2021), linear between its
+  rows as the Regulation prescribes; the reactance is `x = sqrt(z_k² - r²)`. For example:
+
+    | Rating (kVA) | `z_k` | `r` | `x` | X/R |
+    |---|---|---|---|---|
+    | 315 | 4.0 % | 0.89 % | 3.90 % | 4.4 |
+    | 500 | 4.0 % | 0.78 % | 3.92 % | 5.0 |
+    | 750 | 5.0 % | 0.75 % | 4.94 % | 6.6 |
+    | 800 | 5.0 % | 0.75 % | 4.94 % | 6.6 |
+    | 1000 | 5.0 % | 0.76 % | 4.94 % | 6.5 |
+
+- **MV network.** 250 MVA at the MV bus, ENWL's design fault level for its 11 kV networks, with
+  the transformer's X/R: 0.32 % on the base of an 800 kVA unit, against its 5 %.
+- **The source.** The Vsource gets `Z1 = Z2 = Z_T + Z_MV` and `Z0 = Z_T` (Ω at its base voltage):
+  a Dyn transformer blocks the MV network's zero sequence. With the neutral bonded to the source's
+  star point, as in the CSIRO models, this equals a Dyn transformer fed by the MV network at every
+  node, neutrals included, to 3e-8 pu (measured on CSIRO network 13, feeder 1, with the other
+  feeders' loads). `variants/source_yprim` holds the resulting admittance; the slack, the bases,
+  the source unbalance ([Scenarios](scenarios.md#source-voltage)) and the OPF act on it as on any
+  source. There is no transformer element, so no transformer loading among the labels.
+- **Other feeders.** Three single-phase loads at the source bus, `Load.upstream_feeders_a`, `_b`
+  and `_c`, each from a phase to the neutral (to ground in a model without one). In every scenario
+  each draws `g` times the sum of the nominal P and Q of the other feeders' loads on its phase,
+  `g` the scenario's global load factor (`scenarios.profiles.synthetic.global_scale`). They are
+  not customers: no PV, storage, DG, phase move or per-customer factor, and `der_penetration`
+  does not count them. The other feeders are compiled once per dataset in OpenDSS; their names,
+  the customer count and the per-phase sums are in `manifest.json` (`networks[].upstream`).
+- **Record.** `variants/variants.perturbation`, key `upstream`: `rating_kva`, `z1_ohm` and
+  `z0_ohm` (`[R, X]`, Ω) and `loads` (each lumped load's nominal `[P (W), Q (var)]`); the lumped
+  loads' set-points are rows of `scenarios/loads` ([Outputs §6](outputs.md#scenariosloads)).
+
+Not modelled: PV and per-customer variation on the other feeders (they follow `g` only), the
+transformer's no-load losses and magnetising current, its taps. The DG capacity
+([above](#dispatchable-generators)) is computed at the source as loaded.
+
 ## Checks and failures
 
 1. **The edits are read back.** A variant is the network compiled with its catalog recipe plus an
    OpenDSS edit script. After compiling it, every line's Yprim must match the drawn perturbation
-   within 1e-12 (relative), and the earthing resistances, load connections, PV and storage units
-   and dispatchable generators must be exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
+   within 1e-12 (relative), as must the source admittance against the substation's `Z1` and
+   `Z0`, and the earthing resistances, load connections, PV and storage units, dispatchable
+   generators and the other feeders' loads must be exactly as drawn. A mismatch is a bug: the variant's units fail with `VariantError`; it is never
    redrawn.
 2. **The base case must hold.** With its nominal loads and no DER output, the variant must converge
    (C1) and pass the Kirchhoff residual check (C2) ([conformance suite](networks.md#conformance-suite)).

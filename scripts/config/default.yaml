@@ -15,6 +15,7 @@ variants:
   phase_reallocation:
     enabled: true # moves a share of single-phase customers to another phase
     fraction: 0.2 # share of single-phase customers moved to another phase
+  # upstream: {enabled: true} # CSIRO feeders: their substation's transformer, MV network and other feeders
 
 der:
   pv:
