@@ -154,8 +154,8 @@ relative to the positive one is uniform in [0, 2π) per scenario: no source pref
 the standards treat `u2` as a ratio of magnitudes. The scenario's ideal source voltages are then
 `E_s = source_v_pu · (E + u2 · exp(j θ) · N)`, `E` the source's voltages at 1 pu and `N` their
 negative sequence ([Outputs §4](outputs.md#variantssourcepart-parquet)). There is no zero
-sequence: IEC TR 61000-3-13 defines no compatibility level for it, and EN 50160 bounds the negative
-sequence only.
+sequence: IEC TR 61000-3-13 defines no compatibility level for it, and the descriptions of EN 50160
+we found (secondary sources) bound the negative sequence only.
 
 `u2` is the ratio behind the source impedance, not at the source bus: there the drop of the source
 current across the source impedance, itself unbalanced by single-phase loads, moves the ratio by up
@@ -174,8 +174,8 @@ In OpenDSS the negative sequence is a current source (`Isource`, `sequence=neg`)
 source's nodes that injects `Y_s E_2`: with the voltage source it acts as one source `E_1 + E_2`
 behind the source impedance, and it adds no node. The extracted model, its node and element tables
 and `variants/source` are the same as with a balanced source; the Kron view gets the same source.
-It needs a three-phase voltage source (every catalog network has one); a config with a non-zero
-`source_unbalance` stops on a network without one. The positive-sequence view
+It needs a three-phase voltage source: with a non-zero `source_unbalance`, every variant of a
+network without one fails, with the reason in `manifest.json`. The positive-sequence view
 ([`export-posseq`](outputs.md#72-positive-sequence-export-export-posseq-not-stored-in-the-dataset)) keeps its source at `|V1|`, the positive sequence of the full
 model's source-bus voltages, and so ignores the negative sequence by construction.
 
