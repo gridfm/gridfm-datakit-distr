@@ -20,8 +20,8 @@ extra is installed, or uv removes it).
 1: the work failed (a download, a check, a unit). An unexpected exception prints a traceback.
 
 **Cache.** Network sources live in `$GRIDFM_DISTR_CACHE`, by default
-`~/.cache/gridfm_datakit_distr`, one directory per source; `fetch`, `inspect`, `validate` and
-`generate` take `--cache DIR` instead. It is the only environment variable the package reads.
+`~/.cache/gridfm_datakit_distr`, one directory per source (PVGIS series in `pvgis/`); `fetch`,
+`inspect`, `validate` and `generate` take `--cache DIR` instead. It is the only environment variable the package reads.
 
 ## `version`
 
@@ -29,14 +29,15 @@ Prints the version of the installed package.
 
 ## `fetch`
 
-`fetch ID... [options]`: source ids (`epri_ieee`, `csiro_enwl`, `edp`) or network ids. A network
+`fetch [ID...] [options]`: source ids (`epri_ieee`, `csiro_enwl`, `edp`) or network ids. A network
 id fetches its whole source: `fetch ieee13` installs every IEEE feeder.
 
 | Option | Effect |
 |---|---|
 | `--from-file PATH` | install from a local copy: a directory with the source's files, or the file itself for a single-file source; one source only; checksums are verified as for a download |
 | `--allow-unverified` | accept files that have no checksum in the manifest; their SHA-256 are written to `<cache>/<source>.unverified.sha256` for review |
-| `--force` | download even if the source is cached |
+| `--config CONFIG` | also download the PVGIS series of a generation config with `scenarios.pv_profile.provider: pvgis`, one per location ([Scenarios](scenarios.md#pvgis-series)) |
+| `--force` | download even if the source (or series) is cached |
 | `--cache DIR` | cache directory |
 
 Every file is checked against the source's SHA-256 manifest in the package
@@ -47,6 +48,13 @@ current manifest is skipped once its files still match the manifest and that lis
 `inspect`, `validate` and `generate` stop with an error naming the changed files otherwise, and
 `fetch --force` restores them. EDP's RAR5 archives need `unrar`, `7z`, `7zz` or `bsdtar` on
 `PATH`.
+
+A PVGIS series cannot have a checksum in the package (the locations are the user's): `fetch
+--config` records its SHA-256 at download next to it, in `<cache>/pvgis/`, and a cached series is
+checked against it before each use; a changed series is an error, downloaded again only with
+`--force`. The response must report the parameters requested (PVGIS ignores what it does not
+parse). HTTP 429 and 529 (too many requests, overloaded) are retried three times, after 1, 2 and
+4 s.
 
 ## `inspect`
 
@@ -83,8 +91,11 @@ network without a golden file fails C7. Exit 1 if a network fails.
 2. The sources of its networks must be in the cache (exit 1 otherwise). A loadshape provider
 (`network_loadshapes`, `edp_smart_meter`) must find loadshapes in every network: the networks
 without them are listed as `scenarios.profiles.provider: <network_id>: <reason>`, exit 2, also
-with `--dry-run`. Every network is prepared once before any work: one that does not load stops
-the run.
+with `--dry-run`. With `scenarios.pv_profile.provider: pvgis`, every network needs a location
+(else an invalid config, exit 2) and its series in the cache, unchanged since download (else exit
+1, naming the networks and `fetch --config`). Every network is prepared once before any work: one
+that does not load stops the run. A resumed PVGIS dataset refuses a series whose SHA-256 differs
+from the one in its manifest.
 
 **New, resumed or refused.** The output directory is
 

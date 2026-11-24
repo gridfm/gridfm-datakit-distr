@@ -43,7 +43,12 @@ be `off_setpoint`). The stored setpoints therefore determine the voltages
 
 ## PV output
 
-For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario:
+For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario, the available power is
+`p_avail = kWp · (output per kWp) · a`. Two providers give the output per kWp
+(`scenarios.pv_profile.provider`): a synthetic clear sky (`synthetic_clear_sky`, the default) and
+hourly series of PVGIS (`pvgis`).
+
+### Synthetic clear sky
 
 - available power `p_avail = kWp · clear_sky(h) · (1 − 0.75 c^3.4) · a`;
 - `clear_sky(h) = max(0, cos(π (h − 12) / 12))`: sunrise 6:00, noon peak, sunset 18:00, the same
@@ -60,6 +65,46 @@ For each PV unit ([Variants](variants.md#rooftop-pv)), per scenario:
   taken as midnight). Otherwise (`synthetic` loads, or `same_timestamp: false`) `h` is uniform
   over 24 h, independent of the loads: half of such scenarios fall at night and have no PV
   output.
+
+### PVGIS series
+
+`provider: pvgis` takes the output per kWp from PVGIS 5.3, the photovoltaic geographical
+information system of the EU Joint Research Centre: for each location, one hourly series of the
+power `P` (W) of a 1 kWp system over the configured years (`scenarios.pv_profile.pvgis`, by
+default 2005–2023), computed by PVGIS from irradiance data (PVGIS-SARAH3 where it covers the site, as in
+Europe; ERA5 elsewhere, e.g. in the US) on modules at PVGIS's optimal fixed slope and azimuth, with its temperature model and
+14 % system loss. Then `p_avail = kWp · P / 1 kW · a`, with `a` the unit's availability as above;
+no cloud cover is drawn (`cloudiness` must keep its default).
+
+- **Locations.** No source gives a point for any catalog network
+  ([Networks](networks.md#locations)), so none is built in: `scenarios.pv_profile.pvgis.locations`
+  maps network ids or glob patterns to a latitude, a longitude and an IANA time zone, and
+  `generate` refuses (exit 2, before any work, also with `--dry-run`) a selected network without
+  one. The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester.
+- **Download.** `fetch --config CONFIG` downloads one series per location into the cache
+  (`<cache>/pvgis/`) and records the file's SHA-256 next to it; every later use checks the file
+  against it, and a changed file is an error (`fetch --config CONFIG --force` downloads it
+  again). `generate` never downloads: without the series it stops and names the command.
+  Rate-limited or overloaded answers (HTTP 429, 529) are retried three times.
+- **Time.** PVGIS stamps hourly records in UTC (inferred: `seriescalc` does not say), SARAH3 ones
+  about ten minutes past the hour; each record is taken as the hour that starts at its `HH:00`.
+  A scenario draws one record for the whole network from its own stream. With a load time of
+  day `h` (the same case in which the clear sky uses the profile's time), a date is drawn
+  uniformly among the local days the series covers entirely, and the record is the one holding
+  the local time `h` on that date (Python's `zoneinfo`, so daylight saving applies; a wall time
+  that does not exist, or occurs twice, takes the offset in force before the change). Without
+  one, the record is drawn uniformly among all hours of the series, night included. The hour
+  drawn is stored as `scenario_meta.pv_time_utc_s`.
+- **Attribution.** The data are free to use if the source is acknowledged: "PVGIS © European
+  Communities, 2001-2026". Each network's request, the databases and angles PVGIS used and the
+  series' SHA-256 are recorded in `manifest.json` (`networks[].pvgis`) and in its passport
+  (`pv_series`); the dataset card carries the attribution.
+- **Limits.** One point per network and one system orientation for every unit; the series of
+  a location is the same for all its networks, so two feeders placed at one point see the same
+  weather in the same hour. The date drawn is independent of the load profile's (no catalog
+  profile is dated), so only the time of day couples PV output and loads.
+
+### Inverter
 
 The unit injects `p = min(p_avail, s_rated)` (an inverter smaller than its panels clips) and
 `q = −p · tan(acos(pf))`, limited to `p² + q² ≤ s_rated²`. The power flow never curtails: that is

@@ -1,0 +1,28 @@
+# PV output from PVGIS 5.3 hourly series on two ENWL four-wire LV feeders (CSIRO).
+# Before generating: `gridfm_datakit_distr fetch csiro_enwl --config scripts/config/pvgis.yaml`
+# downloads the feeders and one PVGIS series (about 16 MB) into the cache.
+# Unlisted keys take their defaults: docs/manual/config.md.
+dataset_name: csiro_enwl_pvgis
+networks:
+  include: ["csiro_enwl/n01_f1", "csiro_enwl/n01_f2"]
+der:
+  pv:
+    penetration: {distribution: uniform, low: 0.0, high: 0.6}
+scenarios:
+  n_scenarios_per_variant: 200
+  pv_profile:
+    provider: pvgis # instead of synthetic_clear_sky; cloudiness is not used
+    pvgis:
+      locations:
+        # Our choice, not the source's: no source gives a place per feeder. ENWL distributes
+        # in North West England and names "urban Manchester" first in its service area
+        # (docs/manual/networks.md, Locations).
+        "csiro_enwl/*": {lat: 53.48, lon: -2.24, timezone: Europe/London}
+      startyear: 2005 # PVGIS 5.3 serves 2005-2023
+      endyear: 2023
+      loss: 14.0 # system loss (%), PVGIS's recommendation
+      pvtechchoice: crystSi
+      mountingplace: free # free-standing; building-integrated is `building`
+      optimalangles: true # PVGIS's optimal fixed slope and azimuth for the location
+settings:
+  seed: 7

@@ -95,6 +95,24 @@ EDP base loads are placeholders in the sources (1 kW per load); EDP's are replac
 loadshape means, the European LV's keep their own loadshapes. Only these networks (EDP and the
 European LV feeder) carry loadshapes ([Scenarios](scenarios.md#loads)).
 
+## Locations
+
+The PVGIS provider of PV output ([Scenarios](scenarios.md#pvgis-series)) needs a point per
+network. No source gives one, so the package has no built-in location; what the sources state:
+
+| Networks | Stated location | Source |
+|---|---|---|
+| `csiro_enwl/*` | region only: Electricity North West is licensed to distribute electricity in the North West of England, "urban Manchester, through Lancashire and into rural Cumbria"; no place per feeder | ENWL regulatory information (enwl.co.uk); ENWL's letter to Ofgem of 3 September 2018 |
+| `edp/*` | country only: data from E-REDES Spain (EDP group); the `.db` files carry X/Y coordinates in an unstated projection | Mendeley Data 10.17632/gspyzvvrhm.2; Taye et al., IJEPES 158 (2024) |
+| `ieee_eulv` | none ("typical in the European low voltage distribution systems"); bus coordinates in an unstated reference system | IEEE European LV Test Feeder documentation |
+| `ieee34` | "an actual feeder located in Arizona" | Kersting, Radial Distribution Test Feeders |
+| `ieee37` | "an actual feeder located in California" | Kersting, Radial Distribution Test Feeders |
+| `ieee8500` | "derived from a real distribution circuit in the US" | IEEE 8500-Node Test Feeder documentation |
+| `ieee13`, `ieee123` | none | Kersting, Radial Distribution Test Feeders |
+
+The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester (53.48 N, 2.24 W,
+`Europe/London`): our choice, the first place ENWL names in its service area.
+
 ## Known differences and exclusions
 
 - **IEEE 34:** the published `ieee34Mod1.dss` ties six delta loads to ground; the corrected model

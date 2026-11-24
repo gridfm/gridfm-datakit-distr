@@ -33,6 +33,7 @@ scenarios:
       global_scale: {distribution: uniform, low: 0.2, high: 1.2} # factor on every load, per scenario
       local_sigma: 0.3 # lognormal noise on each customer's load
   pv_profile:
+    provider: synthetic_clear_sky # | pvgis (hourly PVGIS series; example: pvgis.yaml)
     cloudiness: {distribution: uniform, low: 0.0, high: 1.0} # one cloud cover per scenario
     availability: 1.0 # factor per unit and scenario; a distribution makes units differ
   # storage_profile: {setpoint: {distribution: uniform, low: -1.0, high: 1.0}} # share of the rating
