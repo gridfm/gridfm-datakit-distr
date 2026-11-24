@@ -9,7 +9,7 @@ capacitors, solved in OpenDSS. Keys:
 
 Each scenario, in order:
 
-1. draws its loads, PV output, storage and DG set-points and source voltage;
+1. draws its loads, PV output, storage and DG set-points, source voltage and source unbalance;
 2. sets them in OpenDSS;
 3. resets the controls to the variant's compiled state, then settles and freezes them, or keeps
    them ([controls](#controls));
@@ -146,7 +146,38 @@ In `scenarios/der` the rows have `der_type` `dg`, `p_avail_w` equal to `a · P^m
 ## Source voltage
 
 `scenarios.source_voltage_pu`: the magnitude of the variant's voltage source, drawn per scenario
-(uniform 0.98–1.05 pu); balanced, angle 0.
+(uniform 0.98–1.05 pu), angle 0; with a negative sequence it is the magnitude of the positive one.
+
+`scenarios.source_unbalance`: the negative-sequence ratio `u2` of the source's ideal voltage, drawn
+per scenario (default 0: balanced, and nothing below applies). The angle of the negative sequence
+relative to the positive one is uniform in [0, 2π) per scenario: no source prefers an angle, and
+the standards treat `u2` as a ratio of magnitudes. The scenario's ideal source voltages are then
+`E_s = source_v_pu · (E + u2 · exp(j θ) · N)`, `E` the source's voltages at 1 pu and `N` their
+negative sequence ([Outputs §4](outputs.md#variantssourcepart-parquet)). There is no zero
+sequence: IEC TR 61000-3-13 defines no compatibility level for it, and EN 50160 bounds the negative
+sequence only.
+
+`u2` is the ratio behind the source impedance, not at the source bus: there the drop of the source
+current across the source impedance, itself unbalanced by single-phase loads, moves the ratio by up
+to about 2e-4 on the stiff CSIRO sources and 5e-5 on IEEE 13 (at 0.5–2 % drawn; at no load the bus
+has the drawn ratio). The stored `source_u2` and `source_u2_angle_rad` and the source tables give
+the source exactly, as the power flow and the OPF see it.
+
+For coverage of the background unbalance that real supply voltages carry from upstream, set
+`source_unbalance: {distribution: uniform, low: 0, high: 0.02}`. EN 50160 bounds the 10-minute
+negative-sequence ratio at 2 % for 95 % of a week, and the CIGRE/CIRED C4.103 survey found about
+95 % of MV and LV sites below 2 % at their weekly 95th percentile; both figures come from secondary
+sources (the standard's text was not available to us). The uniform distribution is a coverage
+choice, not a measured one: no source gives the distribution of `u2` over time.
+
+In OpenDSS the negative sequence is a current source (`Isource`, `sequence=neg`) at the voltage
+source's nodes that injects `Y_s E_2`: with the voltage source it acts as one source `E_1 + E_2`
+behind the source impedance, and it adds no node. The extracted model, its node and element tables
+and `variants/source` are the same as with a balanced source; the Kron view gets the same source.
+It needs a three-phase voltage source (every catalog network has one); a config with a non-zero
+`source_unbalance` stops on a network without one. The positive-sequence view
+([`export-posseq`](outputs.md#72-positive-sequence-export-export-posseq-not-stored-in-the-dataset)) keeps its source at `|V1|`, the positive sequence of the full
+model's source-bus voltages, and so ignores the negative sequence by construction.
 
 ## Controls
 
@@ -212,7 +243,7 @@ and is stored as a mapping only ([Outputs §7.1](outputs.md#71-kron-view-viewskr
 
 There is no global random state. Every draw comes from a `numpy.random.SeedSequence` fixed by
 `settings.seed`, the network's id (via its SHA-256), the variant index, the scenario index and the
-quantity drawn (loads, PV, source voltage, tap jitter, …). Hence:
+quantity drawn (loads, PV, source voltage and unbalance, tap jitter, …). Hence:
 
 - a scenario depends only on the seed, its network's id and its indices: not on the other networks
   of the dataset, on the number of variants or scenarios, or on the order of the work. A dataset

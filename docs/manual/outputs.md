@@ -190,8 +190,14 @@ Non-zero entries of the primitive admittance matrix of each tap-independent PD e
 ### `variants/source/part-*.parquet`
 
 The voltage source (the Vsource) as ideal voltages behind an admittance: the source draws
-`I = Y_s (source_v_pu · E - V)` into the network at its nodes, `V` the node voltages, `E` the
-voltages below and `source_v_pu` the scenario's (`scenarios/scenario_meta`). One row per conductor
+`I = Y_s (E_s - V)` into the network at its nodes, `V` the node voltages and `E_s` the scenario's
+ideal voltages, `E_s = source_v_pu · (E + u2 · exp(j θ) · N)`, with `E` the voltages below, `N`
+their negative sequence (conductor `k` at `E_k · a^(2k)`, `a = exp(j 2π/3)`: the same magnitudes,
+the phase order reversed) and `source_v_pu`, `u2 = source_u2`, `θ = source_u2_angle_rad` the
+scenario's (`scenarios/scenario_meta`); with a balanced source (`source_u2` 0) `E_s = source_v_pu ·
+E`. `u2` and `θ` are those of the ideal voltages, behind `Y_s`: at the source bus the
+negative-sequence ratio differs by the drop of the source current across the source impedance (on
+the stiff CSIRO sources by up to about 2e-4 at 0.5–2 % drawn). One row per conductor
 of its first terminal; its second terminal is ground (a network whose Vsource is not grounded
 there, or with more than one, fails generation). With these and `Y_state` (§5), the setpoints of
 `scenarios/loads` and `scenarios/der` determine the voltages of `scenarios/node_results`: the
@@ -292,7 +298,9 @@ The network admittance matrix of a state, `Y_state`, at node level (node indices
 | `pv_time_utc_s` | int64, nullable | with `scenarios.pv_profile.provider: pvgis`, the hour of the network's PVGIS series drawn for the PV units: Unix time (seconds since 1970-01-01 00:00 UTC) of the start of the hour the record stands for ([Scenarios](scenarios.md#pv-output)); null with `synthetic_clear_sky` (no date), in a variant without PV units, or when the scenario failed before its draws |
 | `profile_source` | string | provider name |
 | `der_penetration` | float32/64 | share of customers with PV in the variant |
-| `source_v_pu` | float32/64, nullable | sampled source voltage magnitude |
+| `source_v_pu` | float32/64, nullable | sampled source voltage: positive-sequence magnitude of the source's ideal voltage, pu of its base (§4 `variants/source`); null when the scenario failed before its draws |
+| `source_u2` | float32/64, nullable | negative-sequence ratio of the source's ideal voltage, the magnitude of its negative sequence over that of its positive sequence (behind the source impedance, not at the source bus), drawn from `scenarios.source_unbalance` ([Scenarios](scenarios.md#source-voltage)); 0 with a balanced source (the default); null when the scenario failed before its draws |
+| `source_u2_angle_rad` | float32/64, nullable | angle of that negative sequence relative to the positive one (rad, in [0, 2π)); null with the default balanced source (none drawn) or when the scenario failed before its draws |
 | `pf_status` | string | `converged`, `off_setpoint` (converged, but a load or generator did not deliver its setpoint), `not_converged`, `error` |
 | `pf_message` | string, nullable | exception type and message when `pf_status = error`; with `not_converged`, when the load-ramp fallback was tried, how far it got |
 | `n_off_setpoint` | int32 | loads and generators whose delivered power differs from the setpoint by more than 1e-6 relative |
@@ -355,7 +363,7 @@ tables determine the voltages.
 | `der_type` | string | `pv`, `bess` (storage, `Generator.bess_<load>`), `dg` (dispatchable generator, `Generator.dg_<load>`), `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
 | `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive; storage: positive discharging, negative charging, `q_var` 0; DG: `scenarios.dg_profile.setpoint` × its available capacity `p_avail_w`, `q_var` 0) |
 | `p_avail_w` | float32/64 | available active power (PV: kWp × the provider's output per kWp × the unit's availability, the output per kWp being the clear-sky shape × cloud factor with `synthetic_clear_sky` or the PVGIS power of 1 kWp in the hour `scenario_meta.pv_time_utc_s` with `pvgis`, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail; DG: its available capacity `a · P^max`, `a` the unit's availability in the scenario, 0 when out of service, [Scenarios](scenarios.md#dispatchable-generators)) |
-| `s_rated_va` | float32/64 | inverter rating (storage: its power rating `der.storage.kw`; DG: its capacity `P^max`; the OPF's box bound of both `p` and `q`, not a circle, is `p_avail_w`) |
+| `s_rated_va` | float32/64 | inverter rating (storage: its power rating, from the SMART-DS table on the customer's PV peak power unless `der.storage.kw` overrides it, [Variants](variants.md#storage); DG: its capacity `P^max`; the OPF's box bound of both `p` and `q`, not a circle, is `p_avail_w`) |
 
 A scenario's rows list its variant's PV units, then its storage units, then its dispatchable generators, each in name order.
 
