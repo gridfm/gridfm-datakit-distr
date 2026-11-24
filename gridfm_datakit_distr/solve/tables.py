@@ -181,8 +181,8 @@ def chunk_tables(
         p, q = der_setpoints(o.pv_p_w, o.pv_q_var, o.bess_p_w, o.dg_p_w)
         if p is None:
             continue
-        dg_avail = None if o.dg_p_w is None else dg_max  # storage: its p; DG: its capacity
-        p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w, dg_avail) if a is not None]
+        # storage: its p; DG: its available capacity
+        p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w, o.dg_p_avail_w) if a is not None]
         der_parts.append(
             pa.table(
                 {

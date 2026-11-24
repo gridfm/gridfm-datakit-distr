@@ -350,9 +350,9 @@ tables determine the voltages.
 | `scenario_id` | int64 | |
 | `element_idx` | int32 | DER element (OpenDSS `Generator` in v1) |
 | `der_type` | string | `pv`, `bess` (storage, `Generator.bess_<load>`), `dg` (dispatchable generator, `Generator.dg_<load>`), `ev`, `hp` (EV and HP are modelled as loads in v1; kept for future use) |
-| `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive; storage: positive discharging, negative charging, `q_var` 0; DG: `scenarios.dg_profile.setpoint` × `P^max`, `q_var` 0) |
-| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail; DG: its capacity `P^max`) |
-| `s_rated_va` | float32/64 | inverter rating (storage: its power rating `der.storage.kw`; DG: its capacity `P^max`, the box bound of both `p` and `q` in the OPF, not a circle) |
+| `p_w`, `q_var` | float32/64 | setpoint used in PF (generation positive; storage: positive discharging, negative charging, `q_var` 0; DG: `scenarios.dg_profile.setpoint` × its available capacity `p_avail_w`, `q_var` 0) |
+| `p_avail_w` | float32/64 | available active power (PV: kWp × clear-sky shape × cloud factor × the unit's availability, [Scenarios](scenarios.md#pv-output); storage: its set-point `p_w`, as it has nothing to curtail; DG: its available capacity `a · P^max`, `a` the unit's availability in the scenario, 0 when out of service, [Scenarios](scenarios.md#dispatchable-generators)) |
+| `s_rated_va` | float32/64 | inverter rating (storage: its power rating `der.storage.kw`; DG: its capacity `P^max`; the OPF's box bound of both `p` and `q`, not a circle, is `p_avail_w`) |
 
 A scenario's rows list its variant's PV units, then its storage units, then its dispatchable generators, each in name order.
 
@@ -393,7 +393,7 @@ A single-phase equivalent of the three-phase backbone, **re-solved** in OpenDSS,
 - **Branches.** `rate_a` is the sum of the elements' ratings (0 if none: unlimited); `br_status` 1; `ang_min`, `ang_max` ∓360. Transformers: `tap` is the no-load positive-sequence ratio at the from side, the vector-group shift is not modelled (`shift` = 0; the removed shift is in `x_vector_shift_deg`). Shunts at backbone buses (capacitors) are `GS`, `BS` at 1 pu. `min_vm_pu`, `max_vm_pu` are `networks.voltage_limits`.
 - **Scenarios.** `scenario` = 0 … n − 1 over the scenarios whose view converged, in the order of `scenario_id`; partition k = `scenario` // 200. The stable key is `load_scenario_idx` = `x_scenario_id` = `scenario_id`: `scenario` changes when a dataset grows. Branch flows come from the voltages and the branch admittances (`S = V conj(Y V)` on 100 MVA).
 - **Truth.** `x_truth_Vm`, `x_truth_Va` are the positive-sequence component of the full model's voltages at the bus, in the view's reference: the source at angle 0 and each zone rotated by its cumulative vector-group shift. The component is the same for phase-to-neutral and phase-to-ground voltages, because a common-mode voltage has no positive sequence; hence one pair of columns.
-- **Extra columns** (prefix `x_`, ignored by graphkit). Bus: `x_scenario_id`, `x_truth_Vm`, `x_truth_Va`, and `x_der_p_mw`, `x_der_q_mvar`, `x_der_p_avail_mw` (DER output and available power aggregated at the bus: PV, storage and dispatchable generators, a storage unit counted at its set-point in both, a DG at its set-point and its capacity). Branch: `x_scenario_id`, `x_vector_shift_deg`. Generator and admittance: `x_scenario_id`.
+- **Extra columns** (prefix `x_`, ignored by graphkit). Bus: `x_scenario_id`, `x_truth_Vm`, `x_truth_Va`, and `x_der_p_mw`, `x_der_q_mvar`, `x_der_p_avail_mw` (DER output and available power aggregated at the bus: PV, storage and dispatchable generators, a storage unit counted at its set-point in both, a DG at its set-point and its available capacity). Branch: `x_scenario_id`, `x_vector_shift_deg`. Generator and admittance: `x_scenario_id`.
 
 The export reproduces to the last bit the view that earlier versions computed during the generation (checked on IEEE 13, CSIRO n21_f3 and EDP industrial). The exception is `x_der_*`, within 3e-10 relative, because the export reads the stored float32 setpoints.
 
@@ -428,7 +428,7 @@ One row per scenario of the dataset.
 | Column | Type | Description |
 |---|---|---|
 | `scenario_id` | int64 | |
-| `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `no_free_variable` (class B without a dispatchable generator and with every PV unit fixed: nothing can move; not solved); `error` |
+| `opf_status` | string | Ipopt's return status of the solve (`Solve_Succeeded` is the only label; e.g. `Infeasible_Problem_Detected`, `Maximum_WallTime_Exceeded`, `Maximum_Iterations_Exceeded`); `not_supported` (network outside the OPF's scope); `no_pf_label` (no power-flow label, not solved); `no_free_variable` (class B with every PV unit fixed and no dispatchable generator in service: nothing can move; not solved); `error` |
 | `opf_message` | string, nullable | the reason with `not_supported`, the exception with `error` |
 | `opf_class` | string | `A`: the uncontrolled power flow keeps every bounded voltage (the pairs of the introduction above: phase to neutral, to ground at a bus without neutral, phase to phase in a `ground_by_convention` zone) within the OPF's bounds and every rated transformer within its rating; `B`: it does not; `C`: no power-flow label |
 | `cost_preset` | string | `economic` (source 1 per W, PV units 0, dispatchable generators 0.1) or `sampled` (drawn per scenario, `labels.opf.sampled`) |
@@ -456,7 +456,7 @@ The dispatch of every PV unit, then of every dispatchable generator, for the sce
 | `scenario_id` | int64 | |
 | `element_idx` | int32 | the PV or dispatchable generator |
 | `p_w`, `q_var` | float32/64 | active and reactive power injected (W, var) |
-| `q_max_var` | float32/64 | the largest \|q\| the unit could dispatch (var): `der.pv.reactive_fraction` of its rating, 0 when its available power is below `der.pv.reactive_threshold` of its rating; a dispatchable generator: its capacity `P^max` (`0 ≤ q ≤ P^max`) |
+| `q_max_var` | float32/64 | the largest \|q\| the unit could dispatch (var): `der.pv.reactive_fraction` of its rating, 0 when its available power is below `der.pv.reactive_threshold` of its rating; a dispatchable generator: its available capacity `p_avail_w` of `scenarios/der` (`0 ≤ q ≤ a · P^max`), 0 when out of service |
 | `c1`, `c2` | float64 | the unit's cost coefficients (per W, per W²) |
 
 ### `opf/opf_node_results`

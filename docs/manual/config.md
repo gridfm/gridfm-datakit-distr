@@ -211,8 +211,8 @@ Dispatchable generators ([Variants](variants.md#dispatchable-generators)), as in
 case study of Geth, Claeys and Deconinck (PSCC 2022): one unit at every 4th load (in name
 order), every unit with the same capacity `P^max`, the smallest at which they congest the
 network (computed per network, recorded in `manifest.json`). A unit is an OpenDSS generator
-`Generator.dg_<load>` on the load's nodes; its set-point is drawn per scenario
-(`scenarios.dg_profile`) and the OPF dispatches it within `0 <= p, q <= P^max`.
+`Generator.dg_<load>` on the load's nodes; its set-point and availability `a` are drawn per
+scenario (`scenarios.dg_profile`) and the OPF dispatches it within `0 <= p, q <= a · P^max`.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -270,12 +270,13 @@ Storage set-points per scenario ([Scenarios](scenarios.md#storage-set-points)).
 
 ### `scenarios.dg_profile`
 
-Set-points of the dispatchable generators per scenario
+Set-points and availability of the dispatchable generators per scenario
 ([Scenarios](scenarios.md#dispatchable-generators)).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `scenarios.dg_profile.setpoint` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Active power of each unit in the power flow as a fraction of its capacity `P^max`, drawn per unit and scenario; no reactive power. Assumption, no source: the source gives the OPF's bounds only, so any point within them. In the OPF the units are dispatched. |
+| `scenarios.dg_profile.setpoint` | value spec, ≥ 0 and ≤ 1 | `{distribution: uniform, low: 0.0, high: 1.0}` | Active power of each unit in the power flow as a fraction of its available capacity `a · P^max`, drawn per unit and scenario; no reactive power. Assumption, no source: the source gives the OPF's bounds only, so any point within them. In the OPF the units are dispatched. |
+| `scenarios.dg_profile.availability` | value spec, ≥ 0 and ≤ 1 | `1.0` | Factor `a` on each unit's capacity, drawn per unit and scenario: the unit has `a · P^max` available, in the power flow and as the OPF's bound of `p` and `q` (0: out of service, fixed at zero; between 0 and 1: derated). With 1 every unit is available in every scenario; a distribution takes units out, e.g. `{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` for one unit in twenty out of service. |
 
 ## `controls`
 

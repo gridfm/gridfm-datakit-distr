@@ -24,8 +24,10 @@ discharging), ``q = 0``. ``p_avail_w`` of a storage unit is its set-point: it ha
 curtail.
 
 Dispatchable generators (``Generator.dg_<load>``, at every 4th customer, ``variants/dg.py``) are
-set per scenario to ``p = setpoint · P^max``, ``setpoint`` drawn per unit from ``DG_SETPOINT``,
-``q = 0``: the power flow's operating point; the OPF dispatches them.
+set per scenario to ``p = setpoint · a · P^max``, ``setpoint`` drawn per unit from
+``DG_SETPOINT``, ``q = 0``: the power flow's operating point; the OPF dispatches them within
+``0 <= p, q <= a · P^max``. The availability ``a`` (0: out of service), one per unit and scenario
+from ``DG_AVAILABILITY`` (a fixed value draws nothing); ``p_avail_w`` of a DG is ``a · P^max``.
 """
 
 from __future__ import annotations
@@ -188,17 +190,33 @@ class StorageSetpoints:
         self.profile = profile
         self.rated_w = np.array([1e3 * u.kw for u in self.units], dtype=np.float64)
 
+    def capacity(self, seed: int, net: int, k: int, s: int) -> NDArray[np.float64]:
+        """Each unit's capacity in scenario ``s`` (W): its rating."""
+        return self.rated_w
+
     def draw(self, seed: int, net: int, k: int, s: int) -> NDArray[np.float64]:
-        """Active power of each unit in scenario ``s`` (W, discharging positive)."""
+        """Active power of each unit in scenario ``s`` (W, discharging positive): the set-point
+        times :meth:`capacity`."""
         spec = self.profile.setpoint
+        capacity = self.capacity(seed, net, k, s)
         if isinstance(spec, Fixed):
-            return spec.value * self.rated_w
+            return spec.value * capacity
         rng = scenario_rng(seed, net, k, s, self.stream)
-        return np.array([float(spec.sample(rng)) for _ in self.units]) * self.rated_w
+        return np.array([float(spec.sample(rng)) for _ in self.units]) * capacity
 
 
 class DGSetpoints(StorageSetpoints):
     """The power-flow set-points of a variant's DG, scenario by scenario (W): a fraction of the
-    capacity drawn per unit from their own stream."""
+    available capacity drawn per unit from their own stream."""
 
     stream = ScenarioStream.DG_SETPOINT
+    profile: DGProfile
+
+    def capacity(self, seed: int, net: int, k: int, s: int) -> NDArray[np.float64]:
+        """Each unit's available capacity ``a · P^max`` in scenario ``s`` (W), ``a`` drawn per
+        unit from ``DG_AVAILABILITY`` (a fixed value draws nothing)."""
+        spec = self.profile.availability
+        if isinstance(spec, Fixed):
+            return spec.value * self.rated_w
+        rng = scenario_rng(seed, net, k, s, ScenarioStream.DG_AVAILABILITY)
+        return np.array([float(spec.sample(rng)) for _ in self.units]) * self.rated_w

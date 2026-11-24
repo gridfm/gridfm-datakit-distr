@@ -77,11 +77,20 @@ rows have `der_type` `bess` and `p_avail_w` equal to `p_w`.
 ## Dispatchable generators
 
 Each dispatchable generator ([Variants](variants.md#dispatchable-generators)) is set in the power
-flow to `p = setpoint · P^max`, with `setpoint` (`scenarios.dg_profile.setpoint`, uniform in 0 to 1
-by default) drawn per unit and scenario, and `q = 0`. This operating point is an assumption: the
-source of the DG setup gives only the OPF's bounds, in which the OPF then dispatches the units
-([OPF labels](opf.md#the-problem)). In `scenarios/der` the rows have `der_type` `dg`, `p_avail_w`
-and `s_rated_va` equal to `P^max`.
+flow to `p = setpoint · a · P^max`, with `setpoint` (`scenarios.dg_profile.setpoint`, uniform in 0
+to 1 by default) drawn per unit and scenario, and `q = 0`. This operating point is an assumption:
+the source of the DG setup gives only the OPF's bounds, in which the OPF then dispatches the units
+([OPF labels](opf.md#the-problem)).
+
+`a`, the unit's availability (`scenarios.dg_profile.availability`), is drawn per unit and
+scenario: the unit has `a · P^max` available, in the power flow and as the OPF's bound of `p` and
+`q`. A unit with `a = 0` is out of service, at `p = q = 0` in both; between 0 and 1 it is derated.
+The default 1 keeps every unit available in every scenario; a distribution takes units out, e.g.
+`{distribution: choice, values: [0, 1], weights: [0.05, 0.95]}` puts one unit in twenty out of
+service. No outage rate is assumed by default.
+
+In `scenarios/der` the rows have `der_type` `dg`, `p_avail_w` equal to `a · P^max` and
+`s_rated_va` equal to `P^max`.
 
 ## Source voltage
 

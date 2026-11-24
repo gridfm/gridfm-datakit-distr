@@ -254,6 +254,69 @@ def test_dg_are_dispatched_until_a_bound_is_active(tmp_path: Path) -> None:
         assert r["objective"] == pytest.approx(r["source_p_w"] + 0.1 * p, rel=1e-6, abs=1e-3)
 
 
+def test_dg_out_of_service_are_fixed_at_zero_in_the_opf(tmp_path: Path) -> None:
+    """Availability 0: every DG is fixed at p = q = 0, so each scenario gets the class, the status
+    and the objective it has without DG: class A solved and verified with zero-width bounds,
+    class B ``no_free_variable`` with the DG named in the message."""
+    out, without = tmp_path / "out", tmp_path / "without"
+    dg = {"der.dg": {"enabled": True}, "scenarios.dg_profile": {"availability": 0.0}}
+    generate(config(**DG_ONLY, **dg), out, catalog=dg_catalog(tmp_path), root=tmp_path)
+    generate(config(**DG_ONLY), without, catalog=dg_catalog(tmp_path), root=tmp_path)
+    base = {r["scenario_id"]: r for r in read(without, "opf/opf_meta").to_pylist()}
+    opf = {r["scenario_id"]: r for r in read(out, "opf/opf_meta").to_pylist()}
+    key = ("opf_class", "opf_status")
+    assert {s: tuple(r[k] for k in key) for s, r in opf.items()} == {
+        s: tuple(r[k] for k in key) for s, r in base.items()
+    }
+    assert {r["opf_status"] for r in opf.values()} == {SOLVED, NO_FREE_VARIABLE}
+    solved = [s for s, r in opf.items() if r["opf_status"] == SOLVED]
+    assert all(opf[s]["verified"] for s in solved)
+    for s in solved:
+        assert opf[s]["objective"] == pytest.approx(base[s]["objective"], rel=1e-6)
+    assert all(
+        "dispatchable generators" in r["opf_message"]
+        for r in opf.values()
+        if r["opf_status"] == NO_FREE_VARIABLE
+    )
+    der = [r for r in read(out, "scenarios/der").to_pylist() if r["der_type"] == "dg"]
+    assert der
+    assert all(r["p_w"] == r["p_avail_w"] == 0.0 < r["s_rated_va"] for r in der)
+    rows = read(out, "opf/opf_der").to_pylist()
+    assert len(rows) == 2 * len(solved)
+    assert all(r["p_w"] == r["q_var"] == r["q_max_var"] == 0.0 for r in rows)
+
+
+def test_a_derated_dg_is_bounded_by_its_available_capacity(tmp_path: Path) -> None:
+    """Availability 0 or 0.5 per unit and scenario: a unit out of service stays at zero while the
+    others are dispatched up to half their capacity, the bound then active for some;
+    ``opf_der.q_max_var`` is the unit's ``p_avail_w``."""
+    out = tmp_path / "out"
+    spec = {"distribution": "choice", "values": [0.0, 0.5], "weights": [0.5, 0.5]}
+    dg = {"der.dg": {"enabled": True}, "scenarios.dg_profile": {"availability": spec}}
+    generate(config(**DG_ONLY, **dg), out, catalog=dg_catalog(tmp_path), root=tmp_path)
+    avail = {
+        (r["scenario_id"], r["element_idx"]): r["p_avail_w"]
+        for r in read(out, "scenarios/der").to_pylist()
+        if r["der_type"] == "dg"
+    }
+    rows = read(out, "opf/opf_der").to_pylist()
+    assert rows
+    assert all(r["q_max_var"] == avail[r["scenario_id"], r["element_idx"]] for r in rows)
+    off = [r for r in rows if r["q_max_var"] == 0.0]
+    on = [r for r in rows if r["q_max_var"] > 0.0]
+    assert off
+    assert on
+    assert all(r["p_w"] == r["q_var"] == 0.0 for r in off)
+    (net,) = Manifest.load(out).networks
+    half = 0.5 * net["dg"]["p_max_w"]
+    assert {r["q_max_var"] for r in on} == {half}
+    tol = 1e-6 * half
+    assert all(-tol <= r["p_w"] <= half + tol and -tol <= r["q_var"] <= half + tol for r in on)
+    assert any(r["p_w"] >= half - tol for r in on)  # the derated bound is active
+    meta = read(out, "opf/opf_meta").to_pylist()
+    assert all(r["verified"] for r in meta if r["opf_status"] == SOLVED)
+
+
 def test_sampled_dg_costs_come_after_the_pv_costs(tmp_path: Path) -> None:
     """``sampled`` draws the DG costs after those of the source and the PV units: enabling DG
     leaves every other coefficient as it was."""

@@ -48,10 +48,15 @@ from gridfm_datakit_distr.solve.tables import concat_cast
 ACTIVE_REL = 1e-6
 """A limit is counted active when the solution is within this relative distance of it."""
 NO_FREE_VARIABLE = "no_free_variable"
-"""Status of a class-B scenario without a dispatchable generator whose PV units are all fixed:
-none placed, or none with available power or a reactive range. Not solved: nothing can move to
-remove the violation."""
+"""Status of a class-B scenario whose PV units and dispatchable generators are all fixed: none
+placed, PV units without available power or a reactive range, generators out of service
+(availability 0). Not solved: nothing can move to remove the violation."""
 NO_FREE_MESSAGE = "PV units all fixed (none, or no power or reactive range): nothing can move"
+NO_FREE_DG_MESSAGE = (
+    "PV units all fixed (none, or no power or reactive range) and dispatchable generators all "
+    "out of service: nothing can move"
+)
+"""The message when the variant has dispatchable generators (the other one stays unchanged)."""
 MAX_CACHED_PROBLEMS = 4
 """OPF problems kept, those of the most recent states (about 6.5 MiB each on IEEE 13): with
 regulators nearly every scenario meets a new state."""
@@ -101,8 +106,6 @@ class OPFLabeller:
         self.s_rated_va = np.array([u.s_rated_va for u in units], dtype=np.float64)
         self.dg_units = runner.dg.units if runner.dg is not None else ()
         self.dg_idx = np.array([index[u.generator] for u in self.dg_units], dtype=np.int32)
-        self.dg_p_max_w = np.array([1e3 * u.kw for u in self.dg_units], dtype=np.float64)
-        """Capacity of each DG (W): the bound of its ``p`` and ``q``."""
         limits = config.networks.voltage_limits
         self.limits_pu = (limits.vmin_pu, limits.vmax_pu)
         self.pairs, self.vpn_lo_v, self.vpn_hi_v = vpn_bounds(model, *self.limits_pu)
@@ -122,12 +125,15 @@ class OPFLabeller:
             return OPFRow(o.scenario_id, "no_pf_label", opf_class, costs=costs)
         p_avail = o.pv_p_avail_w if o.pv_p_avail_w is not None else np.zeros(0)
         bess = o.bess_p_w if o.bess_p_w is not None else np.zeros(0)
+        # each DG's available capacity a · P^max (W): the bound of its p and q
+        dg_max = o.dg_p_avail_w if o.dg_p_avail_w is not None else np.zeros(0)
         q_max = np.array([u.q_max_var(float(p)) for u, p in zip(self.units, p_avail, strict=True)])
-        free = np.any((p_avail > 0) | (q_max > 0)) or np.any(self.dg_p_max_w > 0)
+        free = np.any((p_avail > 0) | (q_max > 0)) or np.any(dg_max > 0)
         if opf_class == "B" and not free:
             # No free variable: the NLP is the power flow's square system, which Ipopt solves while
             # ignoring the bounds (`Feasible_Point_Found`); the violation stands by construction.
-            return OPFRow(o.scenario_id, NO_FREE_VARIABLE, opf_class, NO_FREE_MESSAGE, costs=costs)
+            message = NO_FREE_DG_MESSAGE if self.dg_units else NO_FREE_MESSAGE
+            return OPFRow(o.scenario_id, NO_FREE_VARIABLE, opf_class, message, costs=costs)
         try:
             problem = self._problem(str(o.state_id))
 
@@ -135,7 +141,7 @@ class OPFLabeller:
                 return problem.solve(
                     source_v_pu=o.source_v_pu, load_p_w=o.load_p_w, load_q_var=o.load_q_var,
                     pv_p_avail_w=p_avail, pv_s_rated_va=self.s_rated_va, costs=costs,
-                    pv_q_max_var=q_max, start=start, bess_p_w=bess, dg_p_max_w=self.dg_p_max_w,
+                    pv_q_max_var=q_max, start=start, bess_p_w=bess, dg_p_max_w=dg_max,
                 )  # fmt: skip
 
             result = solve()
@@ -167,7 +173,7 @@ class OPFLabeller:
         p_pf = o.pv_p_w if o.pv_p_w is not None else np.zeros(0)
         curtailment = float(np.sum(p_pf - result.pv_p_w))
         active = self._active(problem, result, str(o.state_id)) if result.solved else None
-        q_max = np.r_[q_max, self.dg_p_max_w]
+        q_max = np.r_[q_max, dg_max]
         return OPFRow(
             o.scenario_id, result.status, opf_class, None, result, check, curtailment, costs,
             q_max, active, start,

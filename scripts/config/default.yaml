@@ -36,7 +36,9 @@ scenarios:
     cloudiness: {distribution: uniform, low: 0.0, high: 1.0} # one cloud cover per scenario
     availability: 1.0 # factor per unit and scenario; a distribution makes units differ
   # storage_profile: {setpoint: {distribution: uniform, low: -1.0, high: 1.0}} # share of the rating
-  # dg_profile: {setpoint: {distribution: uniform, low: 0.0, high: 1.0}} # share of the capacity
+  # dg_profile:
+  #   setpoint: {distribution: uniform, low: 0.0, high: 1.0} # share of the available capacity
+  #   availability: 1.0 # factor on the capacity per unit and scenario; 0: out of service
 
 controls:
   mode: static_settle # settle regulators and capacitors, jitter the taps, settle again, freeze

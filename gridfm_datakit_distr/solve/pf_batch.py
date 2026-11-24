@@ -159,6 +159,8 @@ class ScenarioOutcome:
     """Storage set-points (W, discharging positive; q = 0), in ``runner.storage.units`` order."""
     dg_p_w: NDArray[np.float64] | None = None
     """DG set-points (W; q = 0), in ``runner.dg.units`` order."""
+    dg_p_avail_w: NDArray[np.float64] | None = None
+    """DG available capacities ``a · P^max`` (W), the OPF's bound of their ``p`` and ``q``."""
     n_off_setpoint: int = 0
     pf_iterations: int = 0
     residual_rel: float | None = None
@@ -256,7 +258,8 @@ class VariantRunner:
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
             bess = self.storage.draw(seed, net, k, s) if self.storage is not None else None
             dg = self.dg.draw(seed, net, k, s) if self.dg is not None else None
-            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg)
+            dg_avail = self.dg.capacity(seed, net, k, s) if self.dg is not None else None
+            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg, dg_avail)
             self._set(draws)
             self._draws, self._note = draws, None
             state, status = self._controls(s)
@@ -454,6 +457,7 @@ class VariantRunner:
             pv_p_avail_w=None if pv is None else pv.p_avail_w,
             bess_p_w=draws.bess,
             dg_p_w=draws.dg,
+            dg_p_avail_w=draws.dg_avail,
             n_off_setpoint=n_off,
             pf_iterations=iterations,
             residual_rel=rel,
@@ -476,6 +480,8 @@ class _Draws:
     """Storage set-points (W)."""
     dg: NDArray[np.float64] | None = None
     """DG set-points (W)."""
+    dg_avail: NDArray[np.float64] | None = None
+    """DG available capacities (W), not ramped (as PV's available power)."""
 
 
 def _scaled(draws: _Draws, factor: float) -> _Draws:

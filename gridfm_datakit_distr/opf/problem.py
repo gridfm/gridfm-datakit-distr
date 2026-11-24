@@ -15,7 +15,8 @@ minus its power. Constraints:
 - PV units: ``0 <= p <= p_avail``, ``p^2 + q^2 <= s_rated^2``, ``|q| <= q_max``
   (the unit's reactive limit);
 - DG: ``0 <= p <= p_max`` and ``0 <= q <= p_max``, box bounds without a rating circle (Geth,
-  Claeys and Deconinck, PSCC 2022);
+  Claeys and Deconinck, PSCC 2022); ``p_max`` is the scenario's available capacity ``a · P^max``
+  (0: out of service, fixed at zero as a PV unit at night);
 - ``v_min <= |V_p - V_n| <= v_max`` at every phase node of every bus (``|V_p|`` where the bus
   has no neutral node), per unit of the node's nominal voltage;
 - ``|S| <= rating`` into winding 1 of every transformer with a rating.
@@ -272,8 +273,8 @@ class OPFProblem:
         drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
         unit (default: the rating alone); ``bess_p_w``: the storage units' fixed set-points in
         :attr:`bess_names` order (W, discharging positive, q = 0); ``dg_p_max_w``: the DG's
-        capacities in :attr:`dg_names` order (W), the bound of both ``p`` and ``q``. The status is
-        returned, never raised.
+        available capacities in :attr:`dg_names` order (W), the bound of both ``p`` and ``q``. The
+        status is returned, never raised.
         """
         n, nc, ng, s = self._n, self._n_customers, self._ng, self._s_base
         nb, npv = self._nl - nc, self._n_pv

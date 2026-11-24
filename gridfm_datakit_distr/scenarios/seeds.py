@@ -68,6 +68,8 @@ class ScenarioStream(IntEnum):
     """Set-point of each storage unit (``scenarios.storage_profile.setpoint``)."""
     DG_SETPOINT = 11
     """Set-point of each dispatchable generator (``scenarios.dg_profile.setpoint``)."""
+    DG_AVAILABILITY = 12
+    """Availability of each dispatchable generator (``scenarios.dg_profile.availability``)."""
 
 
 def network_key(network_id: str) -> int:

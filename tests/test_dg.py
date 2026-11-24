@@ -21,6 +21,7 @@ from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.opf.support import vpn_bounds
 from gridfm_datakit_distr.scenarios.der import DGSetpoints, dg_units
+from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
 from gridfm_datakit_distr.solve.tables import chunk_tables
 from gridfm_datakit_distr.variants.dg import BISECT_REL, SCAN_STEPS, dg_capacity, search
@@ -251,6 +252,38 @@ def test_setpoints_are_within_the_capacity_and_drawn_per_unit() -> None:
 def test_a_setpoint_outside_zero_to_one_is_refused() -> None:
     with pytest.raises(ValueError, match=">= 0"):
         DGProfile.model_validate({"setpoint": -0.5})
+    with pytest.raises(ValueError, match="<= 1"):
+        DGProfile.model_validate({"availability": 1.5})
+
+
+THREE_UNITS = Perturbation(0, dg_kw={"Load.a": 10.0, "Load.b": 10.0, "Load.c": 10.0})
+
+
+def test_the_default_availability_draws_nothing() -> None:
+    fleet = DGSetpoints(dg_units(THREE_UNITS), DGProfile())
+    assert fleet.profile.availability == Fixed(1.0)
+    spec = fleet.profile.setpoint
+    for s in range(5):
+        assert np.array_equal(fleet.capacity(SEED, 0, 0, s), np.full(3, 10e3))
+        rng = scenario_rng(SEED, 0, 0, s, ScenarioStream.DG_SETPOINT)
+        before = np.array([float(spec.sample(rng)) for _ in range(3)]) * 10e3
+        assert np.array_equal(fleet.draw(SEED, 0, 0, s), before)  # bit for bit as before
+
+
+def test_a_drawn_availability_scales_the_capacity_and_the_setpoint() -> None:
+    fleet = DGSetpoints(dg_units(THREE_UNITS), DGProfile())
+    spec = {"distribution": "uniform", "low": 0.5, "high": 1.0}
+    derated = DGSetpoints(fleet.units, DGProfile(availability=spec))
+    shares = []
+    for s in range(10):
+        a = derated.capacity(SEED, 0, 0, s) / 10e3
+        assert ((a >= 0.5) & (a < 1.0)).all()
+        assert np.array_equal(a, derated.capacity(SEED, 0, 0, s) / 10e3)  # deterministic
+        # the set-point fractions come from their own stream: as without availability
+        assert np.allclose(derated.draw(SEED, 0, 0, s), fleet.draw(SEED, 0, 0, s) * a, rtol=1e-12)
+        shares.append(a)
+    assert len(set(shares[0].round(9))) == 3  # per unit
+    assert np.ptp(np.array(shares)[:, 0]) > 0.1  # per scenario
 
 
 # ------------------------------------------------------------------- power flow
@@ -324,12 +357,56 @@ def test_dg_rows_follow_pv_and_storage_in_the_der_table(tmp_path: Path) -> None:
     assert all(d["p_avail_w"] == d["s_rated_va"] == 10e3 and d["q_var"] == 0.0 for d in dg)
 
 
+def test_a_unit_out_of_service_injects_nothing(tmp_path: Path) -> None:
+    """Availability 0 or 1 per unit and scenario: a unit out of service has p = q = 0 in the
+    engine and ``p_avail_w`` 0 in ``scenarios/der``; ``s_rated_va`` stays ``P^max``."""
+    spec = {"distribution": "choice", "values": [0.0, 1.0], "weights": [0.5, 0.5]}
+    r = runner(
+        tmp_path,
+        scenarios={"n_scenarios_per_variant": 10, "dg_profile": {"availability": spec}},
+    )
+    assert r.dg is not None
+    api = r.ctx.api
+    outcomes, off = [], []
+    for s in range(6):
+        o = r.run(s)
+        assert o.pf_status == "converged", o.message
+        assert o.dg_p_w is not None
+        assert o.dg_p_avail_w is not None
+        assert np.array_equal(o.dg_p_avail_w, r.dg.capacity(SEED, r.net, r.k, s))
+        assert set(o.dg_p_avail_w.tolist()) <= {0.0, 10e3}
+        assert (o.dg_p_w <= o.dg_p_avail_w).all()
+        for unit, p_w, avail in zip(r.dg.units, o.dg_p_w, o.dg_p_avail_w, strict=True):
+            off.append(avail == 0.0)
+            if avail == 0.0:
+                assert p_w == 0.0
+                api.Circuit.SetActiveElement(unit.generator)
+                powers = np.asarray(api.CktElement.Powers())
+                assert np.abs(powers).max() == pytest.approx(0.0, abs=1e-9)  # kW, kvar
+        outcomes.append(o)
+    assert any(off)
+    assert not all(off)
+    tables = chunk_tables(
+        r, outcomes, precision="full", config_hash="h", versions={"generator": "x"}
+    )
+    der = [d for d in tables["scenarios/der"].to_pylist() if d["der_type"] == "dg"]
+    for i, o in enumerate(outcomes):
+        rows = der[2 * i : 2 * i + 2]
+        assert o.dg_p_w is not None
+        assert o.dg_p_avail_w is not None
+        assert [d["p_avail_w"] for d in rows] == o.dg_p_avail_w.tolist()
+        assert [d["p_w"] for d in rows] == o.dg_p_w.tolist()
+        assert all(d["s_rated_va"] == 10e3 and d["q_var"] == 0.0 for d in rows)
+
+
 def test_the_load_ramp_scales_dg_too() -> None:
     from gridfm_datakit_distr.solve.pf_batch import _Draws, _scaled
 
-    draws = _Draws(np.ones(2), np.ones(2), None, None, 1.0, None, np.array([2.0, 4.0]))
+    avail = np.array([5.0, 5.0])
+    draws = _Draws(np.ones(2), np.ones(2), None, None, 1.0, None, np.array([2.0, 4.0]), avail)
     assert _scaled(draws, 0.5).dg is not None
     assert np.array_equal(_scaled(draws, 0.5).dg, [1.0, 2.0])  # type: ignore[arg-type]
+    assert _scaled(draws, 0.5).dg_avail is avail  # like PV's, the availability is not ramped
 
 
 # ------------------------------------------------------------------- generate
