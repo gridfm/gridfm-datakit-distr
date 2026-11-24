@@ -21,8 +21,11 @@ customers' total nominal apparent power per unit) brackets the crossing between 
 below every bound and the first at one, and a bisection narrows the bracket to :data:`BISECT_REL`
 of ``P``. A scan step can jump over the crossing to a point where the power flow diverges (EDP
 urban): then the step itself is bisected until a converged point at a bound is found, or the
-divergence lies within :data:`BISECT_REL` of the last point below every bound. ``P^max`` is the
-bracket's upper end, re-solved and checked last. A network without a
+divergence lies within :data:`BISECT_REL` of the last point below every bound. A solve starts
+from the previous one's voltages, except after a divergence: a diverged state can make a point
+that converges from a fresh start diverge (EDP urban), so the next solve restarts from where a new
+context starts (``Set Mode=Snap``). ``P^max`` is the bracket's upper end, re-solved and checked
+last. A network without a
 capacity gets no DG, and a status that says why (:class:`DGCapacity`).
 """
 
@@ -109,8 +112,8 @@ def _past_divergence(probe: Probe, lo: float, bad: float) -> tuple[str, float, f
     """A scan step from ``lo`` (converged, below every bound) to ``bad`` (diverged), which may
     have stepped over a bound: bisect between them until a converged point at a bound is found
     (then :func:`_bisect`) or the gap is within :data:`BISECT_REL` (``not_converged``). A solve
-    starts from the previous one, and a diverged one leaves a bad start (spike s54): after each
-    divergence the next try is preceded by a solve at ``lo``."""
+    after a divergence starts afresh (:func:`dg_capacity`); after each divergence the next try is
+    preceded by a solve at ``lo``, so that it starts from ``lo``'s solution."""
     diverged = True
     while bad - lo > BISECT_REL * bad:
         if diverged and not probe(lo)[0]:
@@ -170,12 +173,18 @@ def dg_capacity(
         if e.enabled and e.element_class == "transformer" and e.rating_va
     ]
 
+    diverged = False
+
     def ratios(p_w: float) -> NDArray[np.float64] | None:
+        nonlocal diverged
         for j in engine:
             api.Generators.Idx(j)
             api.Generators.kW(p_w / 1e3)
             api.Generators.kvar(0.0)
-        if not ctx.solve().converged:
+        if diverged:  # a solve starts from the previous one: not from a diverged one
+            ctx.command("Set Mode=Snap")
+        diverged = not ctx.solve().converged
+        if diverged:
             return None
         v = ctx.ynode_voltages()[positions]
         neutral = np.where(pairs[:, 1] == GROUND, 0.0, v[pairs[:, 1]])

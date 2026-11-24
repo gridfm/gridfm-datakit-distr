@@ -112,12 +112,13 @@ places them in every variant of every network. What the paper does not fix is ou
   unit) brackets the first point at a limit, and a bisection narrows it to 0.1 % of `P`; the scan
   is needed because a transformer's flow first falls, then rises with `P`. A step that jumps over
   the limit to a point where the power flow diverges is bisected in turn, so a limit before the
-  divergence is still found, unless the re-solve at the last converged point diverges too: then
-  the search stops there. On EDP urban the capacity search returns no value (`not_converged`, no
-  DG): one of its transformers is above its rating without DG and is ignored
+  divergence is still found. Each solve starts from the previous solution, except after a
+  divergence: a diverged state can keep a point that converges from a fresh start from
+  converging, so the next solve starts as in a new context (OpenDSS `Set Mode=Snap`). On EDP
+  urban, one of whose transformers is above its rating without DG and is ignored
   ([Networks](networks.md#known-differences-and-exclusions)), the scan converges at 1.3 and 2.5 kW
-  per unit below every bound, diverges at 5.0 kW, and the re-solve at 2.5 kW then diverges as
-  well.
+  per unit below every bound and diverges at 5.0 kW; the bisection finds the voltage bound at
+  2.94 kW per unit, close to where the power flow stops converging (it diverges from 3.15 kW).
 - **Record.** `manifest.json` (`networks[].dg`): `status`, `n_units`, `p_max_w` (W), `binding`
   (`voltage` or the transformer's name) and `ignored` (transformers above their rating without
   DG); the dataset card lists them, and `variants/variants.perturbation` holds `dg_kw` per load.

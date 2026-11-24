@@ -24,6 +24,7 @@ from gridfm_datakit_distr.scenarios.der import DGSetpoints, dg_units
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
 from gridfm_datakit_distr.solve.tables import chunk_tables
+from gridfm_datakit_distr.variants import dg
 from gridfm_datakit_distr.variants.dg import BISECT_REL, SCAN_STEPS, dg_capacity, search
 from gridfm_datakit_distr.variants.generate import generate_variant
 from gridfm_datakit_distr.variants.perturbation import (
@@ -130,9 +131,9 @@ def test_the_search_reports_divergence_and_no_bound() -> None:
 
 
 class Engine:
-    """A power flow that diverges from ``diverge_at`` on and binds at ``bind_at``; as OpenDSS, a
-    solve starts from the previous one, so after a divergence only a solve at the last converged
-    point converges again (spike s54)."""
+    """A power flow that diverges from ``diverge_at`` on and binds at ``bind_at``; after a
+    divergence only a solve at the last converged point converges again (the strictest restart
+    the search allows: OpenDSS warm-started from a diverged state, spike s54)."""
 
     def __init__(self, bind_at: float, diverge_at: float) -> None:
         self.bind_at, self.diverge_at = bind_at, diverge_at
@@ -218,6 +219,35 @@ def test_a_transformer_above_its_rating_without_dg_is_not_counted(tmp_path: Path
     targets = collect_targets(prepare_network(network, root=tmp_path))
     cap = dg_capacity(network, targets, 1.10, root=tmp_path)
     assert (cap.status, cap.binding, cap.ignored) == ("ok", "voltage", ("Transformer.t",))
+
+
+def test_a_search_that_meets_a_divergence_finds_the_capacity(
+    base: tuple[Network, Path, PreparedNetwork],
+    targets: VariantTargets,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scan started 256 times higher, far past the bound, where the power flow diverges (to
+    voltages of order 1e240 V): the search bisects back from the divergence and finds the
+    capacity of the normal search. A solve warm-started from such a state diverges as well, so
+    the solve after a divergence restarts as in a new context."""
+    network, root, _ = base
+    reference = dg_capacity(network, targets, 1.10, root=root)
+    converged: list[bool] = []
+
+    def far(probe: dg.Probe, scale: float) -> tuple[str, float, float]:
+        def logged(p_w: float) -> tuple[bool, float]:
+            ok, ratio = probe(p_w)
+            converged.append(ok)
+            return ok, ratio
+
+        return search(logged, 256 * scale)
+
+    monkeypatch.setattr(dg, "search", far)
+    cap = dg_capacity(network, targets, 1.10, root=root)
+    assert converged[:2] == [False, True]  # the first step diverged, the solve at 0 after it not
+    assert (cap.status, cap.binding) == ("ok", "voltage")
+    assert reference.p_max_w is not None
+    assert cap.p_max_w == pytest.approx(reference.p_max_w, rel=2 * BISECT_REL)
 
 
 def test_networks_without_a_capacity_get_a_status(
