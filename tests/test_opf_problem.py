@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import scipy.sparse as sp
 
 pytest.importorskip("casadi")
 
@@ -19,6 +20,8 @@ from gridfm_datakit_distr.opf.problem import (
     Costs,
     OPFProblem,
     OPFResult,
+    PowerFlowStart,
+    _impedance_rows,
     economic,
 )
 from gridfm_datakit_distr.scenarios.profiles import customers_of
@@ -167,3 +170,59 @@ def test_different_costs_give_different_dispatches(case: Case) -> None:
     cheap_h2, cheap_h3 = dispatch([0.1, 0.9]), dispatch([0.9, 0.1])
     assert cheap_h2[0] > cheap_h3[0] + 1.0  # W
     assert cheap_h3[1] > cheap_h2[1] + 1.0
+
+
+def nlp_rows(case: Case, x: np.ndarray, source_v_pu: float = 1.0) -> np.ndarray:
+    """The NLP's constraint rows at ``x`` (per unit as the problem scales them)."""
+    costs = economic(2)
+    par = np.r_[source_v_pu, costs.c1, costs.c2]
+    g = case.problem._solver.get_function("nlp_g")(x=x, p=par)["g"]
+    return np.asarray(g, dtype=np.float64).ravel()
+
+
+def source_rows(case: Case, g: np.ndarray) -> np.ndarray:
+    """The KCL rows of the source nodes as complex numbers (real parts, then imaginary parts)."""
+    src = case.source.nodes
+    return g[src] + 1j * g[case.problem._n + src]
+
+
+def test_the_source_rows_are_written_in_impedance_form(case: Case) -> None:
+    """``E - V - Z_s I = 0`` at the source nodes: with every voltage and current at zero the rows
+    are minus the ideal source voltages (order 1 in per unit), not ``Y_s E`` (order |Y_s|)."""
+    n_x = case.problem._solver.size1_in("x0")
+    g = nlp_rows(case, np.zeros(n_x), source_v_pu=1.02)
+    e_pu = 1.02 * case.source.e_v / case.problem._vb[case.source.nodes]
+    np.testing.assert_allclose(source_rows(case, g), -e_pu, rtol=0, atol=1e-12)
+    src = case.source.nodes
+    others = np.delete(g[: 2 * case.problem._n], np.r_[src, case.problem._n + src])
+    assert not others.any()
+
+
+def test_the_source_rows_hold_at_the_power_flow(case: Case) -> None:
+    """At the engine's power-flow solution the source rows are satisfied to the solver's
+    tolerance: the stiff source admittance no longer amplifies the engine's rounding."""
+    ctx = case.prepared.ctx
+    assert ctx.solve().converged  # PV units at their compiled 2 kW, 0 kvar
+    v = ctx.ynode_voltages()[case.to_model]
+    s = case.problem._s_base
+    load = np.array([complex(c.p_w, c.q_var) for c in customers_of(case.prepared)]) / s
+    x = case.problem._start_from(PowerFlowStart(v, np.full(2, 2e3), np.zeros(2)), load)
+    assert np.max(np.abs(source_rows(case, nlp_rows(case, x)))) <= 1e-9
+
+
+def test_impedance_rows_change_only_the_source_rows() -> None:
+    """The source rows become ``Z_s`` times the complex rows; every other row is unchanged."""
+    rng = np.random.default_rng(0)
+    n, m, src = 5, 7, np.array([1, 3])
+    a = rng.normal(size=(2 * n, m))
+    b = rng.normal(size=2 * n)
+    ys = rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2)) + 3 * np.eye(2)
+    a2, b2 = _impedance_rows(sp.csr_matrix(a), b, src, ys, n)
+    a2 = a2.toarray()
+    rows = np.r_[src, n + src]
+    keep = np.setdiff1d(np.arange(2 * n), rows)
+    np.testing.assert_array_equal(a2[keep], a[keep])
+    np.testing.assert_array_equal(b2[keep], b[keep])
+    z = np.linalg.inv(ys)
+    np.testing.assert_allclose(a2[src] + 1j * a2[n + src], z @ (a[src] + 1j * a[n + src]))
+    np.testing.assert_allclose(b2[src] + 1j * b2[n + src], z @ (b[src] + 1j * b[n + src]))

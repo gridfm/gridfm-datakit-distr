@@ -8,7 +8,10 @@ minus its power. Constraints:
 - Kirchhoff's current law at every node, ``(Y_state + Y_s) V - Y_s E = C_g I_g - C_l I_l``,
   linear, entered as one constant sparse matrix: ``Y_state`` is :meth:`ElectricalModel.ybus` (lines,
   switches, transformers at their taps, capacitors, reactors), ``Y_s`` and ``E`` the source's
-  admittance and ideal voltages (:class:`Source`);
+  admittance and ideal voltages (:class:`Source`). The rows of the source nodes are multiplied by
+  ``Z_s = Y_s^-1`` (:func:`_impedance_rows`): ``E - V - Z_s I = 0``, the same equations with
+  coefficients of order 1, where a stiff ``Y_s`` would turn a power-flow solution's rounding into
+  residuals far above the solver's tolerance;
 - each branch ``i, j`` of a device (:func:`~gridfm_datakit_distr.model.ground.unit_branches`:
   wye, delta, one to three phases): ``(V_i - V_j) conj(I) = (P + jQ) / n_branches``, the load's
   constant power (a storage unit's: minus its set-point), the control's ``p + jq``;
@@ -232,7 +235,8 @@ class OPFProblem:
         self._nt = nt
         xm, pm = ca.MX.sym("x", nx), ca.MX.sym("p", par.numel())
         f_m, h_m = ca.Function("fh", [x, par], [f, h])(xm, pm)
-        g = ca.vertcat(ca.mtimes(_dm(a_kcl), xm) - pm[0] * ca.DM(np.r_[b1.real, b1.imag]), h_m)
+        a_kcl, b_kcl = _impedance_rows(a_kcl.tocsr(), np.r_[b1.real, b1.imag], src, ys, n)
+        g = ca.vertcat(ca.mtimes(_dm(a_kcl), xm) - pm[0] * ca.DM(b_kcl), h_m)
         opts: dict[str, Any] = {"print_time": False, "error_on_fail": False}
         opts |= {"ipopt.print_level": 0, "ipopt.sb": "yes"}
         opts |= {f"ipopt.{key}": value for key, value in IPOPT_OPTIONS.items()}
@@ -391,6 +395,30 @@ def _shares(branches: NDArray[np.int64], n_devices: int) -> sp.csr_matrix:
     return sp.csr_matrix(
         (1.0 / counts[owner], (np.arange(len(owner)), owner)), shape=(len(owner), n_devices)
     )
+
+
+def _impedance_rows(
+    a: sp.csr_matrix,
+    b: FloatArray,
+    src: NDArray[np.int64],
+    ys: NDArray[np.complex128],
+    n: int,
+) -> tuple[sp.csr_matrix, FloatArray]:
+    """The KCL rows ``a x = b`` with the rows of the source nodes ``src`` multiplied by the source
+    impedance ``Z_s = Y_s^-1`` (per unit): ``E - V - Z_s I = 0`` instead of ``Y_s (E - V) = I``.
+    ``a`` and ``b`` are in real form, the real parts of the ``n`` complex rows first, then the
+    imaginary parts; ``ys`` is the source admittance at ``src`` (pu). ``Z_s`` is invertible, so
+    the solutions are the same; the coefficients are of order 1 instead of ``|Y_s|``."""
+    z = np.linalg.inv(ys)
+    rows = np.r_[src, n + src]
+    k = rows.size
+    block = np.block([[z.real, -z.imag], [z.imag, z.real]])  # Z_s acting on [re; im] parts
+    keep = np.ones(2 * n)
+    keep[rows] = 0.0
+    t = sp.diags(keep, format="csr") + sp.csr_matrix(
+        (block.ravel(), (np.repeat(rows, k), np.tile(rows, k))), shape=(2 * n, 2 * n)
+    )
+    return sp.csr_matrix(t @ a), np.asarray(t @ b, dtype=np.float64)
 
 
 def _winding_s2(
