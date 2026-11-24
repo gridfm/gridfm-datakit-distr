@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +15,12 @@ import pytest
 from pydantic import ValidationError
 
 from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.extract.source import read_source, scenario_e
 from gridfm_datakit_distr.io.reader import DatasetReader
-from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
-from gridfm_datakit_distr.networks.prepare import prepare_network
+from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network, load_catalog
+from gridfm_datakit_distr.networks.compile import compile_network
+from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.scenarios.seeds import network_key
 from gridfm_datakit_distr.solve.executor import generate
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
@@ -323,6 +326,149 @@ def test_the_negative_sequence_source_sees_the_substation(tmp_path: Path) -> Non
         assert np.abs(got - e).max() <= READBACK_REL * np.abs(e).max()
         _, pos, neg = sequences(got)
         assert abs(neg / pos) == pytest.approx(o.source_u2, abs=READBACK_REL)
+
+
+# ------------------------------------------------------- the substation against a real Dyn
+
+MV_BUS = "mvbus"
+# Measured max |dV| / V_base: <= 3.6e-8 on n13_f1 (4452 nodes) and on the unit feeder, 500-1500 kVA,
+# loads x1 and x3 (2.2e-8 at 500 kVA, 2.9e-8 at 1000): a margin of 2.8. The floor is the same at
+# every load (it is there at no load): the engine's transformer, not the formula.
+DYN_TOL_PU = 1e-7
+
+
+def dyn_transformer(site: up.Upstream, kva: float) -> list[str]:
+    """The reference: the source moved to an MV bus, behind a real Dyn transformer of the rating's
+    impedance (``transformer_impedance``) with the MV network's fault level (angle 30: Dyn11).
+    Independent of the Thevenin formula, built from the engine's own elements."""
+    r, x = up.transformer_impedance(kva)
+    bus = site.phase_nodes[0].rsplit(".", 1)[0]
+    mva = up.MV_FAULT_VA / 1e6
+    return [
+        f"Edit {site.vsource} bus1={MV_BUS} basekV=11 angle=30 MVAsc3={mva!r} MVAsc1={mva!r} "
+        f"X1R1={x / r!r} X0R0={x / r!r}",
+        f"New Transformer.sub phases=3 windings=2 buses=[{MV_BUS}.1.2.3 {bus}.1.2.3.4] "
+        f"conns=[delta wye] kVs=[11 {site.kv_ll!r}] kVAs=[{kva!r} {kva!r}] "
+        f"XHL={100 * x!r} %Rs=[{50 * r!r} {50 * r!r}] %imag=0 %noloadloss=0",
+    ]  # fmt: skip
+
+
+def node_voltages(
+    network: Network,
+    root: Path | None,
+    site: up.Upstream,
+    edits: list[str],
+    scales: Sequence[float],
+) -> list[dict[str, complex]]:
+    """Voltages to ground (V) at every node of ``network`` with ``edits`` and the lumped sibling
+    loads, one solve per scale: each load at ``scale`` times its nominal power (the lumped ones
+    at ``scale`` times the sums of their phase, as a scenario's global load factor does)."""
+    ctx = DssContext.new()
+    compile_network(ctx, network, root)
+    for command in [*edits, *up.load_commands(site)]:
+        ctx.command(command)
+    ctx.command("Set Tolerance=1e-12 MaxIterations=100")
+    lumped = {load.split(".", 1)[1]: k for k, load in enumerate(site.loads)}
+    nominal = {}
+    for name in ctx.api.Loads.AllNames():
+        ctx.api.Loads.Name(name)
+        k = lumped.get(name)
+        nominal[name] = (
+            (site.p_w[k] / 1e3, site.q_var[k] / 1e3)
+            if k is not None
+            else (ctx.api.Loads.kW(), ctx.api.Loads.kvar())
+        )
+    out = []
+    for scale in scales:
+        for name, (kw, kvar) in nominal.items():
+            ctx.api.Loads.Name(name)
+            ctx.api.Loads.kW(scale * kw)
+            ctx.api.Loads.kvar(scale * kvar)
+        ctx.command("Set Mode=Snap")
+        ctx.command("Solve")
+        assert ctx.api.Solution.Converged()
+        out.append(dict(zip(ctx.ynode_order(), ctx.ynode_voltages(), strict=True)))
+    return out
+
+
+def dyn_deviations(
+    network: Network,
+    root: Path | None,
+    site: up.Upstream,
+    base: PreparedNetwork,
+    ratings: Sequence[float],
+    scales: Sequence[float],
+) -> dict[tuple[float, float], dict[str, float]]:
+    """Per (rating, scale): ``nodes`` compared, and max |dV| / V_base over them of the
+    source with the substation's sequence impedances (``thevenin``), of the ideal source
+    (``stiff``) and of the same with ``Z0 = Z1`` (``z0_as_z1``), each against the real Dyn
+    transformer. The last two are the controls: the comparison must be able to tell them apart.
+    The Thevenin model's node set is the source network's, the compared nodes are all of them,
+    neutrals included."""
+    v_base = site.kv_ll * 1e3 / math.sqrt(3)
+    stiff = node_voltages(network, root, site, [], scales)
+    source_nodes = {n.opendss_node for n in base.model.nodes}
+    out = {}
+    for kva in ratings:
+        z1, z0 = up.source_impedance(kva, site.kv_ll)
+        script = up.source_edit(site.vsource, z1, z0)
+        edited = prepare_network(network, root=root, edits=[*script, *up.load_commands(site)])
+        assert [n.opendss_node for n in edited.model.nodes] == [
+            n.opendss_node for n in base.model.nodes
+        ]  # no node added
+        models = {
+            "thevenin": node_voltages(network, root, site, script, scales),
+            "z0_as_z1": node_voltages(network, root, site, up.source_edit(site.vsource, z1, z1),
+                                      scales),
+            "stiff": stiff,
+        }  # fmt: skip
+        real = node_voltages(network, root, site, dyn_transformer(site, kva), scales)
+        for j, scale in enumerate(scales):
+            nodes = [n for n in real[j] if not n.startswith(f"{MV_BUS}.")]
+            assert set(nodes) == set(models["thevenin"][j]) == set(stiff[j]) == source_nodes
+            assert any(n.endswith(f".{site.neutral}") for n in nodes)
+            out[kva, scale] = {"nodes": len(nodes)} | {
+                key: max(abs(v[j][n] - real[j][n]) for n in nodes) / v_base
+                for key, v in models.items()
+            }
+    return out
+
+
+def assert_matches_dyn(devs: dict[tuple[float, float], dict[str, float]], nodes: int) -> None:
+    for (kva, scale), d in devs.items():
+        where = f"{kva:g} kVA, loads x{scale:g}: {d}"
+        assert d["nodes"] == nodes, where
+        assert d["thevenin"] <= DYN_TOL_PU, where
+        # not vacuous: a source without the substation, or without its Z0, is far outside
+        assert d["stiff"] > 100 * DYN_TOL_PU, where
+        assert d["z0_as_z1"] > 100 * DYN_TOL_PU, where
+
+
+@pytest.mark.network_data
+def test_the_substation_is_a_dyn_transformer_at_every_node_of_a_catalog_feeder(
+    network_master: Callable[[str], Path],
+) -> None:
+    """The source with the substation's sequence impedances and the lumped sibling feeders give
+    the voltages of a real Dyn transformer fed by the MV network, at all 4452 nodes (neutrals
+    included) of csiro_enwl/n13_f1, and add no node."""
+    network_master("csiro_enwl/n13_f1")  # skips without the cache
+    cat = load_catalog()
+    network = cat.network("csiro_enwl/n13_f1")
+    base = prepare_network(network)
+    devs = dyn_deviations(network, None, up.upstream_of(network, base, cat), base,
+                          (500.0, 1000.0, 1500.0), (1.0, 3.0))  # fmt: skip
+    assert len(base.model.nodes) == 4452
+    assert_matches_dyn(devs, nodes=4452)
+
+
+def test_the_substation_is_a_dyn_transformer_on_a_four_wire_feeder(tmp_path: Path) -> None:
+    """The same comparison on the in-repo four-wire feeder (no network data), over the ratings'
+    three impedance classes (4, 5 and 6 %) and the smallest."""
+    network, substation = site(tmp_path)
+    base = prepare_network(network, root=tmp_path)
+    devs = dyn_deviations(network, tmp_path, substation, base, (25.0, 500.0, 1000.0, 1500.0),
+                          (1.0, 3.0))  # fmt: skip
+    assert_matches_dyn(devs, nodes=len(base.model.nodes))
 
 
 # ------------------------------------------------------------------------------ dataset
