@@ -21,8 +21,9 @@ _PV_DENSITY = (
     "MCS certifies only part of the installations: the default's median is about 9 times it, "
     "and 32.5 % of its draws lie within the substations' 5-95 % range (0.003-0.263). The dataset "
     "therefore describes mostly networks with far more PV than today's. Hence frequent reverse "
-    "flow: at the default config the feeder-head load of most of the catalog's CSIRO LV feeders "
-    "is negative at its 10th percentile over scenarios, against 0.7 % of the substations "
+    "flow: at the default config the load of most of the catalog's CSIRO networks, all feeders "
+    "summed as at their substation, is negative at its 10th percentile over scenarios, against "
+    "0.7 % of the substations "
     "Electricity North West monitors (SP Electricity North West open data, LV load duration "
     "curves)."
 )
