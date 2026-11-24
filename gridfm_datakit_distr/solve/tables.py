@@ -141,6 +141,8 @@ def chunk_tables(
             "profile_source": o.profile_source,
             "der_penetration": o.der_penetration,
             "source_v_pu": o.source_v_pu if o.load_p_w.size else None,
+            "source_u2": o.source_u2 if o.load_p_w.size else None,
+            "source_u2_angle_rad": o.source_u2_angle_rad if o.load_p_w.size else None,
             "pf_status": o.pf_status,
             "pf_message": o.message,
             "n_off_setpoint": o.n_off_setpoint,

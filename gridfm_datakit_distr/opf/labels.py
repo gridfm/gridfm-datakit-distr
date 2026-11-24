@@ -142,6 +142,7 @@ class OPFLabeller:
                     source_v_pu=o.source_v_pu, load_p_w=o.load_p_w, load_q_var=o.load_q_var,
                     pv_p_avail_w=p_avail, pv_s_rated_va=self.s_rated_va, costs=costs,
                     pv_q_max_var=q_max, start=start, bess_p_w=bess, dg_p_max_w=dg_max,
+                    source_u2=o.source_u2, source_u2_angle_rad=o.source_u2_angle_rad,
                 )  # fmt: skip
 
             result = solve()

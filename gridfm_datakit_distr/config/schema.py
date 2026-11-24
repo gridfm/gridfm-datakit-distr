@@ -651,8 +651,22 @@ class Scenarios(_Config):
     dg_profile: DGProfile = DGProfile()
     source_voltage_pu: PositiveSpec = Field(
         default=Uniform(0.98, 1.05),
-        description="Source voltage magnitude (pu of the source's base voltage), drawn per "
-        "scenario; balanced, angle 0.",
+        description="Positive-sequence magnitude of the source's ideal voltage (pu of the "
+        "source's base voltage), drawn per scenario; angle 0. Balanced unless "
+        "`source_unbalance` adds a negative sequence.",
+    )
+    source_unbalance: FractionSpec = Field(
+        default=Fixed(0.0),
+        description="Negative-sequence ratio `u2` of the source's ideal voltage, the magnitude "
+        "of its negative sequence `E2` over that of its positive sequence `E1` (behind the source "
+        "impedance, not at the source bus), drawn per scenario; the angle of "
+        "`E2` relative to `E1` is uniform in [0, 2π). 0: a balanced source. For coverage of "
+        "background unbalance, `{distribution: uniform, low: 0, high: 0.02}`: EN 50160 bounds "
+        "the 10-min negative-sequence ratio at 2 % for 95 % of a week and the CIGRE/CIRED "
+        "C4.103 survey finds about 95 % of MV and LV sites below 2 % at the weekly 95th "
+        "percentile (both from secondary sources: the standard's text was not available); "
+        "uniform is a coverage choice, not a measured distribution. No zero sequence: IEC TR "
+        "61000-3-13 defines no compatibility level for it. Needs a three-phase source.",
     )
 
 

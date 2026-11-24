@@ -4,8 +4,9 @@ A :class:`VariantRunner` loads a variant once (catalog recipe plus its edit scri
 runs scenarios by index. Each scenario:
 
 1. draws its loads (profile provider), PV outputs (at the profile's time of day), storage and
-   DG set-points and source voltage from its own streams;
-2. sets them (``Loads``/``Generators`` setters, ``Vsources.PU``);
+   DG set-points, source voltage and source unbalance from its own streams;
+2. sets them (``Loads``/``Generators`` setters, ``Vsources.PU``, the negative-sequence current
+   source of :func:`add_negative_sequence_source`);
 3. resets the controls to the variant's compiled state, then settles or keeps them;
 4. solves with ``ControlMode=OFF``; a non-converged solve is retried once with ``MaxIterations``
    x 5; then the setpoint check and, on a sample of scenarios, the KCL residual;
@@ -32,6 +33,13 @@ from numpy.typing import NDArray
 from gridfm_datakit_distr.config.schema import GenerationConfig
 from gridfm_datakit_distr.engine.context import DssContext, SolveStatus
 from gridfm_datakit_distr.extract.injections import injections
+from gridfm_datakit_distr.extract.source import (
+    A,
+    Source,
+    negative_sequence,
+    read_source,
+    vsource_of,
+)
 from gridfm_datakit_distr.model.electrical import ElectricalModel
 from gridfm_datakit_distr.model.ids import scenario_id
 from gridfm_datakit_distr.model.state import NetworkState, Origin
@@ -72,6 +80,8 @@ PFStatus = Literal["converged", "off_setpoint", "not_converged", "error"]
 RETRY_FACTOR = 5
 RAMP_STEPS = 10
 """Load-ramp fallback (``VariantRunner._ramp``): setpoints raised in this many equal steps."""
+NEG_SEQUENCE_SOURCE = "source_neg_seq"
+"""Name of the ``Isource`` that gives the voltage source its negative sequence."""
 
 
 def prepare_options(config: GenerationConfig) -> PrepareOptions:
@@ -93,6 +103,39 @@ def engine_indices(names: Iterable[str], elements: Iterable[str]) -> list[int]:
     return [index[e.split(".", 1)[1].lower()] for e in elements]
 
 
+def add_negative_sequence_source(ctx: DssContext, model: ElectricalModel) -> Source:
+    """Add to the compiled circuit of ``model`` the current source that gives its voltage source
+    a negative sequence, and return the voltage source (:func:`read_source`).
+
+    A Thevenin source ``E_1 + E_2`` behind ``Y_s`` injects ``Y_s (E_1 + E_2 - V)``; the Vsource
+    injects ``Y_s (E_1 - V)``, so an ideal current source at the same nodes injecting
+    ``I_2 = Y_s E_2`` completes it, with no node and no admittance added (spike s58). For a
+    negative-sequence ``E_2`` and a source built from sequence impedances ``I_2`` is a balanced
+    negative-sequence set: one ``Isource ... sequence=neg``, zero until
+    :func:`negative_sequence_current` sets it. Added after the extraction, which does not take
+    it: the model keeps one source. ``ValueError`` unless the source has three conductors and an
+    admittance that keeps the sequences apart."""
+    source = read_source(ctx, model)
+    i = source.y_s @ negative_sequence(source.e_v)
+    neg = (i[0] + A**2 * i[1] + A * i[2]) / 3
+    if max(abs(i.sum()) / 3, abs(i[0] + A * i[1] + A**2 * i[2]) / 3) > 1e-9 * abs(neg):
+        raise ValueError(f"{model.variant_id}: the source admittance couples the sequences")
+    vs = vsource_of(model)
+    ctx.activate_element(vs.name)
+    with ctx.engine_call(f"CktElement.BusNames {vs.name}"):
+        bus1 = str(ctx.api.CktElement.BusNames()[0])
+    name = f"Isource.{NEG_SEQUENCE_SOURCE}"
+    ctx.command(f"New {name} bus1={bus1} phases=3 amps=0 angle=0 sequence=neg")
+    return source
+
+
+def negative_sequence_current(source: Source, v_src: float, u2: float, angle_rad: float) -> complex:
+    """Current (A) of the first conductor of the negative-sequence current source for a source
+    voltage ``v_src`` (pu) with ratio ``u2`` and angle ``angle_rad``: ``(Y_s E_2)_0``."""
+    e2 = v_src * u2 * np.exp(1j * angle_rad) * negative_sequence(source.e_v)
+    return complex((source.y_s @ e2)[0])
+
+
 def set_setpoints(
     api: Any,
     load_idx: Sequence[int],
@@ -103,9 +146,12 @@ def set_setpoints(
     der_q_var: NDArray[np.float64] | None,
     source: str,
     v_src: float,
+    i_neg: complex | None = None,
 ) -> None:
-    """Set the customers' loads and the DER generators (PV, storage, DG; W, var) and the
-    source's voltage (pu) in the engine; ``der_p_w`` None leaves the generators as they are."""
+    """Set the customers' loads and the DER generators (PV, storage, DG; W, var), the source's
+    voltage (pu) and, with ``i_neg`` (A, :func:`negative_sequence_current`), the current of its
+    negative-sequence source in the engine; ``der_p_w`` None leaves the generators as they
+    are."""
     for j, p, q in zip(load_idx, load_p_w, load_q_var, strict=True):
         api.Loads.Idx(j)
         api.Loads.kW(float(p) / 1e3)
@@ -117,6 +163,10 @@ def set_setpoints(
             api.Generators.kvar(float(q) / 1e3)
     api.Vsources.Name(source)
     api.Vsources.PU(v_src)
+    if i_neg is not None:
+        api.Isource.Name(NEG_SEQUENCE_SOURCE)
+        api.Isource.Amps(abs(i_neg))
+        api.Isource.AngleDeg(float(np.degrees(np.angle(i_neg))))
 
 
 def der_setpoints(
@@ -164,6 +214,10 @@ class ScenarioOutcome:
     """DG set-points (W; q = 0), in ``runner.dg.units`` order."""
     dg_p_avail_w: NDArray[np.float64] | None = None
     """DG available capacities ``a · P^max`` (W), the OPF's bound of their ``p`` and ``q``."""
+    source_u2: float = 0.0
+    """Negative-sequence ratio of the source's ideal voltage (:func:`scenario_e`)."""
+    source_u2_angle_rad: float | None = None
+    """Angle of its negative sequence relative to the positive one (rad); None when not drawn."""
     n_off_setpoint: int = 0
     pf_iterations: int = 0
     residual_rel: float | None = None
@@ -249,6 +303,12 @@ class VariantRunner:
         self._to_model = self.ctx.ynode_positions(n.opendss_node for n in self.model.nodes)
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
+        self.unbalance = (
+            add_negative_sequence_source(self.ctx, self.model)
+            if config.scenarios.source_unbalance.support()[1] > 0
+            else None
+        )
+        """The source, when the circuit holds its negative-sequence current source."""
         self._draws: _Draws | None = None
         """The current scenario's draws (the load-ramp fallback scales them)."""
         self._note: str | None = None
@@ -264,10 +324,16 @@ class VariantRunner:
             pv = self.pv.draw(seed, net, k, s, loads.time_s) if self.pv is not None else None
             rng = scenario_rng(seed, net, k, s, ScenarioStream.SOURCE_VOLTAGE)
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
+            u2, angle = 0.0, None
+            if self.unbalance is not None:
+                rng = scenario_rng(seed, net, k, s, ScenarioStream.SOURCE_UNBALANCE)
+                u2 = float(self.config.scenarios.source_unbalance.sample(rng))
+                angle = float(rng.uniform(0.0, 2.0 * np.pi))
             bess = self.storage.draw(seed, net, k, s) if self.storage is not None else None
             dg = self.dg.draw(seed, net, k, s) if self.dg is not None else None
             dg_avail = self.dg.capacity(seed, net, k, s) if self.dg is not None else None
-            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg, dg_avail)
+            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg, dg_avail,
+                           u2, angle)  # fmt: skip
             self._set(draws)
             self._draws, self._note = draws, None
             state, status = self._controls(s)
@@ -309,9 +375,12 @@ class VariantRunner:
             draws.bess,
             draws.dg,
         )
+        i_neg = None
+        if self.unbalance is not None and draws.u2_angle is not None:
+            i_neg = negative_sequence_current(self.unbalance, draws.v_src, draws.u2, draws.u2_angle)
         set_setpoints(
             self.ctx.api, self._load_idx, draws.p_w, draws.q_var, self._der_idx, der_p, der_q,
-            self._source, draws.v_src,
+            self._source, draws.v_src, i_neg,
         )  # fmt: skip
 
     def _at_state(self, state_id: str) -> tuple[ElectricalModel, ExtractionPlan]:
@@ -467,6 +536,8 @@ class VariantRunner:
             bess_p_w=draws.bess,
             dg_p_w=draws.dg,
             dg_p_avail_w=draws.dg_avail,
+            source_u2=draws.u2,
+            source_u2_angle_rad=draws.u2_angle,
             n_off_setpoint=n_off,
             pf_iterations=iterations,
             residual_rel=rel,
@@ -491,11 +562,15 @@ class _Draws:
     """DG set-points (W)."""
     dg_avail: NDArray[np.float64] | None = None
     """DG available capacities (W), not ramped (as PV's available power)."""
+    u2: float = 0.0
+    """Negative-sequence ratio of the source."""
+    u2_angle: float | None = None
+    """Its angle (rad); None when not drawn."""
 
 
 def _scaled(draws: _Draws, factor: float) -> _Draws:
-    """``draws`` with every load, PV, storage and DG setpoint times ``factor`` (source voltage
-    unchanged)."""
+    """``draws`` with every load, PV, storage and DG setpoint times ``factor`` (source voltage and
+    unbalance unchanged)."""
     pv = draws.pv
     if pv is not None:
         pv = replace(pv, p_w=factor * pv.p_w, q_var=factor * pv.q_var)

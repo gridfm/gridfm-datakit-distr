@@ -25,6 +25,11 @@ from gridfm_datakit_distr.opf.problem import (
     economic,
 )
 from gridfm_datakit_distr.scenarios.profiles import customers_of
+from gridfm_datakit_distr.solve.pf_batch import (
+    NEG_SEQUENCE_SOURCE,
+    add_negative_sequence_source,
+    negative_sequence_current,
+)
 from tests.circuits import ALL_CLASSES, OPF_FEEDER, write_circuit
 
 VMIN_PU, VMAX_PU = 0.94, 1.10
@@ -172,10 +177,12 @@ def test_different_costs_give_different_dispatches(case: Case) -> None:
     assert cheap_h3[1] > cheap_h2[1] + 1.0
 
 
-def nlp_rows(case: Case, x: np.ndarray, source_v_pu: float = 1.0) -> np.ndarray:
+def nlp_rows(
+    case: Case, x: np.ndarray, source_v_pu: float = 1.0, u2: float = 0.0, angle: float = 0.0
+) -> np.ndarray:
     """The NLP's constraint rows at ``x`` (per unit as the problem scales them)."""
     costs = economic(2)
-    par = np.r_[source_v_pu, costs.c1, costs.c2]
+    par = case.problem.parameters(source_v_pu, u2, angle, costs.c1, costs.c2)
     g = case.problem._solver.get_function("nlp_g")(x=x, p=par)["g"]
     return np.asarray(g, dtype=np.float64).ravel()
 
@@ -208,6 +215,28 @@ def test_the_source_rows_hold_at_the_power_flow(case: Case) -> None:
     load = np.array([complex(c.p_w, c.q_var) for c in customers_of(case.prepared)]) / s
     x = case.problem._start_from(PowerFlowStart(v, np.full(2, 2e3), np.zeros(2)), load)
     assert np.max(np.abs(source_rows(case, nlp_rows(case, x)))) <= 1e-9
+
+
+def test_the_source_rows_hold_at_an_unbalanced_power_flow(tmp_path: Path) -> None:
+    """With a negative sequence realised in the engine (its current source), the source rows of
+    the same ratio and angle hold at the engine's solution; the balanced rows, or the angle
+    reversed, do not: the OPF's ``E`` has the engine's sign and phase order."""
+    case = make_case(tmp_path)
+    ctx = case.prepared.ctx
+    source = add_negative_sequence_source(ctx, case.prepared.model)
+    u2, angle = 0.02, 2.2
+    i_neg = negative_sequence_current(source, 1.0, u2, angle)
+    ctx.api.Isource.Name(NEG_SEQUENCE_SOURCE)
+    ctx.api.Isource.Amps(abs(i_neg))
+    ctx.api.Isource.AngleDeg(float(np.degrees(np.angle(i_neg))))
+    assert ctx.solve().converged
+    v = ctx.ynode_voltages()[case.to_model]
+    s = case.problem._s_base
+    load = np.array([complex(c.p_w, c.q_var) for c in customers_of(case.prepared)]) / s
+    x = case.problem._start_from(PowerFlowStart(v, np.full(2, 2e3), np.zeros(2)), load)
+    assert np.max(np.abs(source_rows(case, nlp_rows(case, x, 1.0, u2, angle)))) <= 1e-9
+    for wrong in ((0.0, 0.0), (u2, -angle)):
+        assert np.max(np.abs(source_rows(case, nlp_rows(case, x, 1.0, *wrong)))) > 1e-3
 
 
 def test_impedance_rows_change_only_the_source_rows() -> None:

@@ -34,14 +34,15 @@ SECONDS = (3.7e-3, 0.03e-6, 22.4e-6)
 CONTROLS_FACTOR = 22.0
 """Measured on IEEE 8500 (12 regulators, 9 capacitor controls) against the estimate."""
 BYTES = {
-    "mixed": {"meta": 357.0, "node": 10.6, "element": 4.2, "load": 8.4, "der": 7.8},
-    "full": {"meta": 373.0, "node": 10.6, "element": 6.3, "load": 16.3, "der": 12.6},
+    "mixed": {"meta": 374.0, "node": 10.6, "element": 4.2, "load": 8.4, "der": 7.8},
+    "full": {"meta": 392.0, "node": 10.6, "element": 6.3, "load": 16.3, "der": 12.6},
 }
 """Bytes per row of the scenario tables in chunks of hundreds of scenarios: the part files of
 CSIRO n21_f3, one variant of 2000 scenarios in chunks of 500, PV at 30 % of the customers, written
 by generator 0.3.0.dev1 (``node``: voltages only, float64 in both precisions; ``element`` only with
 ``labels.element_currents``; ``meta`` is high because every row group of 16 scenarios carries its
-own dictionaries)."""
+own dictionaries). ``meta`` then raised by the source-unbalance columns at their default, 17 and
+19 B per scenario (500 scenarios of one chunk, rewritten without them; 28 and 40 B when drawn)."""
 VIEW_BYTES = {"kron": 11.3}
 """Bytes per Kron phase node and scenario, its state tables included (CSIRO n21_f3, 500
 scenarios, 2532 phase nodes; the writer of ``BYTES``)."""

@@ -1,9 +1,10 @@
 """Power flow from the stored tables alone.
 
 The network is ``A V = Y_s E + I(V)`` with ``A = Y_state + Y_s`` (the source admittance embedded at
-its nodes), ``E = source_v_pu · e`` and ``I(V)`` the currents the constant-power loads and DER
-inject: each branch ``(a, b)`` of a unit draws ``i = conj(s / (V_a - V_b))`` out of ``a`` and into
-``b``, ``s`` an equal share of the unit's power. :func:`fixed_point` iterates
+its nodes), ``E`` the scenario's ideal source voltages (``ScenarioData.source_e``) and ``I(V)`` the
+currents the constant-power loads and DER inject: each branch ``(a, b)`` of a unit draws
+``i = conj(s / (V_a - V_b))`` out of ``a`` and into ``b``, ``s`` an equal share of the unit's
+power. :func:`fixed_point` iterates
 ``V ← A⁻¹ (Y_s E + I(V))`` (the Z-bus method) from the no-load voltage. Errors are per unit of
 each node's line-to-neutral base. Engine-free, like the reader.
 """
@@ -40,7 +41,8 @@ class _System:
     """The factorised ``A`` and the source's right-hand side of one scenario."""
 
     def __init__(self, sc: ScenarioData) -> None:
-        if sc.y_state is None or sc.source_v_pu is None:
+        e = sc.source_e
+        if sc.y_state is None or e is None:
             raise ValueError(f"scenario {sc.scenario_id} has no state or no source voltage")
         var = sc.variant
         n, k = var.model.n_nodes, var.source_nodes.size
@@ -49,7 +51,7 @@ class _System:
         self.d = sp.diags(var.base_v)  # solved per unit of the node bases: better conditioned
         self.lu = spla.splu(sp.csc_matrix(self.d @ (sc.y_state + ys) @ self.d))
         self.rhs = np.zeros(n, dtype=np.complex128)
-        self.rhs[var.source_nodes] = var.y_s @ (sc.source_v_pu * var.e_v)
+        self.rhs[var.source_nodes] = var.y_s @ e
         a, b, s = [], [], []
         for idx, power in sc.s_drawn.items():
             br = var.branches[idx]

@@ -29,8 +29,13 @@ Objective: ``sum_k (c2_k p_k^2 + c1_k p_k)`` over the source, the PV units and t
 ``p_k`` the active power element ``k`` delivers; the source's is that of its ideal voltages,
 ``Re sum E conj(Y_s (E - V_s))``. The model is built once per network state; the source voltage
 and the costs are CasADi parameters, the loads, PV limits and ratings enter as the bounds of the
-call, so each scenario is one Ipopt solve from a flat start. The NLP is scaled to per unit on each
-node's base voltage and a power base (:func:`power_base`); inputs and results are SI.
+call, so each scenario is one Ipopt solve from a flat start. ``E`` is the scenario's
+(:func:`~gridfm_datakit_distr.extract.source.scenario_e`): ``v_pu e + w n``, ``e`` the ideal
+voltages at 1 pu, ``n`` their negative sequence and ``w = v_pu u2 exp(j angle)``, so its
+parameters are ``v_pu`` and the real and imaginary parts of ``w`` (exact zeros for a balanced
+source, which then gives the problem it gave before the negative sequence existed). The NLP is
+scaled to per unit on each node's base voltage and a power base (:func:`power_base`); inputs and
+results are SI.
 
 Requires the ``opf`` extra (CasADi).
 """
@@ -46,7 +51,7 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.typing import ArrayLike, NDArray
 
-from gridfm_datakit_distr.extract.source import Source
+from gridfm_datakit_distr.extract.source import Source, negative_sequence
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
 from gridfm_datakit_distr.model.ground import conventional_zones, unit_branches
 from gridfm_datakit_distr.opf.support import (
@@ -178,6 +183,9 @@ class OPFProblem:
         self._vb = vb
         src = source.nodes
         e = source.e_v / vb[src]  # pu at 1 pu
+        three_phase = source.e_v.shape == (3,)
+        en = negative_sequence(source.e_v) / vb[src] if three_phase else np.zeros_like(e)
+        self._three_phase = three_phase
         ys = vb[src][:, None] * source.y_s * vb[src][None, :] / s_base_va
         k = len(src)
         ys_nodes = sp.csr_matrix((ys.ravel(), (np.repeat(src, k), np.tile(src, k))), shape=(n, n))
@@ -185,6 +193,8 @@ class OPFProblem:
         y = (scale @ sp.csr_matrix(model.ybus()) @ scale / s_base_va + ys_nodes).tocsc()
         b1 = np.zeros(n, dtype=np.complex128)
         b1[src] = ys @ e
+        bn = np.zeros(n, dtype=np.complex128)
+        bn[src] = ys @ en  # times w = wr + j wi: wr [re; im] + wi [-im; re]
         self._e_node = _flat_start(model, source, e)
 
         nlb, ngb = len(lb), len(gb)
@@ -201,7 +211,7 @@ class OPFProblem:
         # AD its Jacobian costs one colour per nonzero of the densest row (hub buses).
         nx = 2 * n + 2 * nlb + 2 * ngb + 2 * ng
         x = ca.SX.sym("x", nx)
-        par = ca.SX.sym("p", 1 + 2 * (1 + ng))
+        par = ca.SX.sym("p", 3 + 2 * (1 + ng))
         vr, vi = x[:n], x[n : 2 * n]
         o = 2 * n
         lr, li = x[o : o + nlb], x[o + nlb : o + 2 * nlb]
@@ -213,15 +223,16 @@ class OPFProblem:
         ugr, ugi = ca.mtimes(_dm(cg.T), vr), ca.mtimes(_dm(cg.T), vi)
         dvr, dvi = ca.mtimes(_dm(d), vr), ca.mtimes(_dm(d), vi)
         share = _dm(pv_share)
-        v_pu = par[0]
-        er, ei = v_pu * ca.DM(e.real), v_pu * ca.DM(e.imag)
+        v_pu, wr, wi = par[0], par[1], par[2]
+        er = v_pu * ca.DM(e.real) + wr * ca.DM(en.real) - wi * ca.DM(en.imag)
+        ei = v_pu * ca.DM(e.imag) + wr * ca.DM(en.imag) + wi * ca.DM(en.real)
         dr, di = er - vr[src.tolist()], ei - vi[src.tolist()]
         ysr, ysi = ca.DM(ys.real), ca.DM(ys.imag)
         isr = ca.mtimes(ysr, dr) - ca.mtimes(ysi, di)
         isi = ca.mtimes(ysi, dr) + ca.mtimes(ysr, di)
         p_src = ca.dot(er, isr) + ca.dot(ei, isi)
         p_k = ca.vertcat(p_src, gp)
-        c1, c2 = par[1 : 2 + ng], par[2 + ng :]
+        c1, c2 = par[3 : 4 + ng], par[4 + ng :]
         f = ca.dot(c1, p_k) + ca.dot(c2, p_k**2)
         h = ca.vertcat(
             ulr * lr + uli * li, uli * lr - ulr * li,  # load branch P, Q
@@ -236,7 +247,11 @@ class OPFProblem:
         xm, pm = ca.MX.sym("x", nx), ca.MX.sym("p", par.numel())
         f_m, h_m = ca.Function("fh", [x, par], [f, h])(xm, pm)
         a_kcl, b_kcl = _impedance_rows(a_kcl.tocsr(), np.r_[b1.real, b1.imag], src, ys, n)
-        g = ca.vertcat(ca.mtimes(_dm(a_kcl), xm) - pm[0] * ca.DM(b_kcl), h_m)
+        none = sp.csr_matrix((2 * n, 0))  # the same row transform on the negative sequence's b
+        b_wr = _impedance_rows(none, np.r_[bn.real, bn.imag], src, ys, n)[1]
+        b_wi = _impedance_rows(none, np.r_[-bn.imag, bn.real], src, ys, n)[1]
+        kcl = ca.mtimes(_dm(a_kcl), xm) - pm[0] * ca.DM(b_kcl)
+        g = ca.vertcat(kcl - pm[1] * ca.DM(b_wr) - pm[2] * ca.DM(b_wi), h_m)
         opts: dict[str, Any] = {"print_time": False, "error_on_fail": False}
         opts |= {"ipopt.print_level": 0, "ipopt.sb": "yes"}
         opts |= {f"ipopt.{key}": value for key, value in IPOPT_OPTIONS.items()}
@@ -245,6 +260,21 @@ class OPFProblem:
         self._p_source = ca.Function("p_source", [x, par], [p_src])
         base_p = vb[self.pairs[:, 0]]
         self._vpn2 = ((self.vpn_lo_v / base_p) ** 2, (self.vpn_hi_v / base_p) ** 2)
+
+    def parameters(
+        self,
+        source_v_pu: float,
+        source_u2: float,
+        source_u2_angle_rad: float | None,
+        c1: FloatArray,
+        c2: FloatArray,
+    ) -> FloatArray:
+        """The NLP's parameter vector: ``v_pu``, the real and imaginary parts of ``w = v_pu u2
+        exp(j angle)``, then ``c1`` and ``c2`` (``c2`` already scaled by the power base)."""
+        if source_u2 != 0.0 and not self._three_phase:
+            raise ValueError("a negative sequence needs a three-phase source")
+        w = source_v_pu * source_u2 * np.exp(1j * (source_u2_angle_rad or 0.0))
+        return np.asarray(np.r_[source_v_pu, w.real, w.imag, c1, c2], dtype=np.float64)
 
     def _start_from(self, start: PowerFlowStart, load_pu: NDArray[np.complex128]) -> FloatArray:
         """The NLP's variables at a power-flow solution, per unit as the problem scales them."""
@@ -269,9 +299,13 @@ class OPFProblem:
         start: PowerFlowStart | None = None,
         bess_p_w: ArrayLike = (),
         dg_p_max_w: ArrayLike = (),
+        source_u2: float = 0.0,
+        source_u2_angle_rad: float | None = None,
     ) -> OPFResult:
         """Solve one scenario from a flat start (source voltages ``source_v_pu · E``, neutral 0),
-        or from ``start``, a power-flow solution of the same scenario.
+        or from ``start``, a power-flow solution of the same scenario. The source's ideal
+        voltages are :func:`~gridfm_datakit_distr.extract.source.scenario_e` of ``source_v_pu``,
+        ``source_u2`` and ``source_u2_angle_rad`` (the flat start stays balanced).
 
         Loads in :attr:`load_names` order, PV units in :attr:`pv_names` order (W, var, VA), each
         drawing an equal share through each of its branches; ``pv_q_max_var`` bounds ``|q|`` per
@@ -309,7 +343,7 @@ class OPFProblem:
             x0 = np.r_[v0.real, v0.imag, np.zeros(2 * self._nlb + 2 * self._ngb + 2 * ng)]
         else:
             x0 = self._start_from(start, pl + 1j * ql)
-        par = np.r_[source_v_pu, c1, c2]
+        par = self.parameters(source_v_pu, source_u2, source_u2_angle_rad, c1, c2)
         t0 = time.perf_counter()
         sol = self._solver(x0=x0, p=par, **bounds)
         t_solve = time.perf_counter() - t0

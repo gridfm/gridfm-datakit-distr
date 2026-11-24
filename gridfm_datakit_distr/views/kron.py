@@ -38,8 +38,10 @@ from gridfm_datakit_distr.scenarios.profiles import customers_of
 from gridfm_datakit_distr.solve.pf_batch import (
     ScenarioOutcome,
     VariantRunner,
+    add_negative_sequence_source,
     der_setpoints,
     engine_indices,
+    negative_sequence_current,
     set_setpoints,
 )
 from gridfm_datakit_distr.validate.setpoints import setpoint_report
@@ -200,6 +202,12 @@ class KronView:
         self._der_idx = engine_indices(api.Generators.AllNames(), runner.der_generators)
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())
+        self._unbalance = (
+            add_negative_sequence_source(self.ctx, self.model)
+            if runner.unbalance is not None
+            else None
+        )
+        """The view's source, when it gets the full model's negative sequence."""
 
     def solve(self, outcome: ScenarioOutcome, state: NetworkState | None) -> KronOutcome:
         """The view of a scenario whose full model converged: same setpoints, same state."""
@@ -209,9 +217,15 @@ class KronView:
             der_p, der_q = der_setpoints(
                 outcome.pv_p_w, outcome.pv_q_var, outcome.bess_p_w, outcome.dg_p_w
             )
+            i_neg = None
+            if self._unbalance is not None and outcome.source_u2_angle_rad is not None:
+                i_neg = negative_sequence_current(
+                    self._unbalance, outcome.source_v_pu, outcome.source_u2,
+                    outcome.source_u2_angle_rad,
+                )  # fmt: skip
             set_setpoints(
                 self.ctx.api, self._load_idx, outcome.load_p_w, outcome.load_q_var, self._der_idx,
-                der_p, der_q, self._source, outcome.source_v_pu,
+                der_p, der_q, self._source, outcome.source_v_pu, i_neg,
             )  # fmt: skip
             self.ctx.command("Set ControlMode=OFF")
             if state is not None:

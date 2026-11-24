@@ -72,6 +72,8 @@ class ScenarioStream(IntEnum):
     """Availability of each dispatchable generator (``scenarios.dg_profile.availability``)."""
     PV_TIME = 13
     """Hour of the PV series of each scenario (``scenarios.pv_profile.provider: pvgis``)."""
+    SOURCE_UNBALANCE = 14
+    """Negative-sequence ratio and angle of the source (``scenarios.source_unbalance``)."""
 
 
 def network_key(network_id: str) -> int:

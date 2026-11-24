@@ -207,6 +207,8 @@ def scenario_meta(precision: Precision) -> pa.Schema:
             _required("profile_source", pa.string()),
             _required("der_penetration", real),
             _nullable("source_v_pu", real),
+            _nullable("source_u2", real),
+            _nullable("source_u2_angle_rad", real),
             _required("pf_status", pa.string()),
             _nullable("pf_message", pa.string()),
             _required("n_off_setpoint", pa.int32()),

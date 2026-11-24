@@ -176,6 +176,7 @@ def test_stream_codes_are_stable() -> None:
         "DG_SETPOINT": 11,
         "DG_AVAILABILITY": 12,
         "PV_TIME": 13,
+        "SOURCE_UNBALANCE": 14,
     }
 
 

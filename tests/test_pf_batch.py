@@ -72,8 +72,12 @@ def test_scenarios_converge_with_their_draws(tmp_path: Path) -> None:
     assert sum(r.registry.counts.values()) == 4
 
 
-def test_results_do_not_depend_on_the_order(tmp_path: Path) -> None:
-    cfg = config(controls={"tap_jitter_steps": 2})
+@pytest.mark.parametrize(
+    "unbalance", [0.0, {"distribution": "uniform", "low": 0.0, "high": 0.02}],
+    ids=["balanced", "unbalanced"],
+)  # fmt: skip
+def test_results_do_not_depend_on_the_order(tmp_path: Path, unbalance: Any) -> None:
+    cfg = config(controls={"tap_jitter_steps": 2}, scenarios={"source_unbalance": unbalance})
     forward = runner(tmp_path / "a", CONTROLLED, cfg)
     backward = runner(tmp_path / "b", CONTROLLED, cfg)
     a = {s: forward.run(s) for s in range(6)}

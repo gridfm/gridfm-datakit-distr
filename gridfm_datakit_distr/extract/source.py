@@ -31,7 +31,34 @@ class Source:
     y_s: NDArray[np.complex128]
     """Admittance (S) between the ideal source and :attr:`nodes`."""
     e_v: NDArray[np.complex128]
-    """Ideal source voltages (V) at 1 pu; a scenario's are ``source_v_pu * e_v``."""
+    """Ideal source voltages (V) at 1 pu; a scenario's are :func:`scenario_e`."""
+
+
+A = np.exp(2j * np.pi / 3)
+
+
+def negative_sequence(e_v: NDArray[np.complex128]) -> NDArray[np.complex128]:
+    """The negative-sequence counterpart of a three-phase source's ideal voltages ``e_v``: the
+    ``k``-th conductor at ``e_k a^(2k)``, ``a = exp(j 2 pi / 3)`` (same magnitudes, phase order
+    reversed, conductor 0 unchanged). ``ValueError`` unless three conductors."""
+    if e_v.shape != (3,):
+        raise ValueError(f"a negative sequence needs a three-phase source, not {e_v.shape[0]} "
+                         "conductors")  # fmt: skip
+    return np.asarray(e_v * A ** (2 * np.arange(3)), dtype=np.complex128)
+
+
+def scenario_e(
+    e_v: NDArray[np.complex128], v_pu: float, u2: float = 0.0, angle_rad: float | None = None
+) -> NDArray[np.complex128]:
+    """A scenario's ideal source voltages (V): ``v_pu (e_v + u2 exp(j angle) n)``, ``n`` the
+    :func:`negative_sequence` of ``e_v``, the voltages at 1 pu. ``v_pu`` is the positive-sequence
+    magnitude, ``u2 = |E_2| / |E_1|`` and ``angle`` the angle of ``E_2`` relative to ``E_1``
+    (rad), both of the ideal voltages behind the source impedance; ``u2 = 0`` gives
+    ``v_pu e_v`` exactly."""
+    if u2 == 0.0:
+        return np.asarray(v_pu * e_v, dtype=np.complex128)
+    rotation = np.exp(1j * (angle_rad or 0.0))
+    return np.asarray(v_pu * (e_v + u2 * rotation * negative_sequence(e_v)), dtype=np.complex128)
 
 
 def read_source(ctx: DssContext, model: ElectricalModel) -> Source:

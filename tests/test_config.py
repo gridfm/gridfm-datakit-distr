@@ -85,6 +85,7 @@ def test_a_minimal_config_takes_the_documented_defaults() -> None:
     assert config.der.pv.penetration == Uniform(0.0, 0.8)
     assert config.scenarios.profiles.synthetic.global_scale == Uniform(0.2, 1.2)
     assert config.scenarios.source_voltage_pu == Uniform(0.98, 1.05)
+    assert config.scenarios.source_unbalance == Fixed(0.0)  # balanced
     assert config.settings.num_processes is None  # all cores
     assert config.settings.validation_tolerance == 1e-10
 
@@ -127,6 +128,15 @@ def test_specs_take_numbers_and_distributions() -> None:
     assert config.der.pv.kwp == Fixed(4.0)
     spec = {"distribution": "normal", "mean": 1.0, "std": 0.02}
     assert validate_config(with_("scenarios.source_voltage_pu", spec)).scenarios.source_voltage_pu
+
+
+def test_the_source_unbalance_is_a_fraction() -> None:
+    spec = {"distribution": "uniform", "low": 0.0, "high": 0.02}
+    config = validate_config(with_("scenarios.source_unbalance", spec))
+    assert config.scenarios.source_unbalance == Uniform(0.0, 0.02)
+    for bad in (-0.01, 1.5):
+        with pytest.raises(ConfigError, match="source_unbalance"):
+            validate_config(with_("scenarios.source_unbalance", bad))
 
 
 def test_voltage_limit_preset() -> None:

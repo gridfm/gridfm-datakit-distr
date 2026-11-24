@@ -23,6 +23,7 @@ import pyarrow.parquet as pq
 import scipy.sparse as sp
 from numpy.typing import NDArray
 
+from gridfm_datakit_distr.extract.source import scenario_e
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.io.writer import part_key, read_states
 from gridfm_datakit_distr.model.electrical import ElectricalModel
@@ -40,6 +41,11 @@ from gridfm_datakit_distr.model.io_parquet import (
 VARIANT_TABLES = (NODES, ELEMENTS, TERMINALS, YPRIM)
 """The tables of a variant's model (Yprims of the tap-independent elements)."""
 UNIT_CLASSES = ("load", "generator")
+META_COLUMNS = (
+    "scenario_id", "variant_id", "state_id", "pf_status", "source_v_pu", "source_u2",
+    "source_u2_angle_rad",
+)  # fmt: skip
+"""The columns of ``scenarios/scenario_meta`` the reader needs."""
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -68,12 +74,23 @@ class ScenarioData:
     state_id: str | None
     pf_status: str
     source_v_pu: float | None
+    source_u2: float | None
+    """Negative-sequence ratio of the source (0 or null: balanced)."""
+    source_u2_angle_rad: float | None
     y_state: sp.csr_matrix | None
     """Network admittance (S) of the scenario's state; None without a state."""
     s_drawn: dict[int, complex]
     """Per load or DER element: the complex power it draws at its setpoint (VA; DER negative)."""
     v: NDArray[np.complex128] | None
     """Stored node voltages (V); None if the scenario has no power-flow label."""
+
+    @property
+    def source_e(self) -> NDArray[np.complex128] | None:
+        """The scenario's ideal source voltages (V), :func:`scenario_e`; None without draws."""
+        if self.source_v_pu is None:
+            return None
+        u2 = self.source_u2 or 0.0
+        return scenario_e(self.variant.e_v, self.source_v_pu, u2, self.source_u2_angle_rad)
 
 
 def rows_by_key(table: pa.Table, key: str) -> dict[str, pa.Table]:
@@ -164,7 +181,7 @@ class DatasetReader:
         self.root = root
         self.meta = _read(
             root / "scenarios" / "scenario_meta",
-            columns=["scenario_id", "variant_id", "state_id", "pf_status", "source_v_pu"],
+            columns=[*META_COLUMNS],
         )
         self._variants: dict[str, VariantData] = {}
         self._states: dict[str, sp.csr_matrix] = {}
@@ -246,6 +263,8 @@ class DatasetReader:
                 state_id=state,
                 pf_status=m["pf_status"],
                 source_v_pu=m["source_v_pu"],
+                source_u2=m["source_u2"],
+                source_u2_angle_rad=m["source_u2_angle_rad"],
                 y_state=None if state is None else self._state(state, variant),
                 s_drawn=drawn.get(int(sid), {}),
                 v=stored.get(int(sid)),
