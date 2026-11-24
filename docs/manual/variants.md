@@ -155,8 +155,10 @@ transformer element, node or bus is added: the source keeps its bus, base and ro
     | 800 | 5.0 % | 0.75 % | 4.94 % | 6.6 |
     | 1000 | 5.0 % | 0.76 % | 4.94 % | 6.5 |
 
-- **MV network.** 250 MVA at the MV bus, ENWL's design fault level for its 11 kV networks, with
-  the transformer's X/R: 0.32 % on the base of an 800 kVA unit, against its 5 %.
+- **MV network.** 250 MVA at the MV bus with the transformer's X/R, both assumptions: 250 MVA is
+  the design fault level ENWL's specifications give for its 11 kV networks as summarised by a
+  search engine (the documents were not reachable). Second order: 0.32 % on the base of an
+  800 kVA unit, against its 5 %.
 - **The source.** The Vsource gets `Z1 = Z2 = Z_T + Z_MV` and `Z0 = Z_T` (Ω at its base voltage):
   a Dyn transformer blocks the MV network's zero sequence. With the neutral bonded to the source's
   star point, as in the CSIRO models, this equals a Dyn transformer fed by the MV network at every

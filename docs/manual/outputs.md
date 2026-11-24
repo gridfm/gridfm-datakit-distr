@@ -197,7 +197,8 @@ the phase order reversed) and `source_v_pu`, `u2 = source_u2`, `θ = source_u2_a
 scenario's (`scenarios/scenario_meta`); with a balanced source (`source_u2` 0) `E_s = source_v_pu ·
 E`. `u2` and `θ` are those of the ideal voltages, behind `Y_s`: at the source bus the
 negative-sequence ratio differs by the drop of the source current across the source impedance (on
-the stiff CSIRO sources by up to about 2e-4 at 0.5–2 % drawn). With `variants.upstream`,
+the stiff CSIRO sources by up to about 2e-4 at 0.5–2 % drawn, by up to 6.6e-3 with
+`variants.upstream` on CSIRO network 13, feeder 1). With `variants.upstream`,
 `Y_s` is the substation's: `Z1 = Z2` and `Z0` of `variants/variants.perturbation` (`upstream`),
 `Y_s` the inverse of the matrix with `(2 Z1 + Z0) / 3` on its diagonal and `(Z0 - Z1) / 3` off it.
 One row per conductor

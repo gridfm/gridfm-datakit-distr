@@ -238,8 +238,9 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - [ ] PV orientation and PV output from irradiance data by location and date (per-unit shading
   and outages: `scenarios.pv_profile.availability`).
 - [ ] More variability, ordered by how much each moves the labels: unbalanced source voltage,
-  multiple earthing of the neutral, upstream network strength, voltage-dependent (ZIP) loads, a
-  factor shared by the line lengths of a feeder, inverter volt-var and volt-watt.
+  multiple earthing of the neutral, upstream network strength beyond the CSIRO feeders
+  (`variants.upstream`), voltage-dependent (ZIP) loads, a factor shared by the line lengths of a
+  feeder, inverter volt-var and volt-watt.
 - [ ] OPF on IEEE 37, the one catalog network it does not cover.
 - [ ] Evaluation protocol for power flow and OPF: metrics and data splits (held-out variants,
   feeders and sources).

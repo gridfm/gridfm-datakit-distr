@@ -173,7 +173,9 @@ we found (secondary sources) bound the negative sequence only.
 `u2` is the ratio behind the source impedance, not at the source bus: there the drop of the source
 current across the source impedance, itself unbalanced by single-phase loads, moves the ratio by up
 to about 2e-4 on the stiff CSIRO sources and 5e-5 on IEEE 13 (at 0.5–2 % drawn; at no load the bus
-has the drawn ratio). The stored `source_u2` and `source_u2_angle_rad` and the source tables give
+has the drawn ratio). With the substation's impedance
+([`variants.upstream`](variants.md#upstream-substation)) the offset grows: up to 6.6e-3 on CSIRO
+network 13, feeder 1, at 0–2 % drawn, whose other feeders load one phase most. The stored `source_u2` and `source_u2_angle_rad` and the source tables give
 the source exactly, as the power flow and the OPF see it.
 
 For coverage of the background unbalance that real supply voltages carry from upstream, set

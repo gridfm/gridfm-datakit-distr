@@ -11,8 +11,9 @@ the MV/LV transformer, the MV network or the other feeders of their substation. 
   (:data:`IEC_60076_5_MIN_Z`); its resistance ``P_k / S_r`` from the Tier 2 maximum load losses of
   Regulation (EU) 548/2014 Annex I Table I.1 (:data:`EU_548_TIER2_PK_W`, linear between rows as
   the Regulation's footnote says); its reactance ``sqrt(z_k² - r²)``;
-- the MV network: :data:`MV_FAULT_VA` at the MV bus with the transformer's X/R, in the positive
-  and negative sequences only (a Dyn transformer blocks the upstream zero sequence).
+- the MV network: :data:`MV_FAULT_VA` at the MV bus with the transformer's X/R (both
+  assumptions), in the positive and negative sequences only (a Dyn transformer blocks the
+  upstream zero sequence).
 
 The Vsource gets ``Z1 = Z2 = Z_T + Z_MV`` and ``Z0 = Z_T`` (ohm at its base voltage): with the
 feeder's neutral bonded at the source this is the Thevenin equivalent of a Dyn transformer at
@@ -82,7 +83,8 @@ EU_548_TIER2_PK_W = (
 at each rating (kVA), Tier 2 (from 1 July 2021): Regulation (EU) 548/2014 Annex I Table I.1."""
 
 MV_FAULT_VA = 250e6
-"""Three-phase fault level of the MV network (VA): ENWL's design fault level at 11 kV."""
+"""Three-phase fault level of the MV network (VA), an assumption: the design fault level of ENWL's
+11 kV networks as a search engine summarised its specifications (not read in the documents)."""
 
 LOAD_PREFIX = "upstream_feeders_"
 PHASES = ("a", "b", "c")
