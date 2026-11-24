@@ -79,8 +79,8 @@ The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-outpu
   customer batteries of NREL's SMART-DS, a synthetic dataset of US distribution networks
   ([documentation](https://github.com/openEDI/documentation/blob/main/SMART-DS/Readme.md),
   Appendix 1): below 4 kWp 4 kW, from 4 to 10 kWp 8 kW, from 10 to 150 kWp 25 kW, from 150 kWp
-  100 kW. The source gives the bands as "< 4", "4–10", "10–150" and "> 150" kW; that each lower
-  bound belongs to the band above it is our reading. With the default PV sizes (2–6 kWp) a unit
+  100 kW. The source gives the bands of installed PV capacity (kW) as `<4`, `4-10`, `10-150` and
+  `>150`; that each lower bound belongs to the band above it is our reading. With the default PV sizes (2–6 kWp) a unit
   is 4 or 8 kW. SMART-DS sizes the stored energy at twice the rating (kWh = 2 × kW); a snapshot
   has no state of charge, so it is not used. A value spec for `kw` draws the rating per unit and
   variant instead, e.g. `{distribution: uniform, low: 3.0, high: 5.0}`. The rating is stored as
