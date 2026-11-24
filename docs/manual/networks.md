@@ -142,6 +142,11 @@ The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester (5
   ([Scenarios](scenarios.md#power-flow-and-statuses)): in a run of 1000 scenarios with the default
   load range, one variant and no PV, 204 did, every one whose total load exceeded 1.08 times the
   nominal and none below 0.88.
+- **EDP 22 kV source:** the published `edp/rural` and `edp/urban` models state no short-circuit
+  level for their source, so OpenDSS's default applies: 2000 MVA three-phase (about 52 kA at
+  22 kV), X/R 4. That is above the 16 kA that E-REDES's MV norm (NT-IEMT.ER, 2024) gives as the
+  general short-time rating of 12-30 kV networks. `edp/industrial` states 9 kA (343 MVA) in its
+  file. The sources are used as published.
 - **PMD's own parser** differs from OpenDSS on these sources (mile = 1609.3 m, dropped grounding
   reactors), so the conformance suite has no cross-engine check (C8). Engine agreement is checked
   through the OPF labels: each dispatch is verified in OpenDSS ([OPF labels](opf.md)), and the OPF
