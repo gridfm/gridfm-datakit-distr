@@ -337,6 +337,15 @@ def test_a_stored_config_drops_the_keys_removed_since() -> None:
     assert stored_config(old) == validate_config(MINIMAL)
 
 
+def test_a_stored_config_with_a_loadshape_provider_is_rebuilt() -> None:
+    """The manifest stores every key, the default `synthetic` section included."""
+    for provider in ("network_loadshapes", "edp_smart_meter"):
+        config = validate_config(with_("scenarios.profiles.provider", provider))
+        stored = config.model_dump(mode="json")
+        assert "synthetic" in stored["scenarios"]["profiles"]
+        assert stored_config(stored) == config
+
+
 def test_networks_must_have_distinct_seed_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     from gridfm_datakit_distr.config import load
 

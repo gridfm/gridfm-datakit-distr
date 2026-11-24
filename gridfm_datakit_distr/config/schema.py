@@ -394,7 +394,10 @@ class Profiles(_Config):
 
     @model_validator(mode="after")
     def _synthetic_needs_its_provider(self) -> Profiles:
-        if self.provider != "synthetic" and "synthetic" in self.model_fields_set:
+        """Refuse a `synthetic` section that differs from its defaults under another provider.
+        By value, not by key presence: a default-valued section means "unset", and a stored
+        config (the manifest's resolved config) has every key, the defaults included."""
+        if self.provider != "synthetic" and self.synthetic != SyntheticProfiles():
             raise ValueError(
                 f"synthetic is used only with provider 'synthetic', got provider {self.provider!r}"
             )
