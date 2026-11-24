@@ -141,7 +141,10 @@ The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester (5
   `edp/urban` end `off_setpoint` or `not_converged`, recorded with their status
   ([Scenarios](scenarios.md#power-flow-and-statuses)): in a run of 1000 scenarios with the default
   load range, one variant and no PV, 204 did, every one whose total load exceeded 1.08 times the
-  nominal and none below 0.88.
+  nominal and none below 0.88. In the six lightest of them every load off its setpoint was in this
+  area, and with the same active power at the measured reactive share (Q/P 0.19 instead of the
+  synthetic power factor's 0.34) none was: the cause is this area together with the reactive power
+  of the synthetic power factor ([Scenarios](scenarios.md#loads)).
 - **EDP 22 kV source:** the published `edp/rural` and `edp/urban` models state no short-circuit
   level for their source, so OpenDSS's default applies: 2000 MVA three-phase (about 52 kA at
   22 kV), X/R 4. That is above the 16 kA that E-REDES's MV norm (NT-IEMT.ER, 2024) gives as the
