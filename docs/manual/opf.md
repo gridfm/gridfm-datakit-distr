@@ -51,7 +51,8 @@ The OPF covers networks of lines, switches, transformers, capacitors and reactor
 `opf_class` says what the OPF had to do: `A` when the uncontrolled power flow already keeps the voltages within the limits and the transformers within their ratings (with `economic` the OPF then keeps the PV at its available power and moves the reactive power to reduce the losses), `B` when it does not, `C` without a power-flow label.
 
 A class-A scenario has a feasible point by construction (its power flow), yet a few end unsolved:
-in the campaign on the default configuration, 6 of 6 986 class-A scenarios ended at the iteration
+in the campaign on the default configuration (before generator 0.3.0.dev3, with the load scale
+U(0.2, 1.2)), 6 of 6 986 class-A scenarios ended at the iteration
 limit, at an acceptable level or with `Feasible_Point_Found`: on IEEE 123 (3) and a CSIRO feeder
 (1), all at night with no PV power available, so that nothing can move and the problem is the power
 flow's own equations, and on IEEE 8500 (2). They are recorded with their status and carry no OPF
