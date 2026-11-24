@@ -229,8 +229,14 @@ def table(out: Path, name: str) -> Any:
 
 def test_the_unbalance_changes_the_source_and_nothing_else(datasets: tuple[Path, Path]) -> None:
     balanced, unbalanced_ = datasets
-    for name in ("variants/variants", "variants/nodes", "variants/elements", "variants/source",
-                 "variants/source_yprim", "scenarios/loads", "scenarios/der"):  # fmt: skip
+    files = sorted(p.relative_to(balanced) for p in (balanced / "variants").rglob("*")
+                   if p.is_file())  # fmt: skip
+    assert any(f.suffix == ".json" for f in files)  # the semantic layer
+    assert files == sorted(p.relative_to(unbalanced_) for p in (unbalanced_ / "variants").rglob("*")
+                           if p.is_file())  # fmt: skip
+    for f in files:  # every variant table and the semantic layer, byte for byte
+        assert (balanced / f).read_bytes() == (unbalanced_ / f).read_bytes(), f
+    for name in ("scenarios/loads", "scenarios/der"):
         assert table(balanced, name).equals(table(unbalanced_, name)), name
     a, b = table(balanced, "scenarios/scenario_meta"), table(unbalanced_, "scenarios/scenario_meta")
     assert a["source_v_pu"].equals(b["source_v_pu"])

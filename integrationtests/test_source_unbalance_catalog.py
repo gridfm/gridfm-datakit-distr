@@ -51,6 +51,7 @@ def test_the_drawn_unbalance_is_the_catalog_source_s(
     assert r.model.nodes == balanced.model.nodes
     assert [e.name for e in r.model.elements] == [e.name for e in balanced.model.elements]
     source = read_source(r.ctx, r.model)
+    bus = r.ctx.ynode_positions(r.model.nodes[int(n)].opendss_node for n in source.nodes)
     for s in range(3):
         o = r.run(s)
         assert o.pf_status == "converged", o.message
@@ -61,3 +62,7 @@ def test_the_drawn_unbalance_is_the_catalog_source_s(
         assert np.abs(got - e).max() <= READBACK_REL * np.abs(e).max()
         _, pos, neg = sequences(got)
         assert abs(neg / pos) == pytest.approx(o.source_u2, abs=READBACK_REL)
+        # at the source bus the ratio moves by the drop across the source impedance (s58: up to
+        # about 2e-4 on the CSIRO sources, 5e-5 on IEEE 13)
+        _, pos, neg = sequences(r.ctx.ynode_voltages()[bus])
+        assert abs(abs(neg / pos) - o.source_u2) <= 5e-4
