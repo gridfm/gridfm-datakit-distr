@@ -20,6 +20,7 @@ Dispatchable generators are not drawn: one at every :data:`DG_EVERY`-th customer
 
 from __future__ import annotations
 
+import bisect
 import json
 import math
 from dataclasses import dataclass, field
@@ -36,6 +37,9 @@ _IDENTITY = Fixed(1.0)
 _NO_PV = Fixed(0.0)
 DG_EVERY = 4
 """A dispatchable generator at every 4th load (Geth, Claeys and Deconinck, PSCC 2022)."""
+_PV_KWP_BOUNDS = (4.0, 10.0, 150.0)
+_STORAGE_KW = (4.0, 8.0, 25.0, 100.0)
+"""SMART-DS customer batteries: the rating (kW) in each band of PV kWp between the bounds."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +147,7 @@ def sample_perturbation(
             new = t.candidates[int(rng.integers(len(t.candidates)))]
             phases[t.element] = (t.bus1(t.phase), t.bus1(new))
     rho, kwp, pf, fraction, threshold = _pv(der, targets, seed, net, k, attempt)
-    share, storage_kw = _storage(storage, targets, set(kwp), seed, net, k, attempt)
+    share, storage_kw = _storage(storage, targets, kwp, seed, net, k, attempt)
     dg = {c.element: dg_kw for c in dg_sites(targets)} if dg_kw is not None else {}
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
@@ -158,29 +162,38 @@ def dg_sites(targets: VariantTargets) -> tuple[CustomerTarget, ...]:
     return targets.customers[DG_EVERY - 1 :: DG_EVERY]
 
 
+def storage_kw_for_pv(kwp: float) -> float:
+    """Power rating (kW) of a storage unit at a customer with ``kwp`` kWp of PV, by the
+    customer-battery table of NREL's SMART-DS (bands < 4, 4-10, 10-150, > 150 kW; each lower
+    bound included, our reading)."""
+    return _STORAGE_KW[bisect.bisect_right(_PV_KWP_BOUNDS, kwp)]
+
+
 def _storage(
     spec: Storage | None,
     targets: VariantTargets,
-    pv: set[str],
+    pv: dict[str, float],
     seed: int,
     net: int,
     k: int,
     attempt: int,
 ) -> tuple[float, dict[str, float]]:
-    """Share, then one uniform draw and one rating per customer whatever the share and the PV
-    placement: a unit at one share is there, with the same rating, at every higher one."""
+    """Share, then one uniform draw per customer whatever the share and the PV placement; the
+    rating from the customer's PV (``kw`` null) or drawn, one per customer: a unit at one share
+    is there, with the same rating, at every higher one."""
     if spec is None or spec.share == _NO_PV or not pv:
         return 0.0, {}
     rng = variant_rng(seed, net, k, VariantStream.STORAGE_PLACEMENT, attempt)
     share = float(spec.share.sample(rng))
     chosen = rng.random(len(targets.customers)) < share
+    placed = [
+        c.element for c, on in zip(targets.customers, chosen, strict=True) if on and c.element in pv
+    ]
+    if spec.kw is None:
+        return share, {e: storage_kw_for_pv(pv[e]) for e in placed}
     rng = variant_rng(seed, net, k, VariantStream.STORAGE_SIZE, attempt)
-    sizes = [float(spec.kw.sample(rng)) for _ in targets.customers]
-    return share, {
-        c.element: kw
-        for c, kw, on in zip(targets.customers, sizes, chosen, strict=True)
-        if on and c.element in pv
-    }
+    sizes = {c.element: float(spec.kw.sample(rng)) for c in targets.customers}
+    return share, {e: sizes[e] for e in placed}
 
 
 def _pv(

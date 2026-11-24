@@ -203,7 +203,7 @@ stored energy to value, so storage is an OPF control only over time sequences.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `der.storage.share` | value spec, ≥ 0 and ≤ 1 | `0.0` | Share of the PV customers with a storage unit, drawn per variant: each PV customer gets one with that probability. `0` (default): no storage, and every output is the same as without this section. |
-| `der.storage.kw` | value spec, > 0 | `{distribution: uniform, low: 3.0, high: 5.0}` | Power rating (kW) of each unit, drawn per unit and variant; its `s_rated_va`. Assumption, no source: the range of common residential battery inverters. |
+| `der.storage.kw` | value spec, > 0 or null | null | Power rating (kW) of each unit; its `s_rated_va`. null (default): from the peak power of its customer's PV unit, by the rule for customer batteries of NREL's SMART-DS, a synthetic US dataset: below 4 kWp 4 kW, from 4 to 10 kWp 8 kW, from 10 to 150 kWp 25 kW, from 150 kWp 100 kW (each lower bound included: our reading of the source's bands). A value spec: drawn per unit and variant instead. |
 
 ### `der.dg`
 

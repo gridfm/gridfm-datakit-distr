@@ -45,7 +45,7 @@ class VariantStream(IntEnum):
     STORAGE_PLACEMENT = 10
     """Which PV customers get a storage unit (``der.storage.share``)."""
     STORAGE_SIZE = 11
-    """Power rating of each storage unit (``der.storage.kw``)."""
+    """Power rating of each storage unit, drawn only when ``der.storage.kw`` is a value spec."""
 
 
 class ScenarioStream(IntEnum):

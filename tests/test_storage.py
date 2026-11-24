@@ -20,10 +20,16 @@ from gridfm_datakit_distr.config.value_spec import Fixed
 from gridfm_datakit_distr.networks.catalog import Network
 from gridfm_datakit_distr.networks.prepare import PreparedNetwork, prepare_network
 from gridfm_datakit_distr.scenarios.der import StorageSetpoints, storage_units
+from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
 from gridfm_datakit_distr.solve.tables import chunk_tables
+from gridfm_datakit_distr.variants import perturbation
 from gridfm_datakit_distr.variants.generate import generate_variant
-from gridfm_datakit_distr.variants.perturbation import edit_script, sample_perturbation
+from gridfm_datakit_distr.variants.perturbation import (
+    edit_script,
+    sample_perturbation,
+    storage_kw_for_pv,
+)
 from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
 from tests.circuits import VARIANT_FEEDER, write_circuit
 
@@ -61,23 +67,82 @@ def test_the_default_places_nothing(targets: VariantTargets) -> None:
     assert edit_script(default, targets) == edit_script(without, targets)
 
 
-def test_placement_is_deterministic_and_monotone_in_the_share(targets: VariantTargets) -> None:
+@pytest.mark.parametrize("kw", [None, {"distribution": "uniform", "low": 3.0, "high": 5.0}])
+def test_placement_is_deterministic_and_monotone_in_the_share(
+    targets: VariantTargets, kw: dict[str, Any] | None
+) -> None:
     def placed(share: float, pv: PV = HALF_PV) -> dict[str, float]:
-        spec = storage(share=share)
+        spec = storage(share=share, kw=kw)
         return sample_perturbation(Variants(), targets, SEED, 0, 0, der=pv, storage=spec).storage_kw
 
-    pv = set(sample_perturbation(Variants(), targets, SEED, 0, 0, der=HALF_PV).pv_kwp)
-    assert 0 < len(pv) < 6
+    kwp = sample_perturbation(Variants(), targets, SEED, 0, 0, der=HALF_PV).pv_kwp
+    assert 0 < len(kwp) < 6
     assert placed(0.0) == {}
     sets = [set(placed(share)) for share in (0.2, 0.5, 0.8, 1.0)]
     assert all(a <= b for a, b in itertools.pairwise(sets))  # common random numbers
-    assert sets[-1] == pv  # storage only with PV, every PV customer at share 1
+    assert sets[-1] == set(kwp)  # storage only with PV, every PV customer at share 1
     full = placed(1.0)
-    assert all(3.0 <= kw < 5.0 for kw in full.values())  # the default rating
+    if kw is None:
+        assert full == {e: storage_kw_for_pv(kwp[e]) for e in full}  # the default rating
+    else:
+        assert all(3.0 <= r < 5.0 for r in full.values())  # the drawn rating
     half = placed(0.5)
     assert all(half[k] == full[k] for k in half)  # ratings do not depend on who is chosen
     assert placed(0.5) == half  # deterministic
     assert set(placed(1.0, ALL_PV)) == {c.element for c in targets.customers}
+
+
+# ------------------------------------------------------------------- rating
+
+
+@pytest.mark.parametrize(
+    ("kwp", "kw"),
+    [
+        (0.5, 4.0),
+        (3.99, 4.0),
+        (4.0, 8.0),
+        (9.99, 8.0),
+        (10.0, 25.0),
+        (149.99, 25.0),
+        (150.0, 100.0),
+        (1000.0, 100.0),
+    ],
+)
+def test_the_smart_ds_table_maps_pv_size_to_rating(kwp: float, kw: float) -> None:
+    """Our reading of the source's bands < 4, 4-10, 10-150, > 150: each lower bound included."""
+    assert storage_kw_for_pv(kwp) == kw
+
+
+def test_the_default_rating_follows_the_customers_pv(
+    targets: VariantTargets, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streams: list[VariantStream] = []
+
+    def recording(seed: int, net: int, k: int, stream: VariantStream, attempt: int = 0) -> Any:
+        streams.append(stream)
+        return variant_rng(seed, net, k, stream, attempt)
+
+    monkeypatch.setattr(perturbation, "variant_rng", recording)
+    assert Storage().kw is None
+    p = sample_perturbation(Variants(), targets, SEED, 0, 0, der=ALL_PV, storage=storage())
+    assert len(p.storage_kw) == 6
+    assert p.storage_kw == {e: storage_kw_for_pv(p.pv_kwp[e]) for e in p.storage_kw}
+    assert set(p.storage_kw.values()) == {4.0, 8.0}  # PV of 2-6 kWp: two bands
+    assert VariantStream.STORAGE_PLACEMENT in streams
+    assert VariantStream.STORAGE_SIZE not in streams  # no draw for the rating
+
+
+def test_an_explicit_rating_is_drawn_per_unit_as_before(targets: VariantTargets) -> None:
+    spec = storage(kw={"distribution": "uniform", "low": 3.0, "high": 5.0})
+    p = sample_perturbation(Variants(), targets, SEED, 0, 0, der=ALL_PV, storage=spec)
+    assert p.storage_kw == {  # the ratings of the former default U(3, 5), bit for bit
+        "Load.h1": 4.466401725159107,
+        "Load.h2": 3.5716675664249493,
+        "Load.h3": 3.999613081564434,
+        "Load.h4": 3.4203961144864015,
+        "Load.h5": 3.349082499193122,
+        "Load.pp": 4.745911618975316,
+    }
 
 
 def test_units_are_generators_on_their_customers_nodes(
