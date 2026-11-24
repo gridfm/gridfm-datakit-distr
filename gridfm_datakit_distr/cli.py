@@ -380,6 +380,8 @@ def generate(
     from gridfm_datakit_distr.stats.compute import summary, summary_text
 
     typer.echo(summary_text(summary(out)), nl=False)
+    for net in (n for n in manifest.networks if n.get("dg", {"status": "ok"})["status"] != "ok"):
+        typer.echo(f"warning: {net['network_id']} gets no DG ({net['dg']['status']})")
     typer.echo(f"dataset: {out}")
     if failed:
         typer.echo(f"error: {len(failed)} unit(s) failed, e.g. {failed[0].message}", err=True)
