@@ -204,7 +204,7 @@ class ScenarioOutcome:
     source_v_pu: float
     load_p_w: NDArray[np.float64]
     load_q_var: NDArray[np.float64]
-    """Setpoints of the customers (enabled loads ordered by name)."""
+    """Setpoints of the enabled loads ordered by name (``VariantRunner.load_elements``)."""
     pv_p_w: NDArray[np.float64] | None
     pv_q_var: NDArray[np.float64] | None
     pv_p_avail_w: NDArray[np.float64] | None
@@ -262,7 +262,19 @@ class VariantRunner:
         elif (prepared.model.variant_id, prepared.options) != (variant.variant_id, self.options):
             raise ValueError(f"{variant.variant_id}: the compiled network is another variant's")
         self.ctx, self.model = prepared.ctx, prepared.model
-        self.customers = customers_of(prepared)
+        loads = customers_of(prepared)
+        substation = variant.perturbation.upstream
+        lumped = substation.loads if substation is not None else {}
+        self.customers = tuple(c for c in loads if c.element not in lumped)
+        """The customers: every enabled load but the substation's other feeders."""
+        self.load_elements = tuple(c.element for c in loads)
+        """Every enabled load in name order: the customers, then the other feeders' loads
+        (``scenarios/loads`` rows, the OPF's loads)."""
+        if self.load_elements != (*(c.element for c in self.customers), *sorted(lumped)):
+            raise ValueError(f"{variant.variant_id}: the other feeders' loads must sort last")
+        self._lumped = np.array([lumped[e] for e in sorted(lumped)], dtype=np.float64)
+        """Nominal (P (W), Q (var)) of the other feeders' loads, scaled per scenario by the
+        global load factor."""
         self.loads = make_provider(config.scenarios.profiles, self.customers, network, root)
         units = pv_units(variant.perturbation, config.der.pv)
         profile = config.scenarios.pv_profile
@@ -286,9 +298,7 @@ class VariantRunner:
         """Without a control element the label solve is the power flow: no settling solves."""
         if not self._settles:
             self.ctx.command("Set ControlMode=OFF")
-        self._load_idx = engine_indices(
-            self.ctx.api.Loads.AllNames(), (c.element for c in self.customers)
-        )
+        self._load_idx = engine_indices(self.ctx.api.Loads.AllNames(), self.load_elements)
         self._der_idx = engine_indices(self.ctx.api.Generators.AllNames(), self.der_generators)
         """Engine indices (1-based) of the customers' loads and the DER generators."""
         self.registry = StateRegistry()
@@ -321,6 +331,12 @@ class VariantRunner:
         draws = _Draws(np.zeros(0), np.zeros(0), None, None, 0.0, None)
         try:
             loads = self.loads.draw(seed, net, k, s)
+            p_w, q_var = loads.p_w, loads.q_var
+            if self._lumped.size:  # the provider is synthetic (config check)
+                g = loads.global_scale
+                assert g is not None
+                p_w = np.r_[p_w, g * self._lumped[:, 0]]
+                q_var = np.r_[q_var, g * self._lumped[:, 1]]
             pv = self.pv.draw(seed, net, k, s, loads.time_s) if self.pv is not None else None
             rng = scenario_rng(seed, net, k, s, ScenarioStream.SOURCE_VOLTAGE)
             v_src = float(self.config.scenarios.source_voltage_pu.sample(rng))
@@ -332,8 +348,7 @@ class VariantRunner:
             bess = self.storage.draw(seed, net, k, s) if self.storage is not None else None
             dg = self.dg.draw(seed, net, k, s) if self.dg is not None else None
             dg_avail = self.dg.capacity(seed, net, k, s) if self.dg is not None else None
-            draws = _Draws(loads.p_w, loads.q_var, pv, loads.time_s, v_src, bess, dg, dg_avail,
-                           u2, angle)  # fmt: skip
+            draws = _Draws(p_w, q_var, pv, loads.time_s, v_src, bess, dg, dg_avail, u2, angle)
             self._set(draws)
             self._draws, self._note = draws, None
             state, status = self._controls(s)

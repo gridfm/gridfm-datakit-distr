@@ -10,7 +10,10 @@ Each quantity draws from its own stream of the variant's seed, in name order:
   rescale its capacitance wrongly;
 - grounding resistance: ``R`` of a grounding reactor, ``Rneut`` of a grounded wye winding;
 - phase reallocation: ``round(fraction · n)`` of the ``n`` eligible single-phase loads, chosen
-  uniformly, each moved to one of the other phases of its bus, neutral kept.
+  uniformly, each moved to one of the other phases of its bus, neutral kept;
+- the substation (``variants.upstream``, :mod:`~gridfm_datakit_distr.variants.upstream`): the
+  transformer rating; the source's sequence impedances follow from it, and the other feeders
+  are added as loads at the source bus.
 
 Dispatchable generators are not drawn: one at every :data:`DG_EVERY`-th customer
 (:func:`dg_sites`), at the network's capacity (``variants/dg.py``), the same in every variant.
@@ -32,6 +35,13 @@ from gridfm_datakit_distr.config.value_spec import Fixed
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel
 from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
 from gridfm_datakit_distr.variants.targets import CustomerTarget, LineTarget, VariantTargets
+from gridfm_datakit_distr.variants.upstream import (
+    Upstream,
+    draw_rating,
+    load_commands,
+    source_edit,
+    source_impedance,
+)
 
 _IDENTITY = Fixed(1.0)
 _NO_PV = Fixed(0.0)
@@ -40,6 +50,33 @@ DG_EVERY = 4
 _PV_KWP_BOUNDS = (4.0, 10.0, 150.0)
 _STORAGE_KW = (4.0, 8.0, 25.0, 100.0)
 """SMART-DS customer batteries: the rating (kW) in each band of PV kWp between the bounds."""
+
+
+@dataclass(frozen=True, slots=True)
+class Substation:
+    """The drawn substation of a variant (``variants.upstream``)."""
+
+    site: Upstream
+    rating_kva: float
+    z1_ohm: complex
+    """Positive- (and negative-) sequence impedance of the source (ohm)."""
+    z0_ohm: complex
+    """Zero-sequence impedance of the source (ohm)."""
+
+    @property
+    def loads(self) -> dict[str, tuple[float, float]]:
+        """Lumped load -> nominal (P (W), Q (var)) of the other feeders on its phase."""
+        site = self.site
+        return {e: (site.p_w[k], site.q_var[k]) for k, e in enumerate(site.loads)}
+
+    def record(self) -> dict[str, object]:
+        """The ``upstream`` entry of ``variants.perturbation``."""
+        return {
+            "rating_kva": self.rating_kva,
+            "z1_ohm": [self.z1_ohm.real, self.z1_ohm.imag],
+            "z0_ohm": [self.z0_ohm.real, self.z0_ohm.imag],
+            "loads": {e: list(pq) for e, pq in self.loads.items()},
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +111,8 @@ class Perturbation:
     dg_kw: dict[str, float] = field(default_factory=dict)
     """Customer load -> capacity ``P^max`` of its dispatchable generator (kW), not drawn: the
     network's."""
+    upstream: Substation | None = None
+    """The substation behind the source (``variants.upstream``); None: the source as loaded."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -96,6 +135,8 @@ class Perturbation:
             data["pv_penetration"] = self.pv_penetration
         if self.storage_share:
             data["storage_share"] = self.storage_share
+        if self.upstream is not None:
+            data["upstream"] = self.upstream.record()
         return json.dumps(data, sort_keys=True)
 
 
@@ -110,11 +151,12 @@ def sample_perturbation(
     der: PV | None = None,
     storage: Storage | None = None,
     dg_kw: float | None = None,
+    upstream: Upstream | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
     ``attempt``); with ``der``, the PV units of its customers too, with ``storage`` the
-    storage units of the customers with PV, and with ``dg_kw`` a dispatchable generator of that
-    capacity (kW) at each of :func:`dg_sites`."""
+    storage units of the customers with PV, with ``dg_kw`` a dispatchable generator of that
+    capacity (kW) at each of :func:`dg_sites`, and with ``upstream`` the network's substation."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -149,9 +191,14 @@ def sample_perturbation(
     rho, kwp, pf, fraction, threshold = _pv(der, targets, seed, net, k, attempt)
     share, storage_kw = _storage(storage, targets, kwp, seed, net, k, attempt)
     dg = {c.element: dg_kw for c in dg_sites(targets)} if dg_kw is not None else {}
+    substation = None
+    if upstream is not None:
+        rng = variant_rng(seed, net, k, VariantStream.UPSTREAM_RATING, attempt)
+        kva = draw_rating(upstream.customers, rng)
+        substation = Substation(upstream, kva, *source_impedance(kva, upstream.kv_ll))
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
-        share, storage_kw, dg,
+        share, storage_kw, dg, substation,
     )  # fmt: skip
 
 
@@ -239,7 +286,8 @@ def edit_script(
 ) -> list[str]:
     """OpenDSS commands realising ``p``: lines, grounding points, loads, PV units, storage units,
     then dispatchable generators (on their customer's nodes, after its phase move; output set per
-    scenario; constant power within the load window ``window``, pu), each in name order."""
+    scenario; constant power within the load window ``window``, pu), each in name order; then the
+    substation: the source's impedances and the other feeders' loads (power set per scenario)."""
     script = []
     for t in targets.lines:
         alpha = p.line_length.get(t.element, 1.0)
@@ -267,6 +315,9 @@ def edit_script(
                     f"kV={c.kv!r} conn={c.conn} kW=0 kvar=0 model=1 vminpu={window[0]!r} "
                     f"vmaxpu={window[1]!r}"
                 )
+    if p.upstream is not None:
+        up = p.upstream
+        script += source_edit(up.site.vsource, up.z1_ohm, up.z0_ohm) + load_commands(up.site)
     return script
 
 

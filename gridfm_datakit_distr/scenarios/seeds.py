@@ -46,6 +46,8 @@ class VariantStream(IntEnum):
     """Which PV customers get a storage unit (``der.storage.share``)."""
     STORAGE_SIZE = 11
     """Power rating of each storage unit, drawn only when ``der.storage.kw`` is a value spec."""
+    UPSTREAM_RATING = 12
+    """Rating of the substation's transformer (``variants.upstream``)."""
 
 
 class ScenarioStream(IntEnum):

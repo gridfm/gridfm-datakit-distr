@@ -173,6 +173,18 @@ phase of their bus, with their neutral; phase-to-phase loads stay. Drawn per var
 | `variants.phase_reallocation.enabled` | boolean | `true` | Reallocate in each variant; `false` ignores `fraction`. |
 | `variants.phase_reallocation.fraction` | number ≥ 0 and ≤ 1 | `0.2` | Share of the eligible loads moved (rounded to the nearest count), each to one of the other phases of its bus, chosen uniformly. |
 
+### `variants.upstream`
+
+The MV/LV substation behind the source of the CSIRO feeders
+([Variants](variants.md#upstream-substation)), whose source is an ideal LV source: per
+variant, a transformer rating drawn from those of ENWL substations with as many customers;
+the source gets the transformer's and the MV network's impedances, and the other feeders of
+the substation become loads at the source bus, scaled per scenario with the customers.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `variants.upstream.enabled` | boolean | `false` | Give every variant its substation. Only for `csiro_enwl` networks (`generate` refuses others) and the `synthetic` load provider. `false` (default): the source as loaded, and every output is the same as without this section. |
+
 ## `der`
 
 Distributed energy resources added to every variant.

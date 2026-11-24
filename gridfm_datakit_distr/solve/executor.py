@@ -67,6 +67,7 @@ from gridfm_datakit_distr.solve.tables import (
 from gridfm_datakit_distr.variants.dg import dg_capacity
 from gridfm_datakit_distr.variants.generate import VariantResult, generate_variant
 from gridfm_datakit_distr.variants.targets import VariantTargets, collect_targets
+from gridfm_datakit_distr.variants.upstream import Upstream, upstream_of
 from gridfm_datakit_distr.views.kron import KronView
 from gridfm_datakit_distr.views.posseq import PosSeqError, find_backbone
 
@@ -88,6 +89,8 @@ class Job:
     dg_kw: float | None = None
     """Capacity of the network's dispatchable generators (kW), computed once by
     :func:`generate`; None: no DG."""
+    upstream: Upstream | None = None
+    """The network's substation (``variants.upstream``), read once by :func:`generate`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +255,8 @@ def _network_tables(
     """Passports and ``catalog/networks`` (the networks are loaded once here: a network that
     does not load stops the run before any unit); with ``der.dg``, the capacity of each
     network's dispatchable generators, recorded in the manifest and carried by its job; with
+    ``variants.upstream``, its substation (other feeders, customers), recorded and carried
+    likewise; with
     PVGIS, each network's series, recorded in the manifest and the passport (a resumed dataset
     refuses a series other than the one it started with)."""
     options = prepare_options(config)
@@ -280,6 +285,13 @@ def _network_tables(
             dg = dg_capacity(job.network, collect_targets(prepared), vmax, options, root)
             manifest.networks[j]["dg"] = dg.record()
             job = replace(job, dg_kw=dg.kw)
+        if config.variants.upstream.enabled:
+            try:
+                site = upstream_of(job.network, prepared, catalog, root)
+            except ValueError as exc:
+                raise GenerationError(str(exc)) from exc
+            manifest.networks[j]["upstream"] = site.record()
+            job = replace(job, upstream=site)
         ready.append(job)
     manifest.save()
     writer.write_table(
@@ -418,7 +430,8 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
     i, seed = task.job.network_idx, config.settings.seed
     variant = generate_variant(
         network, targets, config.variants, seed, k, options=options, root=root,
-        der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw, keep_prepared=True,
+        der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw,
+        upstream=task.job.upstream, keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":

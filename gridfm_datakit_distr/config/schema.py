@@ -296,6 +296,21 @@ class PhaseReallocation(_Config):
     )
 
 
+class Upstream(_Config):
+    """The MV/LV substation behind the source of the CSIRO feeders
+    ([Variants](variants.md#upstream-substation)), whose source is an ideal LV source: per
+    variant, a transformer rating drawn from those of ENWL substations with as many customers;
+    the source gets the transformer's and the MV network's impedances, and the other feeders of
+    the substation become loads at the source bus, scaled per scenario with the customers."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Give every variant its substation. Only for `csiro_enwl` networks "
+        "(`generate` refuses others) and the `synthetic` load provider. `false` (default): the "
+        "source as loaded, and every output is the same as without this section.",
+    )
+
+
 class Variants(_Config):
     """Perturbed copies of each network ([Variants](variants.md)). Each variant draws from its own
     streams; its base case must converge and pass the Kirchhoff residual check, else it is redrawn,
@@ -311,6 +326,7 @@ class Variants(_Config):
     )
     admittance: Admittance = Admittance()
     phase_reallocation: PhaseReallocation = PhaseReallocation()
+    upstream: Upstream = Upstream()
 
 
 class PV(_Config):
@@ -860,3 +876,13 @@ class GenerationConfig(_Config):
     labels: Labels = Labels()
     views: Views = Views()
     settings: Settings
+
+    @model_validator(mode="after")
+    def _upstream_needs_synthetic_loads(self) -> GenerationConfig:
+        """The other feeders of a substation follow the synthetic provider's global factor."""
+        if self.variants.upstream.enabled and self.scenarios.profiles.provider != "synthetic":
+            raise ValueError(
+                "variants.upstream needs scenarios.profiles.provider 'synthetic', got "
+                f"{self.scenarios.profiles.provider!r}"
+            )
+        return self

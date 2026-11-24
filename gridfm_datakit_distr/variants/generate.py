@@ -17,10 +17,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 import pyarrow as pa
 
 from gridfm_datakit_distr.config.schema import PV, Storage, Variants
 from gridfm_datakit_distr.extract.injections import injections
+from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel
 from gridfm_datakit_distr.model.ids import variant_id
@@ -35,6 +37,7 @@ from gridfm_datakit_distr.variants.perturbation import (
     sample_perturbation,
 )
 from gridfm_datakit_distr.variants.targets import VariantTargets
+from gridfm_datakit_distr.variants.upstream import Upstream, sequence_admittance
 
 MAX_ATTEMPTS = 3
 EDIT_TOL = 1e-12
@@ -99,7 +102,8 @@ def physics_failures(prepared: PreparedNetwork) -> list[str]:
 
 
 def readback_mismatches(p: Perturbation, prepared: PreparedNetwork) -> list[str]:
-    """Grounding resistances and load connections of ``prepared`` that differ from ``p``."""
+    """Grounding resistances, load connections, DER units and the substation (source
+    admittance, lumped loads) of ``prepared`` that differ from ``p``."""
     api, model = prepared.ctx.api, prepared.model
     out = []
     for key, ohm in p.grounding_ohm.items():
@@ -134,6 +138,33 @@ def readback_mismatches(p: Perturbation, prepared: PreparedNetwork) -> list[str]
         generator = f"Generator.{prefix}_{load.split('.', 1)[1]}"
         if nodes_of(generator) is None or nodes_of(generator) != nodes_of(load):
             out.append(f"{generator}: not on the nodes of {load}")
+    if p.upstream is not None:
+        out += _substation_mismatches(p, prepared)
+    return out
+
+
+def _substation_mismatches(p: Perturbation, prepared: PreparedNetwork) -> list[str]:
+    """The source's admittance against the one its sequence impedances give, and the lumped
+    loads on their nodes."""
+    up = p.upstream
+    assert up is not None
+    out = []
+    y = sequence_admittance(up.z1_ohm, up.z0_ohm)
+    y_s = read_source(prepared.ctx, prepared.model).y_s
+    deviation = float(np.abs(y_s - y).max() / np.abs(y).max())
+    if deviation > EDIT_TOL:
+        out.append(f"{up.site.vsource}: admittance deviates by {deviation:.1e} from Z1, Z0")
+    model = prepared.model
+    elements = {e.name: e for e in model.elements}
+    for k, load in enumerate(up.site.loads):
+        e = elements.get(load)
+        nodes = None if e is None else [
+            model.nodes[n].opendss_node if n != GROUND else "0" for n in e.terminals[0]
+        ]  # fmt: skip
+        bus, *conductors = up.site.bus1(k).split(".")
+        expected = [f"{bus}.{c}" for c in conductors] + (["0"] if len(conductors) == 1 else [])
+        if nodes != expected:
+            out.append(f"{load}: nodes {nodes}, expected {expected}")
     return out
 
 
@@ -149,11 +180,12 @@ def generate_variant(
     der: PV | None = None,
     storage: Storage | None = None,
     dg_kw: float | None = None,
+    upstream: Upstream | None = None,
     keep_prepared: bool = False,
 ) -> VariantResult:
     """Variant ``k`` of ``network``; with ``der``, the PV units of its customers, with
     ``storage`` the storage units of those with PV, with ``dg_kw`` the network's dispatchable
-    generators at that capacity (kW). Its draws depend
+    generators at that capacity (kW), with ``upstream`` its substation. Its draws depend
     on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
     carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
@@ -163,8 +195,9 @@ def generate_variant(
     failures: list[str] = []
     for attempt in range(MAX_ATTEMPTS):
         p = sample_perturbation(
-            config, targets, seed, net, k, attempt, der=der, storage=storage, dg_kw=dg_kw
-        )
+            config, targets, seed, net, k, attempt, der=der, storage=storage, dg_kw=dg_kw,
+            upstream=upstream,
+        )  # fmt: skip
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)
         deviation = check_edits(p, targets, prepared.model)

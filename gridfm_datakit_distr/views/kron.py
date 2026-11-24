@@ -192,13 +192,13 @@ class KronView:
         if failures:
             raise KronError(f"{variant.variant_id}: the Kron view fails its base case: {failures}")
         self.ctx, self.model = prepared.ctx, prepared.model
-        if [c.element for c in customers_of(prepared)] != [c.element for c in runner.customers]:
+        if tuple(c.element for c in customers_of(prepared)) != runner.load_elements:
             raise KronError(f"{variant.variant_id}: the Kron view has other loads than the model")
         by_name = {n.opendss_node: n.idx for n in full.nodes}
         self.nodes = [(n.bus, n.conductor, by_name[n.opendss_node]) for n in self.model.nodes]
         self._to_model = self.ctx.ynode_positions(n.opendss_node for n in self.model.nodes)
         api = self.ctx.api
-        self._load_idx = engine_indices(api.Loads.AllNames(), (c.element for c in runner.customers))
+        self._load_idx = engine_indices(api.Loads.AllNames(), runner.load_elements)
         self._der_idx = engine_indices(api.Generators.AllNames(), runner.der_generators)
         self.ctx.api.Vsources.First()
         self._source = str(self.ctx.api.Vsources.Name())

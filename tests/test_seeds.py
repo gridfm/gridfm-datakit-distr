@@ -160,6 +160,7 @@ def test_stream_codes_are_stable() -> None:
         "DER_REACTIVE_THRESHOLD": 9,
         "STORAGE_PLACEMENT": 10,
         "STORAGE_SIZE": 11,
+        "UPSTREAM_RATING": 12,
     }
     assert {s.name: int(s) for s in ScenarioStream} == {
         "PROFILE_TIME": 0,

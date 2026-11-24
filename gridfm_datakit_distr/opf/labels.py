@@ -220,12 +220,12 @@ class OPFLabeller:
                 model, self.source, *self.limits_pu, self.time_limit_s, self.s_base_va
             )
             runner = self.runner
-            customers = tuple(c.element for c in runner.customers)
+            loads = runner.load_elements
             pv = tuple(u.generator for u in (runner.pv.units if runner.pv is not None else ()))
             bess = tuple(u.generator for u in (runner.storage.units if runner.storage else ()))
             dg = tuple(u.generator for u in self.dg_units)
             if (problem.load_names, problem.pv_names, problem.bess_names, problem.dg_names) != (
-                customers, pv, bess, dg,
+                loads, pv, bess, dg,
             ):  # fmt: skip
                 raise ValueError("the OPF's loads or DER units differ from the scenario's")
             if len(self._problems) >= MAX_CACHED_PROBLEMS:

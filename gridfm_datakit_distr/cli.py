@@ -322,6 +322,15 @@ def generate(
     if updates:  # execution settings only: not part of the config hash
         config = config.model_copy(update={"settings": config.settings.model_copy(update=updates)})
     jobs = jobs_of(config, catalog)
+    if config.variants.upstream.enabled:
+        from gridfm_datakit_distr.variants.upstream import upstream_issues
+
+        outside = upstream_issues([j.network for j in jobs])
+        if outside:
+            reason = f"applies to csiro_enwl feeders only, not {', '.join(outside)}"
+            error = ConfigError(str(config_path), [("variants.upstream.enabled", reason)])
+            typer.echo(f"error: {error}", err=True)
+            raise typer.Exit(2)
     if config.networks.neutral_representation == "explicit":
         kron = [
             j.network.id for j in jobs if j.representation is None and j.network.neutral == "kron"

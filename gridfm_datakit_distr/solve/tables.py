@@ -119,7 +119,7 @@ def chunk_tables(
     ``labels.element_currents`` (otherwise they are Yprim · V)."""
     element_currents = runner.config.labels.element_currents
     index = {e.name: e.idx for e in runner.model.elements}
-    load_idx = np.array([index[c.element] for c in runner.customers], dtype=np.int32)
+    load_idx = np.array([index[e] for e in runner.load_elements], dtype=np.int32)
     der_idx = np.array([index[g] for g in runner.der_generators], dtype=np.int32)
     pv_units = runner.pv.units if runner.pv is not None else ()
     bess_units = runner.storage.units if runner.storage is not None else ()
