@@ -39,8 +39,11 @@ lightest 5 % of substations a year's 10th percentile is about 0.14 of the nomina
 floor 0.1 covers; the ceiling 1.2 lies above a year's 90th percentile at 86 % of the substations and
 leaves room for more electric heating and vehicles. The density is not matched to today: drawn
 uniformly, a dataset holds more heavy states than a year measured now; narrow the range for today's
-typical level. On other networks the nominal loads may mean something else: set `global_scale` to
-match.
+typical level. On every network the nominal loads stand for a peak, so `g = 1` means the same
+thing everywhere: the IEEE test cases' published loads (the peak by OpenDSS's convention for base
+kW; the files do not say), the European LV feeder's placeholders (55 kW, 0.96 of its profiles'
+coincident peak over the day) and the EDP networks' coincident peak over their profile window
+([Networks](networks.md#networks)).
 
 Only the EDP networks and the IEEE European LV feeder (`ieee_eulv`: one day at 1-minute steps)
 carry loadshapes. `generate`, with or without `--dry-run`, refuses a loadshape provider on any

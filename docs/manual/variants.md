@@ -111,8 +111,10 @@ places them in every variant of every network. What the paper does not fix is ou
   DG. A scan of `P = s · 2^k`, `k = 0 … 6` (`s`: the customers' total nominal apparent power per
   unit) brackets the first point at a limit, and a bisection narrows it to 0.1 % of `P`; the scan
   is needed because a transformer's flow first falls, then rises with `P`. A step that jumps over
-  the limit to a point where the power flow diverges (EDP urban) is bisected in turn, so the limit
-  is still found.
+  the limit to a point where the power flow diverges is bisected in turn, so a limit before the
+  divergence is still found. EDP urban has none: one of its transformers is above its rating
+  without DG ([Networks](networks.md#known-differences-and-exclusions)) and the power flow
+  diverges before any other limit is reached, so it gets no DG (`not_converged`).
 - **Record.** `manifest.json` (`networks[].dg`): `status`, `n_units`, `p_max_w` (W), `binding`
   (`voltage` or the transformer's name) and `ignored` (transformers above their rating without
   DG); the dataset card lists them, and `variants/variants.perturbation` holds `dg_kw` per load.

@@ -85,15 +85,22 @@ and IEEE 8500's unbalanced case are not yet validated.
 | `ieee_eulv` | `epri_ieee` | 907 / 2721 | 55 | kron | 11, 0.416 | — | C1–C7 pass |
 | `ieee8500` | `epri_ieee` | 4876 / 8531 | 1177 (split phase) | kron | 115, 12.47, 0.208 | — | C1–C7 pass |
 | `csiro_enwl/nNN_fM` (128 four-wire feeders) | `csiro_enwl` | 236 (n23_f3) – 28 092 (n08_f2) nodes | 2–302 | explicit | 0.416 | bases re-based from the 0.48 kV defaults | 127 of 128 pass C1–C6 (`n13_f4` fails C1, below); C7 on the 26 feeders of `integrationtests/golden/networks.txt` |
-| `edp/industrial` | `edp` | 777 / 2888 | 191 | mixed (MV Kron, LV four-wire) | 22, 0.4 | master cut before the monitors, loadshape-mean base loads, LV neutrals grounded through 5 + j0.01 Ω | C1–C7 pass |
-| `edp/rural` | `edp` | 4649 / 18 595 | 2731 | explicit | 22, 0.4 | master cut, loadshape-mean base loads | C1–C7 pass |
-| `edp/urban` | `edp` | 6444 / 25 775 | 35 297 | explicit | 22, 0.4 | master cut, loadshape-mean base loads | C1–C7 pass |
+| `edp/industrial` | `edp` | 777 / 2888 | 191 | mixed (MV Kron, LV four-wire) | 22, 0.4 | master cut before the monitors, base loads at the coincident peak, LV neutrals grounded through 5 + j0.01 Ω | C1–C7 pass |
+| `edp/rural` | `edp` | 4649 / 18 595 | 2731 | explicit | 22, 0.4 | master cut, base loads at the coincident peak | C1–C7 pass |
+| `edp/urban` | `edp` | 6444 / 25 775 | 35 297 | explicit | 22, 0.4 | master cut, base loads at the coincident peak | C1–C7 pass |
 
 Voltage levels list the zone nominal voltages: regulated zones whose nominal comes from a
 regulator winding (2.4 kV × √3 = 4.157 kV) are shown under their system level. The European LV and
-EDP base loads are placeholders in the sources (1 kW per load); EDP's are replaced by their
-loadshape means, the European LV's keep their own loadshapes. Only these networks (EDP and the
-European LV feeder) carry loadshapes ([Scenarios](scenarios.md#loads)).
+EDP base loads are placeholders in the sources (1 kW per load); the European LV's keep their own
+loadshapes. EDP's take the mean of their own loadshape times one factor `c` per network, so that
+together they equal the network's coincident peak: the maximum of the summed measured load over
+the profile window (the shortest multi-point loadshape: 168 h rural, 24 h urban, 480 h industrial;
+one-point shapes count as constants), divided by the sum of the loads' means. Base kW at the peak
+is OpenDSS's own convention (`Load.kW` "normally" the maximum, `Cfactor` the ratio of average to
+peak), which the other sources follow: `c` is 1.48 (rural), 1.32 (urban) and 1.73 (industrial),
+recorded per network in the passport (`normalisation`, step `base_loads`: `cfactor`, `window_h`).
+A peak over a window of one day to three weeks is a lower bound of the year's. Only these
+networks (EDP and the European LV feeder) carry loadshapes ([Scenarios](scenarios.md#loads)).
 
 ## Locations
 
@@ -124,6 +131,15 @@ The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester (5
   of them under constant power; the published model converges because its loads become constant
   impedances below 0.95 pu. It stays in the catalog: a pattern such as `csiro_enwl/*` selects it,
   and then every unit of its variants fails. Leave it out of `networks.include`.
+- **EDP urban, transformer T55747:** in the published model this 630 kVA transformer feeds 2 353
+  customers (the other transformers' areas: median 478). At the model's own measured peak hour it
+  carries 1.33 times its rating, the phase current on its LV cables reaches 3.1 times their
+  `Imax` in the source database, and the voltage at its farthest customers falls to 0.79 pu; every
+  other area stays above 0.96 pu. The published data show no open switch that would move part of
+  the area to another transformer. The model is used as published, so heavy scenarios of
+  `edp/urban` end `off_setpoint` or `not_converged`, recorded with their status
+  ([Scenarios](scenarios.md#power-flow-and-statuses)): with the default load range, 204 of 1000
+  scenarios, every one whose total load exceeded 1.08 times the nominal and none below 0.88.
 - **PMD's own parser** differs from OpenDSS on these sources (mile = 1609.3 m, dropped grounding
   reactors), so the conformance suite has no cross-engine check (C8). Engine agreement is checked
   through the OPF labels: each dispatch is verified in OpenDSS ([OPF labels](opf.md)), and the OPF
