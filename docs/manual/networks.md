@@ -96,9 +96,10 @@ loadshapes. EDP's take the mean of their own loadshape times one factor `c` per 
 together they equal the network's coincident peak: the maximum of the summed measured load over
 the profile window (the shortest multi-point loadshape: 168 h rural, 24 h urban, 480 h industrial;
 one-point shapes count as constants), divided by the sum of the loads' means. Base kW at the peak
-is OpenDSS's own convention (`Load.kW` "normally" the maximum, `Cfactor` the ratio of average to
-peak), which the other sources follow: `c` is 1.48 (rural), 1.32 (urban) and 1.73 (industrial),
-recorded per network in the passport (`normalisation`, step `base_loads`: `cfactor`, `window_h`).
+is OpenDSS's own convention (`Load.kW` "normally" the maximum; its per-load `Cfactor` relates
+average to peak), which the other sources follow. `c` is 1.48 (rural), 1.32 (urban) and 1.73
+(industrial), recorded per network in the passport (`normalisation`, step `base_loads`:
+`coincident_peak_ratio`, `window_h`).
 A peak over a window of one day to three weeks is a lower bound of the year's. Only these
 networks (EDP and the European LV feeder) carry loadshapes ([Scenarios](scenarios.md#loads)).
 

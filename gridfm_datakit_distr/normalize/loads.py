@@ -97,8 +97,8 @@ class BaseLoads:
     total_kw_before: float
     total_kw: float
     total_kvar: float
-    cfactor: float
-    """Coincident peak over the profile window / sum of the loads' means (OpenDSS's ``Cfactor``)."""
+    coincident_peak_ratio: float
+    """The network's coincident peak over the profile window / the sum of its loads' means."""
     window_h: float
     """Duration of the profile window (h): the shortest multi-point shape."""
     commands_sha256: str
@@ -108,9 +108,10 @@ class BaseLoads:
 def loads_at_coincident_peak(ctx: DssContext) -> BaseLoads:
     """Set each enabled load's base kW and kvar to ``c`` times the mean of its loadshape.
 
-    ``c`` is one factor for the network (OpenDSS's ``Cfactor``, average to peak): the maximum of
-    the loads' summed P over the profile window divided by the sum of their means, so the base
-    loads add up to the network's coincident peak. The window is the shortest multi-point shape;
+    ``c`` is one ratio for the network: the maximum of the loads' summed P over the profile window
+    divided by the sum of their means, so the base loads add up to the network's coincident peak
+    (base kW at the peak is OpenDSS's convention; its ``Cfactor`` is the same kind of ratio, per
+    load). The window is the shortest multi-point shape;
     one-point shapes are constants (as the ``network_loadshapes`` provider reads them). Each mean is
     over the load's whole shape.
 
@@ -157,11 +158,11 @@ def loads_at_coincident_peak(ctx: DssContext) -> BaseLoads:
         raise LoadNormalisationError(f"loadshapes with different intervals {sorted(intervals)} s")
     n = min((p.size for p in p_kw if p.size > 1), default=1)
     peak = sum((p[:n] if p.size > 1 else p[0] for p in p_kw), start=np.zeros(n)).max()
-    cfactor = float(peak / sum(kw for kw, _ in means))
+    ratio = float(peak / sum(kw for kw, _ in means))
     commands = []
     total_kw = total_kvar = 0.0
     for (name, _, _, _), (kw_mean, kvar_mean) in zip(loads, means, strict=True):
-        kw_new, kvar_new = cfactor * kw_mean, cfactor * kvar_mean
+        kw_new, kvar_new = ratio * kw_mean, ratio * kvar_mean
         command = f"Edit Load.{name} kW={kw_new!r} kvar={kvar_new!r}"
         ctx.command(command)
         with ctx.engine_call(f"Loads {name}"):
@@ -178,7 +179,7 @@ def loads_at_coincident_peak(ctx: DssContext) -> BaseLoads:
         total_kw_before=sum(kw for _, kw, _, _ in loads),
         total_kw=total_kw,
         total_kvar=total_kvar,
-        cfactor=cfactor,
+        coincident_peak_ratio=ratio,
         window_h=n * intervals.pop() / 3600 if intervals else 0.0,
         commands_sha256=digest,
     )

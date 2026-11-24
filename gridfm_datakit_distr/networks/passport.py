@@ -76,7 +76,8 @@ def build_passport(prepared: PreparedNetwork, catalog: Catalog) -> dict[str, Any
         normalisation.append({
             "step": "base_loads", "policy": network.base_loads,
             "n_loads": b.n_loads, "total_kw_before": b.total_kw_before, "total_kw": b.total_kw,
-            "total_kvar": b.total_kvar, "cfactor": b.cfactor, "window_h": b.window_h,
+            "total_kvar": b.total_kvar, "coincident_peak_ratio": b.coincident_peak_ratio,
+            "window_h": b.window_h,
             "commands_sha256": b.commands_sha256,
         })  # fmt: skip
     loads = prepared.loads
@@ -221,8 +222,9 @@ def inspect_text(passport: dict[str, Any]) -> str:
                          f"{step['max_deviation_as_loaded']:.1e} as loaded, "
                          f"{step['max_deviation']:.1e} after")  # fmt: skip
         elif step["step"] == "base_loads":
-            change = (f"{step['total_kw_before']:.6g} -> {step['total_kw']:.6g} kW, c "
-                      f"{step['cfactor']:.6g} over {step['window_h']:g} h")  # fmt: skip
+            ratio = step["coincident_peak_ratio"]
+            change = (f"{step['total_kw_before']:.6g} -> {step['total_kw']:.6g} kW, coincident "
+                      f"peak / mean {ratio:.6g} over {step['window_h']:g} h")  # fmt: skip
             lines.append(f"  base loads: {step['policy']} ({step['n_loads']} loads, {change})")
     vmin, vmax = base["phase_voltage_pu"] or [float("nan")] * 2
     lines.append(

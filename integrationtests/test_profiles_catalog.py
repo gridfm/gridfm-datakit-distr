@@ -63,7 +63,7 @@ def test_european_lv_on_peak(network_master: Callable[[str], Path]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("network_id", "n_loads", "hours", "n_constant", "cfactor"),
+    ("network_id", "n_loads", "hours", "n_constant", "ratio"),
     [
         ("edp/rural", 2731, 168, 0, 1.4836),
         ("edp/industrial", 191, 480, 34, 1.7338),  # 34 meters with one reading; shapes of 480-744 h
@@ -76,7 +76,7 @@ def test_edp_meter_data(
     n_loads: int,
     hours: int,
     n_constant: int,
-    cfactor: float,
+    ratio: float,
 ) -> None:
     network_master(network_id)
     network = load_catalog().network(network_id)
@@ -99,12 +99,13 @@ def test_edp_meter_data(
     assert sum(c.p_w for c in customers) == pytest.approx(measured.max(), rel=1e-12)
     base = prepared.compiled.base_loads
     assert base is not None
-    assert (base.cfactor, base.window_h) == pytest.approx((cfactor, hours), rel=1e-4)
+    assert (base.coincident_peak_ratio, base.window_h) == pytest.approx((ratio, hours), rel=1e-4)
     if network_id != "edp/industrial":  # full series: c times their mean is the base load
         nominal = {c.element: (c.p_w, c.q_var) for c in customers}
         means = np.stack([series.p_w.mean(axis=1), series.q_var.mean(axis=1)], 1)
         expected = np.array([nominal[n] for n in series.names])
-        np.testing.assert_allclose(base.cfactor * means, expected, rtol=1e-12, atol=1e-9)
+        c = base.coincident_peak_ratio
+        np.testing.assert_allclose(c * means, expected, rtol=1e-12, atol=1e-9)
 
 
 def test_networks_without_loadshapes_are_refused(network_master: Callable[[str], Path]) -> None:

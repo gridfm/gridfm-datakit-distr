@@ -96,7 +96,8 @@ def test_base_loads_are_the_coincident_peak(tmp_path: Path) -> None:
     assert (api.Loads.kW(), api.Loads.kvar()) == pytest.approx((2.0 * c, 1.0 * c))
     assert record.total_kw_before == pytest.approx(2.0 + 5.0 + 1.0)
     assert (record.total_kw, record.total_kvar) == pytest.approx((10.0, 1.2 * c))
-    assert (record.cfactor, record.window_h) == pytest.approx((c, 2.0))  # interval=1 is 1 h
+    assert record.coincident_peak_ratio == pytest.approx(c)
+    assert record.window_h == pytest.approx(2.0)  # interval=1 is 1 h
 
 
 def test_one_point_shapes_are_constants_in_the_window(tmp_path: Path) -> None:
@@ -106,7 +107,7 @@ def test_one_point_shapes_are_constants_in_the_window(tmp_path: Path) -> None:
     ctx.load(write(tmp_path, NETWORK + one_point + load_d))
     record = loads_at_coincident_peak(ctx)
     # d adds 4 kW to every point of the window: (9, 14) kW against means 8 + 4
-    assert record.cfactor == pytest.approx(14.0 / 12.0)
+    assert record.coincident_peak_ratio == pytest.approx(14.0 / 12.0)
     ctx.api.Loads.Name("d")
     assert ctx.api.Loads.kW() == pytest.approx(4.0 * 14.0 / 12.0)
 
