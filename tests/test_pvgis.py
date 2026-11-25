@@ -309,6 +309,37 @@ def test_rate_limits_are_retried_a_bounded_number_of_times(
     assert not (tmp_path / "pvgis").exists() or not list((tmp_path / "pvgis").iterdir())
 
 
+@pytest.mark.parametrize(
+    "dropped",
+    [urllib.error.URLError(ConnectionResetError(104, "Connection reset by peer")), TimeoutError()],
+)
+def test_a_dropped_connection_is_retried(
+    tmp_path: Path,
+    http: Callable[..., FakeHTTP],
+    monkeypatch: pytest.MonkeyPatch,
+    dropped: Exception,
+) -> None:
+    fake = http([], encode(document()))  # also stubs the backoff's sleep
+    failures = [dropped]
+
+    def flaky(request: Any, timeout: float) -> Any:
+        if failures:
+            fake.calls.append(request.full_url)
+            raise failures.pop()
+        return fake(request, timeout)
+
+    monkeypatch.setattr(pvgis.urllib.request, "urlopen", flaky)
+    path, _, downloaded = fetch_series(one_year(), MANCHESTER, tmp_path)
+    assert downloaded
+    assert len(fake.calls) == 2
+    assert path.read_bytes() == encode(document())
+    failures[:] = [dropped] * pvgis.ATTEMPTS  # never answers: gives up after the last attempt
+    fake.calls.clear()
+    with pytest.raises(PVGISError, match=f"\\({pvgis.ATTEMPTS} attempts\\)"):
+        fetch_series(one_year(), MANCHESTER, tmp_path, force=True)
+    assert len(fake.calls) == pvgis.ATTEMPTS
+
+
 def test_a_refused_request_says_why(tmp_path: Path, http: Callable[..., FakeHTTP]) -> None:
     error = b'{"message":"Location over the sea. Please, select another location","status":400}'
     fake = http([400], error_body=error)

@@ -171,7 +171,7 @@ def fetch_series(
 
 
 def _get(url: str) -> bytes:
-    """GET, retried on 429 and 529 after 1, 2, 4 s."""
+    """GET, retried on 429 and 529 and on a dropped connection or a timeout, after 1, 2, 4 s."""
     delay = 1.0
     for attempt in range(1, ATTEMPTS + 1):
         try:
@@ -200,7 +200,11 @@ def _get(url: str) -> bytes:
             TimeoutError,
             ConnectionError,
         ) as exc:
-            raise PVGISError(f"GET {url}: {exc}") from exc
+            if attempt < ATTEMPTS:  # PVGIS resets some connections; the next try usually passes
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise PVGISError(f"GET {url}: {exc} ({attempt} attempts)") from exc
     raise AssertionError("unreachable")
 
 

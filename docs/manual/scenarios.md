@@ -157,7 +157,8 @@ no cloud cover is drawn (`cloudiness` must keep its default).
   [`orientation`](#orientation), one per orientation class) into the cache (`<cache>/pvgis/`) and records the file's SHA-256 next to it; every later use checks the file
   against it, and a changed file is an error (`fetch --config CONFIG --force` downloads it
   again). `generate` never downloads: without the series it stops and names the command.
-  Rate-limited or overloaded answers (HTTP 429, 529) are retried three times.
+  Rate-limited or overloaded answers (HTTP 429, 529), dropped connections and timeouts are
+  retried three times.
 - **Time.** PVGIS stamps hourly records in UTC (inferred: `seriescalc` does not say), SARAH3 ones
   about ten minutes past the hour; each record is taken as the hour that starts at its `HH:00`.
   A scenario draws one record for the whole network from its own stream. With a load time of

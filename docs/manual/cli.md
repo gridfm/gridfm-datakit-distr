@@ -53,8 +53,8 @@ A PVGIS series cannot have a checksum in the package (the locations are the user
 --config` records its SHA-256 at download next to it, in `<cache>/pvgis/`, and a cached series is
 checked against it before each use; a changed series is an error, downloaded again only with
 `--force`. The response must report the parameters requested (PVGIS ignores what it does not
-parse). HTTP 429 and 529 (too many requests, overloaded) are retried three times, after 1, 2 and
-4 s.
+parse). HTTP 429 and 529 (too many requests, overloaded), dropped connections and timeouts are
+retried three times, after 1, 2 and 4 s.
 
 ## `inspect`
 
