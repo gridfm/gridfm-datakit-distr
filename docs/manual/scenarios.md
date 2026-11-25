@@ -184,8 +184,8 @@ follows `der.pv.reactive_mode`:
 
 - `power_factor` (default): `q = −p · tan(acos(pf))`, limited to `p² + q² ≤ s_rated²`. At the
   default power factor 1, `q = 0`.
-- `uniform`: `q = u · L`, with `u` drawn per unit and scenario, uniform on [−1, 1), and
-  `L = min(q_max, √(s_rated² − p²))`. `q_max` is the OPF's limit: `reactive_fraction · s_rated`, and
+- `uniform`: `q = u · q_lim`, with `u` drawn per unit and scenario, uniform on [−1, 1), and
+  `q_lim = min(q_max, √(s_rated² − p²))`. `q_max` is the OPF's limit: `reactive_fraction · s_rated`, and
   0 when `p_avail < reactive_threshold · s_rated` (0.44 and 0.05 by default, IEEE 1547-2018
   Category B; [OPF labels](opf.md#the-problem)). Positive `q` is injected, negative absorbed. This
   is IEEE 1547-2018's constant reactive power mode, with its setpoint drawn per scenario within

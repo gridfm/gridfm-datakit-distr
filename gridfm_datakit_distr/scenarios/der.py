@@ -8,8 +8,9 @@ Output per scenario: ``p_avail = kWp · clear_sky(hour) · cloud_factor(cloudine
 up to the inverter rating, ``p = min(p_avail, s_rated)`` with ``s_rated = inverter_kva_per_kwp ·
 kWp`` (clipping; no curtailment in PF labels); ``q = -p · tan(acos(pf))`` (the inverter absorbs
 reactive power below unit power factor), limited so that ``p² + q² ≤ s_rated²``. With
-``der.pv.reactive_mode: uniform`` (power factor 1) ``q = u · L`` instead, ``u`` uniform on [-1, 1)
-per unit and scenario from ``PV_Q`` and ``L = min(q_max_var(p_avail), sqrt(s_rated² - p²))``, the
+``der.pv.reactive_mode: uniform`` (power factor 1) ``q = u · q_lim`` instead, ``u`` uniform on
+[-1, 1) per unit and scenario from ``PV_Q`` and ``q_lim = min(q_max_var(p_avail),
+sqrt(s_rated² - p²))``, the
 OPF's limit and the rating's circle: IEEE 1547-2018's constant reactive power mode with a setpoint
 drawn per scenario (it does not follow the voltage). The hour is the
 time of day of the load profile when the scenario has one (seconds since the profile start, taken as
