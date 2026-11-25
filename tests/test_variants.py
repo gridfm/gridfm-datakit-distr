@@ -145,6 +145,7 @@ def test_the_load_level_is_drawn_once_per_variant_from_its_own_stream(
         for k in range(200)
     ]
     assert len(set(levels)) == len(levels)
+    assert levels[0] == p.variant_scale  # the same seed, network and variant draw the same L
     assert min(levels) >= 1 / 2.64
     assert max(levels) <= 2.64
     again = sample_perturbation(config, targets, SEED, 0, 0, attempt=1, load_level=spec)
