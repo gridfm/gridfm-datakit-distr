@@ -153,8 +153,8 @@ no cloud cover is drawn (`cloudiness` must keep its default).
   maps network ids or glob patterns to a latitude, a longitude and an IANA time zone, and
   `generate` refuses (exit 2, before any work, also with `--dry-run`) a selected network without
   one. The sample `scripts/config/pvgis.yaml` places the CSIRO feeders at Manchester.
-- **Download.** `fetch --config CONFIG` downloads one series per location into the cache
-  (`<cache>/pvgis/`) and records the file's SHA-256 next to it; every later use checks the file
+- **Download.** `fetch --config CONFIG` downloads one series per location (with
+  [`orientation`](#orientation), one per orientation class) into the cache (`<cache>/pvgis/`) and records the file's SHA-256 next to it; every later use checks the file
   against it, and a changed file is an error (`fetch --config CONFIG --force` downloads it
   again). `generate` never downloads: without the series it stops and names the command.
   Rate-limited or overloaded answers (HTTP 429, 529) are retried three times.
@@ -170,11 +170,44 @@ no cloud cover is drawn (`cloudiness` must keep its default).
 - **Attribution.** The data are free to use if the source is acknowledged: "PVGIS © European
   Communities, 2001-2026". Each network's request, the databases and angles PVGIS used and the
   series' SHA-256 are recorded in `manifest.json` (`networks[].pvgis`) and in its passport
-  (`pv_series`); the dataset card carries the attribution.
-- **Limits.** One point per network and one system orientation for every unit; the series of
+  (`pv_series`), with `orientation` one record per class; the dataset card carries the
+  attribution.
+- **Limits.** One point per network and, without `orientation`, one system orientation for
+  every unit; the series of
   a location is the same for all its networks, so two feeders placed at one point see the same
   weather in the same hour. The date drawn is independent of the load profile's (no catalog
   profile is dated), so only the time of day couples PV output and loads.
+
+### Orientation
+
+`scenarios.pv_profile.pvgis.orientation.enabled: true` gives each PV unit its own orientation,
+so the units of one variant peak at different hours. Per variant, each unit draws one (tilt,
+azimuth) pair from its own stream, uniformly among the pairs of `tilt_deg` and `azimuth_deg`
+(whole degrees; azimuth 0 south, 90 west, −90 east, PVGIS's convention). A unit keeps its pair
+at every higher penetration, as it keeps its size. Each pair is one PVGIS series per location,
+requested with that `angle` and `aspect`: PVGIS's own transposition to the module plane,
+temperature model and losses apply, and nothing is transposed here. Every tilt-0 pair reads the
+same horizontal series (requested with azimuth 0). In a scenario all units read their series at
+the same record, so they share the hour and the weather. Each unit's pair is recorded in
+`variants/variants.perturbation` (`pv_orientation`, `[tilt, azimuth]`).
+
+- **Classes.** The defaults, tilt {0, 15, 30, 45, 60}° × azimuth {−90, −45, 0, 45, 90}°, are 25
+  pairs and 21 series per location; `fetch --config` downloads them all (about 16 MB each for
+  19 years). They cover the orientations of residential PV that Killinger et al. fitted to the
+  metadata of 2.8 million systems in 12 regional clusters (Solar Energy 173, 2018,
+  doi:10.1016/j.solener.2018.08.051). Over the European clusters and USA North and South, the
+  fits' 10th to 90th percentiles span tilt 9.0°–48.7° and azimuth −61.2°–72.3°, inside the
+  classes' 0°–60° and −90°–90°. The classes cover that range; they do not follow the measured
+  density, which concentrates around south.
+- **PVGIS only.** The synthetic clear sky has the geometry of latitude 0 at an equinox: there a
+  module tilted toward the equator by `β` delivers `cos β` times the horizontal output at every
+  hour, with no shift of the peak. At the networks' latitudes the same tilt raises the yield, so
+  the clear sky would get the sign wrong: `orientation` with `synthetic_clear_sky` is a config
+  error. It also needs `optimalangles: false` and no `angle` or `aspect`, since it sets the
+  angles itself.
+- **Limits.** Discrete classes, not a continuous distribution. Killinger's fits miss the spike
+  of systems facing due south. No published distribution was found for Portugal or Spain: the
+  EDP networks are covered by the European and US clusters.
 
 ### Inverter
 

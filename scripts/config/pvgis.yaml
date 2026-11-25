@@ -24,5 +24,7 @@ scenarios:
       pvtechchoice: crystSi
       mountingplace: free # free-standing; building-integrated is `building`
       optimalangles: true # PVGIS's optimal fixed slope and azimuth for the location
+      # Per-unit orientation instead (21 series per location): `optimalangles: false` and
+      # `orientation: {enabled: true}`.
 settings:
   seed: 7

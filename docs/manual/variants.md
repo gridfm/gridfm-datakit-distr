@@ -78,6 +78,8 @@ multi-phase loads. A perturbation without elements to act on does nothing, and i
 - **Reactive limits.** `reactive_fraction` and `reactive_threshold`, per unit, bound the reactive
   power the OPF may dispatch ([OPF labels](opf.md#the-problem)) and, with `reactive_mode:
   uniform`, the reactive power drawn for the power flow ([Scenarios](scenarios.md#inverter)).
+- **Orientation.** With `scenarios.pv_profile.pvgis.orientation`, a (tilt, azimuth) class per
+  unit, whose PVGIS series the unit reads ([Scenarios](scenarios.md#orientation)).
 
 The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-output)).
 
