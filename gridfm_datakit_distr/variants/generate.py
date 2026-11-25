@@ -21,6 +21,7 @@ import numpy as np
 import pyarrow as pa
 
 from gridfm_datakit_distr.config.schema import PV, Storage, Variants
+from gridfm_datakit_distr.config.value_spec import ValueSpec
 from gridfm_datakit_distr.extract.injections import injections
 from gridfm_datakit_distr.extract.source import read_source
 from gridfm_datakit_distr.io import schema
@@ -181,11 +182,13 @@ def generate_variant(
     storage: Storage | None = None,
     dg_kw: float | None = None,
     upstream: Upstream | None = None,
+    load_level: ValueSpec | None = None,
     keep_prepared: bool = False,
 ) -> VariantResult:
     """Variant ``k`` of ``network``; with ``der``, the PV units of its customers, with
     ``storage`` the storage units of those with PV, with ``dg_kw`` the network's dispatchable
-    generators at that capacity (kW), with ``upstream`` its substation. Its draws depend
+    generators at that capacity (kW), with ``upstream`` its substation, with ``load_level`` the
+    spec of its load level (:func:`sample_perturbation`). Its draws depend
     on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
     carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
@@ -196,7 +199,7 @@ def generate_variant(
     for attempt in range(MAX_ATTEMPTS):
         p = sample_perturbation(
             config, targets, seed, net, k, attempt, der=der, storage=storage, dg_kw=dg_kw,
-            upstream=upstream,
+            upstream=upstream, load_level=load_level,
         )  # fmt: skip
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)

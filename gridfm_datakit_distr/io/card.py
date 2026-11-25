@@ -27,6 +27,20 @@ _PV_DENSITY = (
     "Electricity North West monitors (SP Electricity North West open data, LV load duration "
     "curves)."
 )
+# The default `scenarios.profiles.synthetic.variant_scale`; _LOAD_LEVEL's figures hold for it only.
+_LOAD_LEVEL_SPEC = {"distribution": "log_uniform", "low": 1 / 2.64, "high": 2.64}
+_LOAD_LEVEL = (
+    "- Load level: with synthetic loads, every nominal load of a variant is multiplied by one "
+    "factor L, drawn per variant log-uniform on [1/2.64, 2.64] (the default, median 1) and "
+    "recorded as `variant_scale` in `variants/variants.perturbation`; the networks whose nominal "
+    "loads are measured (EDP) keep L = 1. The range is the widest measured spread of the peak "
+    "load per customer across networks, relative to the median of the catalog's CSIRO networks "
+    "at L = 1: the 99th percentile of the 15-minute load per housing unit of 24 residential LV "
+    "feeders of FeederBW (Netze BW, Zenodo 10.5281/zenodo.17831177, CC BY 4.0) spans 0.38-2.58 "
+    "times that median, the 5-95 % range of the 90th percentile of half-hourly load per "
+    "customer at Electricity North West's substations 0.52-2.53 times (SP Electricity North "
+    "West open data, LV load duration curves)."
+)
 
 
 def networks_table(
@@ -126,6 +140,7 @@ def dataset_card(
             else []
         ),
         *([_PV_DENSITY] if config["der"]["pv"]["penetration"] == _PV_DENSITY_SPEC else []),
+        *([_LOAD_LEVEL] if _default_load_level(config) else []),
         f"- Work units: {sum(units.values())} ("
         + ", ".join(f"{k} {v}" for k, v in sorted(units.items()))
         + ").",
@@ -153,6 +168,14 @@ def dataset_card(
     for citation in sorted({p["citation"] for p in passports}):
         lines.append(f"- {citation}")
     return "\n".join(lines) + "\n"
+
+
+def _default_load_level(config: Mapping[str, Any]) -> bool:
+    profiles = config["scenarios"]["profiles"]
+    return bool(
+        profiles["provider"] == "synthetic"
+        and profiles["synthetic"]["variant_scale"] == _LOAD_LEVEL_SPEC
+    )
 
 
 def _dg(network: Mapping[str, Any]) -> str:

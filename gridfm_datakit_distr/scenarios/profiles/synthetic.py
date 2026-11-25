@@ -1,9 +1,10 @@
 """Synthetic profiles.
 
-Per scenario a global factor ``g`` (``global_scale`` spec) and per customer a mean-one lognormal
-factor ``m = exp(sigma·z - sigma²/2)``, ``z ~ N(0, 1)``, so that ``E[P] = E[g] · P_nominal``; per
-customer a power factor ``pf`` (spec): ``P = g · m · P_nominal``, ``Q = P · tan(acos(pf))``
-(lagging, the sign of ``P``). Each quantity has its own stream.
+Per variant a load level ``L`` (``variant_scale`` spec, drawn with the variant's perturbation),
+per scenario a global factor ``g`` (``global_scale`` spec) and per customer a mean-one lognormal
+factor ``m = exp(sigma·z - sigma²/2)``, ``z ~ N(0, 1)``, so that ``E[P] = L · E[g] · P_nominal``;
+per customer a power factor ``pf`` (spec): ``P = L · g · m · P_nominal``,
+``Q = P · tan(acos(pf))`` (lagging, the sign of ``P``). Each quantity has its own stream.
 """
 
 from __future__ import annotations
@@ -20,10 +21,13 @@ from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 class SyntheticProvider:
     name = "synthetic"
 
-    def __init__(self, customers: Sequence[Customer], spec: SyntheticProfiles) -> None:
+    def __init__(
+        self, customers: Sequence[Customer], spec: SyntheticProfiles, level: float = 1.0
+    ) -> None:
+        """``level``: the variant's load level ``L``."""
         self.customers = tuple(customers)
         self.spec = spec
-        self._p_nominal = np.array([c.p_w for c in self.customers], dtype=np.float64)
+        self._p_nominal = level * np.array([c.p_w for c in self.customers], dtype=np.float64)
 
     def draw(self, seed: int, net: int, k: int, s: int) -> LoadDraw:
         n = len(self.customers)

@@ -254,13 +254,15 @@ Where each scenario's loads come from ([Scenarios](scenarios.md)).
 #### `scenarios.profiles.synthetic`
 
 Synthetic loads, `provider: synthetic` only (this section with another provider is an
-error): `P = g · m · P_nominal` and lagging `Q = P · tan(acos(pf))`, with `g` per scenario, `m`
-and `pf` per customer and scenario. The loads' nominal reactive powers are not used.
+error): `P = L · g · m · P_nominal` and lagging `Q = P · tan(acos(pf))`, with `L` per variant,
+`g` per scenario, `m` and `pf` per customer and scenario. The loads' nominal reactive powers
+are not used.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
+| `scenarios.profiles.synthetic.variant_scale` | value spec, > 0 | `{distribution: log_uniform, low: 0.3787878787878788, high: 2.64}` | Load level `L` of a network, drawn per variant: a factor on every nominal load of the variant, the other feeders' loads of `variants.upstream` included; recorded as `variant_scale` in `variants/variants.perturbation`. The networks whose nominal loads are measured (catalog `base_loads: loadshape_coincident_peak`, the EDP networks) keep `L = 1`. Default log-uniform on [1/2.64, 2.64], median 1: the spread of the peak load per customer across measured feeders ([Scenarios](scenarios.md#loads)). `1`: no load level (every network at its nominal level). |
 | `scenarios.profiles.synthetic.global_scale` | value spec, ≥ 0 | `{distribution: uniform, low: 0.1, high: 1.2}` | Factor `g` on every nominal load, drawn per scenario. |
-| `scenarios.profiles.synthetic.local_sigma` | number ≥ 0 | `0.3` | Sigma of the per-customer factor `m = exp(sigma z - sigma²/2)`, `z` standard normal, of mean 1 (so the mean load is `E[g] · P_nominal`); 0: no per-customer noise. |
+| `scenarios.profiles.synthetic.local_sigma` | number ≥ 0 | `0.3` | Sigma of the per-customer factor `m = exp(sigma z - sigma²/2)`, `z` standard normal, of mean 1 (so the mean load is `L · E[g] · P_nominal`); 0: no per-customer noise. |
 | `scenarios.profiles.synthetic.power_factor` | value spec, > 0 and ≤ 1 | `{distribution: uniform, low: 0.9, high: 0.99}` | Power factor `pf` of each load, drawn per customer and scenario. |
 
 ### `scenarios.pv_profile`

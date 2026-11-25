@@ -201,6 +201,15 @@ def test_synthetic_draws_are_positional_and_independent() -> None:
     assert b.p_w.tolist() == pytest.approx([a.global_scale * c.p_w for c in CUSTOMERS])
 
 
+def test_the_load_level_scales_every_nominal_load() -> None:
+    a = synthetic().draw(SEED, 1, 2, 3)
+    b = SyntheticProvider(CUSTOMERS, SyntheticProfiles(), 1.7).draw(SEED, 1, 2, 3)
+    assert b.global_scale == a.global_scale  # g stays the scenario's factor
+    np.testing.assert_allclose(b.p_w, 1.7 * a.p_w, rtol=1e-15)
+    np.testing.assert_allclose(b.q_var, 1.7 * a.q_var, rtol=1e-15)
+    assert SyntheticProvider(CUSTOMERS, SyntheticProfiles(), 1.0).draw(SEED, 1, 2, 3) == a
+
+
 def test_customers_take_the_variants_nominal_values(profiled: tuple[Network, Path]) -> None:
     network, root = profiled
     customers = customers_of(prepare_network(network, root=root))

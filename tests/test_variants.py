@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ import numpy as np
 import pytest
 
 from gridfm_datakit_distr.config.schema import Variants
+from gridfm_datakit_distr.config.value_spec import Fixed, LogUniform
 from gridfm_datakit_distr.io import schema
 from gridfm_datakit_distr.model.electrical import GROUND
 from gridfm_datakit_distr.networks.catalog import Network
@@ -124,6 +126,29 @@ def test_quantities_draw_from_their_own_streams(targets: VariantTargets) -> None
     off = sample_perturbation(variants(phase_reallocation={"enabled": False}), targets, SEED, 0, 0)
     assert off.phases == {}
     assert (off.line_length, off.neutral_impedance) == (on.line_length, on.neutral_impedance)
+
+
+def test_the_load_level_is_drawn_once_per_variant_from_its_own_stream(
+    targets: VariantTargets,
+) -> None:
+    spec = LogUniform(1 / 2.64, 2.64)
+    config = variants()
+    without = sample_perturbation(config, targets, SEED, 0, 0)
+    p = sample_perturbation(config, targets, SEED, 0, 0, load_level=spec)
+    assert without.variant_scale == 1.0
+    assert "variant_scale" not in json.loads(without.to_json())
+    assert dataclasses.replace(p, variant_scale=1.0) == without  # the other draws unchanged
+    assert json.loads(p.to_json())["variant_scale"] == p.variant_scale
+    assert sample_perturbation(config, targets, SEED, 0, 0, load_level=Fixed(1.0)) == without
+    levels = [
+        sample_perturbation(config, targets, SEED, 0, k, load_level=spec).variant_scale
+        for k in range(200)
+    ]
+    assert len(set(levels)) == len(levels)
+    assert min(levels) >= 1 / 2.64
+    assert max(levels) <= 2.64
+    again = sample_perturbation(config, targets, SEED, 0, 0, attempt=1, load_level=spec)
+    assert again.variant_scale != p.variant_scale  # a resampled attempt draws afresh
 
 
 def test_an_unperturbed_config_changes_nothing(base: tuple[Network, Path, PreparedNetwork]) -> None:

@@ -10,6 +10,7 @@ Forms:
     number                                              fixed
     {distribution: normal, mean, std, min?, max?}       truncated normal
     {distribution: uniform, low, high}                  on [low, high)
+    {distribution: log_uniform, low, high}              log uniform on [low, high), 0 < low
     {distribution: choice, values, weights?}            one listed value
 
 Out of range values are redrawn, never clipped: a normal is sampled from
@@ -19,7 +20,7 @@ side's bound when that is further out. A truncation interval with no overlap wit
 ``[mean - 6 std, mean + 6 std]`` is rejected at parse. Draws never leave the
 support, so a caller validates against it.
 
-A floor is checked at parse: fixed, uniform and choice specs are rejected when
+A floor is checked at parse: fixed, (log-)uniform and choice specs are rejected when
 their support fails it, a normal takes it as a lower truncation bound and redraws a
 value equal to a strict one, at most ``_MAX_REDRAWS`` times: ``truncnorm`` returns
 the bound itself on an interval too narrow to resolve.
@@ -42,6 +43,7 @@ _MAX_REDRAWS = 1000
 _KEYS = {
     "normal": ({"mean", "std"}, {"min", "max"}),
     "uniform": ({"low", "high"}, set()),
+    "log_uniform": ({"low", "high"}, set()),
     "choice": ({"values"}, {"weights"}),
 }
 
@@ -170,6 +172,25 @@ class Uniform(ValueSpec):
 
 
 @dataclass(frozen=True)
+class LogUniform(ValueSpec):
+    """``exp(u)`` with ``u`` uniform on ``[ln low, ln high)``, ``0 < low``: median
+    ``sqrt(low · high)``."""
+
+    low: float
+    high: float
+
+    def sample(self, rng: np.random.Generator) -> float:
+        x = float(np.exp(rng.uniform(math.log(self.low), math.log(self.high))))
+        return min(max(x, self.low), self.high)  # exp(ln x) can round one ulp past a bound
+
+    def support(self) -> tuple[float, float]:
+        return self.low, self.high
+
+    def to_config(self) -> dict[str, Any]:
+        return {"distribution": "log_uniform", "low": self.low, "high": self.high}
+
+
+@dataclass(frozen=True)
 class Choice(ValueSpec):
     """One of a list of values, drawn with the given probabilities."""
 
@@ -230,6 +251,8 @@ def parse_spec(spec: Any, floor: Floor | None = None) -> ValueSpec:
         return _parse_normal(spec, floor)
     if distribution == "uniform":
         return _parse_uniform(spec, floor)
+    if distribution == "log_uniform":
+        return _parse_log_uniform(spec, floor)
     return _parse_choice(spec, floor)
 
 
@@ -261,6 +284,13 @@ def _parse_uniform(spec: Mapping[str, Any], floor: Floor | None) -> Uniform:
         raise ValueError(f"low must be below high, got {low} and {high}")
     _check_floor(low, floor)
     return Uniform(low, high)
+
+
+def _parse_log_uniform(spec: Mapping[str, Any], floor: Floor | None) -> LogUniform:
+    u = _parse_uniform(spec, floor)
+    if u.low <= 0:
+        raise ValueError(f"low must be positive, got {u.low}")
+    return LogUniform(u.low, u.high)
 
 
 def _parse_choice(spec: Mapping[str, Any], floor: Floor | None) -> Choice:
@@ -311,6 +341,7 @@ __all__ = [
     "Choice",
     "Fixed",
     "Floor",
+    "LogUniform",
     "Normal",
     "Uniform",
     "ValueSpec",

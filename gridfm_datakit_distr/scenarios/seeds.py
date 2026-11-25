@@ -48,6 +48,9 @@ class VariantStream(IntEnum):
     """Power rating of each storage unit, drawn only when ``der.storage.kw`` is a value spec."""
     UPSTREAM_RATING = 12
     """Rating of the substation's transformer (``variants.upstream``)."""
+    LOAD_LEVEL = 13
+    """Load level ``L`` of the variant's synthetic loads
+    (``scenarios.profiles.synthetic.variant_scale``)."""
 
 
 class ScenarioStream(IntEnum):

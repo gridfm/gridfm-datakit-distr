@@ -272,10 +272,11 @@ class VariantRunner:
         (``scenarios/loads`` rows, the OPF's loads)."""
         if self.load_elements != (*(c.element for c in self.customers), *sorted(lumped)):
             raise ValueError(f"{variant.variant_id}: the other feeders' loads must sort last")
-        self._lumped = np.array([lumped[e] for e in sorted(lumped)], dtype=np.float64)
-        """Nominal (P (W), Q (var)) of the other feeders' loads, scaled per scenario by the
-        global load factor."""
-        self.loads = make_provider(config.scenarios.profiles, self.customers, network, root)
+        level = variant.perturbation.variant_scale
+        self._lumped = level * np.array([lumped[e] for e in sorted(lumped)], dtype=np.float64)
+        """Nominal (P (W), Q (var)) of the other feeders' loads times the variant's load level,
+        scaled per scenario by the global load factor."""
+        self.loads = make_provider(config.scenarios.profiles, self.customers, network, root, level)
         units = pv_units(variant.perturbation, config.der.pv)
         profile = config.scenarios.pv_profile
         self.pv = (

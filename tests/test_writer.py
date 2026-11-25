@@ -319,6 +319,33 @@ def test_dataset_card(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("profiles", "stated"),
+    [
+        (None, True),  # the default
+        ({"synthetic": {"variant_scale": 1}}, False),
+        ({"provider": "network_loadshapes"}, False),
+    ],
+)
+def test_dataset_card_load_level(
+    tmp_path: Path, profiles: dict[str, Any] | None, stated: bool
+) -> None:
+    """The card states the default load level and its measured basis, and only for it."""
+    raw = copy.deepcopy(CONFIG)
+    if profiles is not None:
+        raw.setdefault("scenarios", {})["profiles"] = profiles
+    config = GenerationConfig.model_validate(raw).model_dump(mode="json")
+    manifest = Manifest.create(tmp_path, config, {"generator": __version__})
+    passport = {
+        "network_id": "ieee13", "source": "epri_ieee", "license": "BSD-3-Clause",
+        "counts": {"nodes": 41}, "neutral_representation": "kron", "citation": "IEEE PES",
+    }  # fmt: skip
+    text = dataset_card(manifest, [passport], Counter({"converged": 6}))
+    phrases = ["log-uniform on [1/2.64, 2.64]", "`variant_scale`", "keep L = 1", "FeederBW",
+               "0.38-2.58", "0.52-2.53"]  # fmt: skip
+    assert [p in text for p in phrases] == [stated] * len(phrases)
+
+
+@pytest.mark.parametrize(
     ("penetration", "stated"),
     [
         (None, True),  # the default

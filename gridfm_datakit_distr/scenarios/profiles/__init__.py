@@ -32,11 +32,16 @@ __all__ = [
 
 
 def make_provider(
-    config: Profiles, customers: Sequence[Customer], network: Network, root: Path | None = None
+    config: Profiles,
+    customers: Sequence[Customer],
+    network: Network,
+    root: Path | None = None,
+    level: float = 1.0,
 ) -> ProfileProvider:
-    """The provider ``config.provider`` for a variant's customers."""
+    """The provider ``config.provider`` for a variant's customers; ``level``, the variant's load
+    level, scales the synthetic provider's nominal loads (drawn for it only)."""
     if config.provider == "synthetic":
-        return SyntheticProvider(customers, config.synthetic)
+        return SyntheticProvider(customers, config.synthetic, level)
     if config.provider in ("network_loadshapes", "edp_smart_meter"):
         return LoadshapeProvider(
             customers,

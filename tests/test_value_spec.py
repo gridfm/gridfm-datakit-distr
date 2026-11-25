@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from scipy import stats
 
 from gridfm_datakit_distr.config.value_spec import (
     NON_NEGATIVE,
@@ -20,6 +21,7 @@ from gridfm_datakit_distr.config.value_spec import (
     Choice,
     Fixed,
     Floor,
+    LogUniform,
     Normal,
     Uniform,
     ValueSpec,
@@ -71,6 +73,11 @@ class TestParse:
         assert isinstance(spec, Uniform)
         assert spec.support() == (1.0, 4.0)
 
+    def test_log_uniform(self) -> None:
+        spec = parse_value_spec({"distribution": "log_uniform", "low": 0.5, "high": 2}, PATH)
+        assert spec == LogUniform(0.5, 2.0)
+        assert spec.support() == (0.5, 2.0)
+
     def test_choice(self) -> None:
         spec = parse_value_spec(
             {"distribution": "choice", "values": [3, 1, 2], "weights": [1, 1, 2]}, PATH
@@ -120,6 +127,8 @@ class TestRejects:
         [
             {"distribution": "normal", "mean": 0, "std": 0},
             {"distribution": "uniform", "low": 1, "high": 1},
+            {"distribution": "log_uniform", "low": 0, "high": 1},
+            {"distribution": "log_uniform", "low": 2, "high": 1},
             {"distribution": "normal", "mean": 0, "std": 1, "min": 1, "max": -1},
             {"distribution": "choice", "values": []},
             {"distribution": "choice", "values": [1, 2], "weights": [1]},
@@ -193,6 +202,15 @@ class TestSample:
         assert draws.max() < 3
         assert type(spec.sample(np.random.default_rng(0))) is float
 
+    def test_log_uniform_is_log_uniform_with_median_one_on_reciprocal_bounds(self) -> None:
+        spec = LogUniform(1 / 2.64, 2.64)
+        draws = _draws(spec, 0)
+        assert stats.kstest(draws, stats.loguniform(1 / 2.64, 2.64).cdf).pvalue > 1e-3
+        assert abs(np.median(draws) - 1.0) < 0.05  # median sqrt(low · high) = 1
+        assert draws.min() >= 1 / 2.64
+        assert draws.max() <= 2.64
+        assert type(spec.sample(np.random.default_rng(0))) is float
+
     def test_choice_never_draws_a_zero_weight(self) -> None:
         spec = parse_value_spec(
             {"distribution": "choice", "values": ["a", "b", "c"], "weights": [1, 0, 3]}, PATH
@@ -206,6 +224,11 @@ class TestFloor:
         with pytest.raises(ValueError, match=f"^{re.escape(PATH)}: "):
             parse_value_spec(0, PATH, POSITIVE)
         assert parse_value_spec(0, PATH, NON_NEGATIVE) == Fixed(0.0)
+
+    def test_log_uniform_low_must_be_admitted(self) -> None:
+        with pytest.raises(ValueError, match=f"^{re.escape(PATH)}: every value must be >= 1"):
+            parse_value_spec({"distribution": "log_uniform", "low": 0.5, "high": 2}, PATH,
+                             Floor(1.0, strict=False))  # fmt: skip
 
     def test_uniform_low_must_be_admitted(self) -> None:
         with pytest.raises(ValueError, match=f"^{re.escape(PATH)}: "):
@@ -267,6 +290,7 @@ class TestToConfig:
         [
             (2.5, None),
             ({"distribution": "uniform", "low": 0.9, "high": 1.1}, POSITIVE),
+            ({"distribution": "log_uniform", "low": 1 / 2.64, "high": 2.64}, POSITIVE),
             ({"distribution": "normal", "mean": 0.1, "std": 0.05}, POSITIVE),
             ({"distribution": "normal", "mean": 1, "std": 2, "min": -1}, None),
             ({"distribution": "normal", "mean": 1, "std": 2, "max": 3}, None),
@@ -282,6 +306,11 @@ class TestToConfig:
     def test_forms(self) -> None:
         assert Fixed(2.0).to_config() == 2.0
         assert Uniform(1.0, 2.0).to_config() == {"distribution": "uniform", "low": 1.0, "high": 2.0}
+        assert LogUniform(0.5, 2.0).to_config() == {
+            "distribution": "log_uniform",
+            "low": 0.5,
+            "high": 2.0,
+        }
         assert Normal(0.0, 1.0, lower=-1.0).to_config() == {
             "distribution": "normal",
             "mean": 0.0,

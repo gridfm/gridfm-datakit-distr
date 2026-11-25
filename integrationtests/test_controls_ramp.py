@@ -30,6 +30,7 @@ def test_a_scenario_unreachable_at_the_initial_taps_converges_after_the_ramp(
         "low": 0.2,
         "high": 1.2,
     }
+    data["scenarios"]["profiles"]["synthetic"]["variant_scale"] = 1.0  # and no load level
     data["settings"].update(num_processes=1)
     cfg = GenerationConfig.model_validate(data)
     job = executor.jobs_of(cfg, load_catalog())[0]

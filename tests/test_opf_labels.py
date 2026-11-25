@@ -42,9 +42,13 @@ CONFIG: dict[str, Any] = {
     "scenarios": {
         "n_scenarios_per_variant": 8,
         "pv_profile": {"cloudiness": 0.0},
-        # the load scale these scenarios were chosen at, before the default was lowered
+        # the load scale these scenarios were chosen at, before the default was lowered and
+        # before the per-variant load level
         "profiles": {
-            "synthetic": {"global_scale": {"distribution": "uniform", "low": 0.2, "high": 1.2}}
+            "synthetic": {
+                "global_scale": {"distribution": "uniform", "low": 0.2, "high": 1.2},
+                "variant_scale": 1.0,
+            }
         },
     },
     "labels": {"opf": {"enabled": True}},

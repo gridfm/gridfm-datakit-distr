@@ -428,10 +428,14 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
         with _LOCK:
             _TARGETS[base] = targets
     i, seed = task.job.network_idx, config.settings.seed
+    profiles = config.scenarios.profiles
+    # measured nominal loads (EDP) keep their level
+    level = profiles.provider == "synthetic" and network.base_loads != "loadshape_coincident_peak"
     variant = generate_variant(
         network, targets, config.variants, seed, k, options=options, root=root,
         der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw,
-        upstream=task.job.upstream, keep_prepared=True,
+        upstream=task.job.upstream,
+        load_level=profiles.synthetic.variant_scale if level else None, keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":

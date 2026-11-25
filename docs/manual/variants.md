@@ -188,8 +188,10 @@ transformer element, node or bus is added: the source keeps its bus, base and ro
   source. There is no transformer element, so no transformer loading among the labels.
 - **Other feeders.** Three single-phase loads at the source bus, `Load.upstream_feeders_a`, `_b`
   and `_c`, each from a phase to the neutral (to ground in a model without one). In every scenario
-  each draws `g` times the sum of the nominal P and Q of the other feeders' loads on its phase,
-  `g` the scenario's global load factor (`scenarios.profiles.synthetic.global_scale`). They are
+  each draws `L · g` times the sum of the nominal P and Q of the other feeders' loads on its
+  phase, `L` the variant's load level (`scenarios.profiles.synthetic.variant_scale`) and `g` the
+  scenario's global load factor (`scenarios.profiles.synthetic.global_scale`,
+  [Scenarios](scenarios.md#loads)). They are
   not customers: no PV, storage, DG, phase move or per-customer factor, and `der_penetration`
   does not count them. The other feeders are compiled once per dataset in OpenDSS; their names,
   the customer count and the per-phase sums are in `manifest.json` (`networks[].upstream`).
@@ -197,7 +199,7 @@ transformer element, node or bus is added: the source keeps its bus, base and ro
   `z0_ohm` (`[R, X]`, Ω) and `loads` (each lumped load's nominal `[P (W), Q (var)]`); the lumped
   loads' set-points are rows of `scenarios/loads` ([Outputs §6](outputs.md#scenariosloads)).
 
-Not modelled: PV and per-customer variation on the other feeders (they follow `g` only), the
+Not modelled: PV and per-customer variation on the other feeders (they follow `L · g` only), the
 transformer's no-load losses and magnetising current, its taps. The DG capacity
 ([above](#dispatchable-generators)) is computed at the source as loaded.
 

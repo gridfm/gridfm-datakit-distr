@@ -31,6 +31,7 @@ from gridfm_datakit_distr.config.value_spec import (
     POSITIVE,
     Fixed,
     Floor,
+    LogUniform,
     Uniform,
     ValueSpec,
     parse_spec,
@@ -441,9 +442,20 @@ class DER(_Config):
 
 class SyntheticProfiles(_Config):
     """Synthetic loads, `provider: synthetic` only (this section with another provider is an
-    error): `P = g · m · P_nominal` and lagging `Q = P · tan(acos(pf))`, with `g` per scenario, `m`
-    and `pf` per customer and scenario. The loads' nominal reactive powers are not used."""
+    error): `P = L · g · m · P_nominal` and lagging `Q = P · tan(acos(pf))`, with `L` per variant,
+    `g` per scenario, `m` and `pf` per customer and scenario. The loads' nominal reactive powers
+    are not used."""
 
+    variant_scale: PositiveSpec = Field(
+        default=LogUniform(1 / 2.64, 2.64),
+        description="Load level `L` of a network, drawn per variant: a factor on every nominal "
+        "load of the variant, the other feeders' loads of `variants.upstream` included; "
+        "recorded as `variant_scale` in `variants/variants.perturbation`. The networks whose "
+        "nominal loads are measured (catalog `base_loads: loadshape_coincident_peak`, the EDP "
+        "networks) keep `L = 1`. Default log-uniform on [1/2.64, 2.64], median 1: the spread of "
+        "the peak load per customer across measured feeders ([Scenarios](scenarios.md#loads)). "
+        "`1`: no load level (every network at its nominal level).",
+    )
     global_scale: NonNegativeSpec = Field(
         default=Uniform(0.1, 1.2),
         description="Factor `g` on every nominal load, drawn per scenario.",
@@ -452,7 +464,7 @@ class SyntheticProfiles(_Config):
         default=0.3,
         ge=0,
         description="Sigma of the per-customer factor `m = exp(sigma z - sigma²/2)`, `z` standard "
-        "normal, of mean 1 (so the mean load is `E[g] · P_nominal`); 0: no per-customer noise.",
+        "normal, of mean 1 (so the mean load is `L · E[g] · P_nominal`); 0: no per-customer noise.",
     )
     power_factor: PowerFactorSpec = Field(
         default=Uniform(0.9, 0.99),

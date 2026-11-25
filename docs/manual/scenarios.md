@@ -25,12 +25,14 @@ setpoints:
 
 | Provider | Setpoints |
 |---|---|
-| `synthetic` (default) | `P = g · m · P_nominal`: `g` per scenario (`global_scale`, uniform 0.1–1.2), `m` per customer, lognormal with mean 1 (`exp(σz − σ²/2)`, `σ = local_sigma` = 0.3), so the mean load is `E[g] · P_nominal`. `Q = P · tan(acos(pf))`, lagging, with `pf` drawn per customer (`power_factor`, uniform 0.9–0.99): the source's nominal Q is not used. No time of day. |
+| `synthetic` (default) | `P = L · g · m · P_nominal`: `L` per variant (`variant_scale`, log-uniform on [1/2.64, 2.64], below), `g` per scenario (`global_scale`, uniform 0.1–1.2), `m` per customer, lognormal with mean 1 (`exp(σz − σ²/2)`, `σ = local_sigma` = 0.3), so the mean load is `L · E[g] · P_nominal`. `Q = P · tan(acos(pf))`, lagging, with `pf` drawn per customer (`power_factor`, uniform 0.9–0.99): the source's nominal Q is not used. No time of day. |
 | `network_loadshapes` | the loads' own daily (else yearly) loadshapes, as OpenDSS reads them. A time is drawn uniformly over the profile window (the length of the shortest multi-point shape): one for all customers (`same_timestamp: true`, default, coincident demand) or one per customer (`false`). Without a Q curve, Q keeps the load's kvar/kW ratio. A customer with a one-point shape keeps that value, one without a shape its nominal value. |
 | `edp_smart_meter` | the same reader: in the EDP networks the loadshapes are the smart-meter files. The name is what `scenario_meta.profile_source` records. |
 
 **Default load scale.** The CSIRO feeders' nominal loads (about 0.9 kW per customer) behave like an
-after-diversity design peak, not a typical demand: `g = 1` is the design peak. The default
+after-diversity design peak, not a typical demand: with `L = 1`, `g = 1` is the design peak. The
+figures of this paragraph are for `g` alone (`L = 1`); the load level below spreads the networks
+around them. The default
 `global_scale`, uniform 0.1–1.2, is chosen to cover the states measured today and plausible heavier
 ones, not to reproduce today's distribution. Against Electricity North West's measured substation
 loads (open data, `lv_load_duration`, CC BY 4.0: a year of half-hourly load at each secondary
@@ -44,6 +46,36 @@ thing everywhere: the IEEE test cases' published loads (the peak by OpenDSS's co
 kW; the files do not say), the European LV feeder's placeholders (55 kW, 0.96 of its profiles'
 coincident peak over the day) and the EDP networks' coincident peak over their profile window
 ([Networks](networks.md#networks)).
+
+**Load level per network.** `g` moves a network's demand in time against its own peak; it cannot
+say that one network's customers consume more than another's. They do: the customers of one
+feeder share building type, era and heating, so a network's level has a common part, and an
+independent factor per customer (`m`) averages out over a feeder instead of producing it (with
+`σ = 0.3`, about 8 % on a feeder of 14 customers). Measured, the peak load per customer varies
+widely across networks: the 99th percentile of the 15-minute load per
+housing unit of 24 residential LV feeders of FeederBW (Netze BW, Zenodo
+10.5281/zenodo.17831177, CC BY 4.0) runs from 0.44 to 2.99 kW, and the 90th percentile of the
+half-hourly load per customer at Electricity North West's substations from 0.43 to 2.10 kW (5–95 %
+range), while at `L = 1` the middle half of the catalog's CSIRO feeders lies within 1.10–1.23 kW
+on the FeederBW index. Each variant therefore draws a load level `L`
+(`scenarios.profiles.synthetic.variant_scale`) that multiplies every nominal load of the variant,
+the other feeders' loads of the [substation](variants.md#upstream-substation) included, and is
+recorded as `variant_scale` in `variants/variants.perturbation`. A variant stands for a network of
+the same topology with other customers. The default, log-uniform on [1/k, k] with k = 2.64, has
+median 1, so the bulk stays at the calibrated level; k is the widest of the measured ratios to the
+CSIRO feeders' median at `L = 1`: 0.38–2.58 (FeederBW) and 0.52–2.53 (Electricity North West),
+rounded to two decimals. `variant_scale: 1` turns it off.
+
+- The networks whose nominal loads are measured, the EDP networks (catalog
+  `base_loads: loadshape_coincident_peak`: their nominal load is the measured coincident peak,
+  [Networks](networks.md#networks)), keep `L = 1`; nothing is drawn for them. A loadshape provider
+  draws none either.
+- `L` does not enter the variant's checks (the base case at the nominal loads), the dispatchable
+  generators' capacity or the substation's rating: they stay as without it, so heavier networks
+  meet the same transformer and DG as lighter ones.
+- Why not a wider `g` instead: `g` drawn over a wider range gives every network the same spread of
+  states around its own peak, so the networks stay alike, and it stretches `g`, time against the
+  network's own peak, beyond 1.2 times that peak.
 
 Only the EDP networks and the IEEE European LV feeder (`ieee_eulv`: one day at 1-minute steps)
 carry loadshapes. `generate`, with or without `--dry-run`, refuses a loadshape provider on any

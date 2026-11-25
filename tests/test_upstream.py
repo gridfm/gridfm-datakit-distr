@@ -102,13 +102,17 @@ def site(root: Path) -> tuple[Network, up.Upstream]:
     return network, up.upstream_of(network, prepare_network(network, root=root), cat, root)
 
 
-def variant(root: Path, cfg: GenerationConfig) -> tuple[Network, VariantResult]:
+def variant(
+    root: Path, cfg: GenerationConfig, level: bool = False
+) -> tuple[Network, VariantResult]:
+    """Variant 0; with ``level``, its load level drawn from the config."""
     network, substation = site(root)
     options = prepare_options(cfg)
     targets = collect_targets(prepare_network(network, options, root))
     result = generate_variant(
         network, targets, cfg.variants, SEED, 0, options=options, root=root, der=cfg.der.pv,
         upstream=substation if cfg.variants.upstream.enabled else None,
+        load_level=cfg.scenarios.profiles.synthetic.variant_scale if level else None,
     )  # fmt: skip
     assert result.status == "ok", result.failures
     return network, result
@@ -307,6 +311,22 @@ def test_the_lumped_loads_follow_the_global_factor(tmp_path: Path) -> None:
         assert o_off.v is not None
         bus = [n.idx for n in r.model.nodes if n.bus == "sourcebus" and n.conductor != "n"]
         assert np.abs(o.v[bus]).max() < np.abs(o_off.v[bus]).min()  # the substation's drop
+
+
+def test_the_lumped_loads_follow_the_load_level(tmp_path: Path) -> None:
+    """With a load level ``L`` each lumped load draws ``L · g`` times its nominal sum."""
+    cfg = config()
+    network, result = variant(tmp_path, cfg, level=True)
+    assert result.perturbation is not None
+    level = result.perturbation.variant_scale
+    assert level != 1.0
+    r = VariantRunner(network, result, cfg, 0, root=tmp_path)
+    for s in range(2):
+        o = r.run(s)
+        g = r.loads.draw(SEED, network_key(network.id), 0, s).global_scale
+        assert g is not None
+        np.testing.assert_allclose(o.load_p_w[-3:], level * g * np.array(SIBLING_P_W),
+                                   rtol=1e-15)  # fmt: skip
 
 
 def test_the_negative_sequence_source_sees_the_substation(tmp_path: Path) -> None:

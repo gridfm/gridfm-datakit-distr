@@ -13,7 +13,10 @@ Each quantity draws from its own stream of the variant's seed, in name order:
   uniformly, each moved to one of the other phases of its bus, neutral kept;
 - the substation (``variants.upstream``, :mod:`~gridfm_datakit_distr.variants.upstream`): the
   transformer rating; the source's sequence impedances follow from it, and the other feeders
-  are added as loads at the source bus.
+  are added as loads at the source bus;
+- the load level ``L`` (``scenarios.profiles.synthetic.variant_scale``): a factor on the
+  variant's nominal loads, applied by the synthetic provider and to the substation's lumped
+  loads; no edit.
 
 Dispatchable generators are not drawn: one at every :data:`DG_EVERY`-th customer
 (:func:`dg_sites`), at the network's capacity (``variants/dg.py``), the same in every variant.
@@ -31,7 +34,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from gridfm_datakit_distr.config.schema import PV, Storage, Variants
-from gridfm_datakit_distr.config.value_spec import Fixed
+from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel
 from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
 from gridfm_datakit_distr.variants.targets import CustomerTarget, LineTarget, VariantTargets
@@ -113,6 +116,8 @@ class Perturbation:
     network's."""
     upstream: Substation | None = None
     """The substation behind the source (``variants.upstream``); None: the source as loaded."""
+    variant_scale: float = 1.0
+    """Load level ``L``: factor on every nominal load of the variant (1: not drawn)."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -137,6 +142,8 @@ class Perturbation:
             data["storage_share"] = self.storage_share
         if self.upstream is not None:
             data["upstream"] = self.upstream.record()
+        if self.variant_scale != 1.0:
+            data["variant_scale"] = self.variant_scale
         return json.dumps(data, sort_keys=True)
 
 
@@ -152,11 +159,13 @@ def sample_perturbation(
     storage: Storage | None = None,
     dg_kw: float | None = None,
     upstream: Upstream | None = None,
+    load_level: ValueSpec | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
     ``attempt``); with ``der``, the PV units of its customers too, with ``storage`` the
     storage units of the customers with PV, with ``dg_kw`` a dispatchable generator of that
-    capacity (kW) at each of :func:`dg_sites`, and with ``upstream`` the network's substation."""
+    capacity (kW) at each of :func:`dg_sites`, with ``upstream`` the network's substation, and
+    with ``load_level`` its load level ``L``."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -196,9 +205,14 @@ def sample_perturbation(
         rng = variant_rng(seed, net, k, VariantStream.UPSTREAM_RATING, attempt)
         kva = draw_rating(upstream.customers, rng)
         substation = Substation(upstream, kva, *source_impedance(kva, upstream.kv_ll))
+    level = 1.0
+    if load_level is not None and load_level != _IDENTITY:
+        level = float(
+            load_level.sample(variant_rng(seed, net, k, VariantStream.LOAD_LEVEL, attempt))
+        )
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
-        share, storage_kw, dg, substation,
+        share, storage_kw, dg, substation, level,
     )  # fmt: skip
 
 

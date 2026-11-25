@@ -446,6 +446,69 @@ def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path
         assert table.equals(pq.read_table(alone / f"{name}.parquet")), name
 
 
+def test_the_load_level_scales_each_variant_and_spares_measured_loads(tmp_path: Path) -> None:
+    """Every load of a variant draws ``L`` times what it draws at ``variant_scale: 1``, one ``L``
+    per variant as recorded; a network with measured nominal loads draws no ``L``."""
+    shapes = VARIANT_FEEDER["master.dss"].replace("model=1\n", "model=1 daily=flat\n")
+    shapes = shapes.replace(
+        "New Load.h1", "New Loadshape.flat npts=2 interval=1 mult=(1 1)\nNew Load.h1"
+    )
+    write_circuit(tmp_path / "src" / "feeder", VARIANT_FEEDER)
+    write_circuit(tmp_path / "src" / "peak", {"master.dss": shapes})
+    source = ArchivesSource(
+        kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
+        citation="-", archives={},
+    )  # fmt: skip
+    cat = Catalog(sources={"src": source}, networks={
+        "t/feeder": Network(id="t/feeder", source="src", master="feeder/master.dss"),
+        "t/peak": Network(id="t/peak", source="src", master="peak/master.dss",
+                          base_loads="loadshape_coincident_peak"),
+    })  # fmt: skip
+    tables = {}
+    for name, scale in (("on", None), ("off", 1.0)):
+        data = copy.deepcopy(CONFIG)
+        data["variants"]["n_variants"] = 3
+        data["scenarios"]["n_scenarios_per_variant"] = 3
+        data["settings"]["float_precision"] = "full"  # setpoints stored as float64
+        if scale is not None:
+            data["scenarios"]["profiles"] = {"synthetic": {"variant_scale": scale}}
+        out = tmp_path / name
+        generate(GenerationConfig.model_validate(data), out, catalog=cat, root=tmp_path)
+        names = ("variants/variants", "scenarios/scenario_meta", "scenarios/loads")
+        read = {t: pq.read_table(out / t) for t in names}
+        drop = TIMINGS | {"config_hash"}
+        tables[name] = {t: v.drop_columns([c for c in v.column_names if c in drop])
+                        for t, v in read.items()}  # fmt: skip
+    levels = {}
+    for row in tables["on"]["variants/variants"].to_pylist():
+        recorded = json.loads(row["perturbation"]).get("variant_scale")
+        if row["network_id"] == "t/peak":
+            assert recorded is None
+        else:
+            levels[row["variant_id"]] = recorded
+    assert len(set(levels.values())) == 3  # one per variant, none equal
+    for t in ("variants/variants", "scenarios/scenario_meta", "scenarios/loads"):
+        on, off = (tables[k][t].to_pylist() for k in ("on", "off"))
+        assert len(on) == len(off)
+        peak = [r for r in on if r.get("network_id", "t/feeder") == "t/peak"]
+        assert peak == [r for r in off if r.get("network_id", "t/feeder") == "t/peak"]
+    meta = tables["on"]["scenarios/scenario_meta"].to_pylist()
+    variant_of = {r["scenario_id"]: r["variant_id"] for r in meta}
+    on, off = (
+        tables["on"]["scenarios/loads"].to_pylist(),
+        tables["off"]["scenarios/loads"].to_pylist(),
+    )
+    seen = set()
+    for a, b in zip(on, off, strict=True):
+        assert (a["scenario_id"], a["element_idx"]) == (b["scenario_id"], b["element_idx"])
+        vid = variant_of[a["scenario_id"]]
+        level = levels.get(vid, 1.0)
+        assert a["p_w"] == pytest.approx(level * b["p_w"], rel=1e-12)
+        assert a["q_var"] == pytest.approx(level * b["q_var"], rel=1e-12)
+        seen.add(vid)
+    assert set(levels) <= seen
+
+
 def test_storage_and_dg_enter_the_exported_der_columns(tmp_path: Path) -> None:
     """The positive-sequence export reads every ``scenarios/der`` row: storage at its set-point
     in ``x_der_p_mw`` and ``x_der_p_avail_mw``, a DG at its set-point and its capacity; the stored

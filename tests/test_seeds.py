@@ -161,6 +161,7 @@ def test_stream_codes_are_stable() -> None:
         "STORAGE_PLACEMENT": 10,
         "STORAGE_SIZE": 11,
         "UPSTREAM_RATING": 12,
+        "LOAD_LEVEL": 13,
     }
     assert {s.name: int(s) for s in ScenarioStream} == {
         "PROFILE_TIME": 0,
