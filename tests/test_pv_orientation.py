@@ -169,6 +169,12 @@ def test_units_and_series_must_agree_on_orientation() -> None:
         PVOutputs([replace(units([1.0])[0], orientation=(30, 0))], PV(), pvgis_profile(), s)
     with pytest.raises(ValueError, match="needs units with a class"):
         PVOutputs(units([1.0]), PV(), pvgis_profile(), {(30, 0): s})
+    shifted = replace(s, start_s=s.start_s + 3600)
+    two = [
+        replace(u, orientation=c) for u, c in zip(units([1.0, 1.0]), [(30, 0), (0, 0)], strict=True)
+    ]
+    with pytest.raises(ValueError, match="do not share one clock"):
+        PVOutputs(two, PV(), pvgis_profile(), {(30, 0): s, (0, 0): shifted})
 
 
 # ------------------------------------------------------------------------------ dataset

@@ -165,6 +165,11 @@ class PVOutputs:
                 raise ValueError("a series per orientation class needs units with a class")
             self._unit_series = [series[c] for c in classes if c is not None]
             series = next(iter(series.values()))  # the clock: one location, one set of years
+            if any(
+                u.start_s != series.start_s or len(u.p_w) != len(series.p_w)
+                for u in self._unit_series
+            ):
+                raise ValueError("the orientation class series do not share one clock")
         elif any(u.orientation is not None for u in self.units):
             raise ValueError("units with an orientation class need a series per class")
         self.spec = spec
