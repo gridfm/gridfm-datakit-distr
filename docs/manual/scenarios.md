@@ -62,9 +62,13 @@ on the FeederBW index. Each variant therefore draws a load level `L`
 the other feeders' loads of the [substation](variants.md#upstream-substation) included, and is
 recorded as `variant_scale` in `variants/variants.perturbation`. A variant stands for a network of
 the same topology with other customers. The default, log-uniform on [1/k, k] with k = 2.64, has
-median 1, so the bulk stays at the calibrated level; k is the widest of the measured ratios to the
-CSIRO feeders' median at `L = 1`: 0.38–2.58 (FeederBW) and 0.52–2.53 (Electricity North West),
-rounded to two decimals. `variant_scale: 1` turns it off.
+median 1 (half the variants below their nominal level, half above) and mean
+(k − 1/k) / (2 ln k) = 1.165, so the mean load is about 16 % above that of `L = 1`; summed over
+the feeders of a substation, whose levels are drawn independently, the 90th percentile of the
+load per customer rises by about a fifth (measured on the CSIRO networks without PV: median 0.98
+against 0.80 kW). k is the widest of the measured ratios to the CSIRO feeders' median at `L = 1`:
+0.38–2.58 (FeederBW) and 0.52–2.53 (Electricity North West), rounded to two decimals.
+`variant_scale: 1` turns it off.
 
 - The networks whose nominal loads are measured, the EDP networks (catalog
   `base_loads: loadshape_coincident_peak`: their nominal load is the measured coincident peak,
