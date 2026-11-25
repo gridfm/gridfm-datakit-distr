@@ -76,6 +76,8 @@ class ScenarioStream(IntEnum):
     """Hour of the PV series of each scenario (``scenarios.pv_profile.provider: pvgis``)."""
     SOURCE_UNBALANCE = 14
     """Negative-sequence ratio and angle of the source (``scenarios.source_unbalance``)."""
+    PV_Q = 15
+    """Reactive power of each PV unit (``der.pv.reactive_mode: uniform``)."""
 
 
 def network_key(network_id: str) -> int:

@@ -215,6 +215,33 @@ def test_storage_stays_at_its_setpoint_in_the_opf(tmp_path: Path) -> None:
     assert all(np.sign(d) == np.sign(p) for d, p in moved)
 
 
+def test_a_drawn_pv_reactive_power_meets_its_setpoints(tmp_path: Path) -> None:
+    """With `der.pv.reactive_mode: uniform` every power flow delivers the drawn q (the setpoint
+    check reads it from the engine), at night too without a threshold, within its limits; the
+    OPF, whose class and fallback start come from that power flow, solves and verifies."""
+    out = tmp_path / "out"
+    pv = {"penetration": 1.0, "kwp": 5.0, "reactive_mode": "uniform", "reactive_threshold": 0.0}
+    data = config(**{
+        "networks.include": ["t/lv"], "der.pv": pv, "scenarios.n_scenarios_per_variant": 12,
+        "settings.float_precision": "full",
+    })  # fmt: skip
+    generate(data, out, catalog=catalog(tmp_path), root=tmp_path)
+    meta = read(out, "scenarios/scenario_meta").to_pylist()
+    assert {(r["pf_status"], r["n_off_setpoint"]) for r in meta} == {("converged", 0)}
+    rows = [r for r in read(out, "scenarios/der").to_pylist() if r["der_type"] == "pv"]
+    q = np.array([r["q_var"] for r in rows])
+    assert (q > 0).any()  # both directions
+    assert (q < 0).any()
+    assert any(r["p_w"] == 0 and r["q_var"] != 0 for r in rows)  # at night, without threshold
+    for r in rows:  # threshold 0: L = min(0.44 S, the circle)
+        s = r["s_rated_va"]
+        limit = min(0.44 * s, float(np.sqrt(max(s**2 - r["p_w"] ** 2, 0.0))))
+        assert abs(r["q_var"]) <= limit * (1 + 1e-9)
+    solved = [r for r in read(out, "opf/opf_meta").to_pylist() if r["opf_status"] == SOLVED]
+    assert solved
+    assert all(r["verified"] and r["verify_max_dv_pu"] <= 1e-6 for r in solved)
+
+
 DG_ONLY: dict[str, Any] = {
     "networks.include": ["t/dg"],
     "der.pv.penetration": 0.0,

@@ -322,6 +322,17 @@ def test_voltage_limits() -> None:
     )
 
 
+def test_a_drawn_pv_reactive_power_needs_unit_power_factor() -> None:
+    one_issue(
+        with_("der.pv", {"reactive_mode": "uniform", "power_factor": 0.95}),
+        "der.pv",
+        "reactive_mode 'uniform' draws q itself: power_factor must be 1",
+    )
+    config = validate_config(with_("der.pv", {"reactive_mode": "uniform"}))
+    assert config.der.pv.reactive_mode == "uniform"
+    assert validate_config(config.model_dump(mode="json")) == config  # a stored config reloads
+
+
 def test_synthetic_settings_need_the_synthetic_provider() -> None:
     data = with_(
         "scenarios.profiles", {"provider": "network_loadshapes", "synthetic": {"local_sigma": 0.1}}

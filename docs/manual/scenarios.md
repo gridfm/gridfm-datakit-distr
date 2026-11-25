@@ -141,9 +141,25 @@ no cloud cover is drawn (`cloudiness` must keep its default).
 
 ### Inverter
 
-The unit injects `p = min(p_avail, s_rated)` (an inverter smaller than its panels clips) and
-`q = −p · tan(acos(pf))`, limited to `p² + q² ≤ s_rated²`. The power flow never curtails: that is
-the OPF's job ([OPF labels](opf.md)).
+The unit injects `p = min(p_avail, s_rated)` (an inverter smaller than its panels clips). The
+power flow never curtails: that is the OPF's job ([OPF labels](opf.md)). Its reactive power
+follows `der.pv.reactive_mode`:
+
+- `power_factor` (default): `q = −p · tan(acos(pf))`, limited to `p² + q² ≤ s_rated²`. At the
+  default power factor 1, `q = 0`.
+- `uniform`: `q = u · L`, with `u` drawn per unit and scenario, uniform on [−1, 1), and
+  `L = min(q_max, √(s_rated² − p²))`. `q_max` is the OPF's limit: `reactive_fraction · s_rated`, and
+  0 when `p_avail < reactive_threshold · s_rated` (0.44 and 0.05 by default, IEEE 1547-2018
+  Category B; [OPF labels](opf.md#the-problem)). Positive `q` is injected, negative absorbed. This
+  is IEEE 1547-2018's constant reactive power mode, with its setpoint drawn per scenario within
+  the limits the OPF applies, so the power flow and the OPF share one reactive range.
+  `power_factor` must stay 1.
+
+Limit of `uniform`: `q` does not follow the voltage. An inverter in IEEE 1547-2018's volt-var
+mode injects only below the zero point of its curve and absorbs only above it; the draw also
+gives reactive power injected at high voltage, absorbed at low voltage, and inside a volt-var
+deadband, states that volt-var never produces. Voltage-dependent control (volt-var, volt-watt) is
+not modelled.
 
 ## Storage set-points
 

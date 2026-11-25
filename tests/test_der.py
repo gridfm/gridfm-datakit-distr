@@ -256,6 +256,56 @@ def test_an_undersized_inverter_clips_the_output(
         assert (np.hypot(d.p_w, d.q_var) <= rated * (1 + 1e-12)).all()
 
 
+def reactive_limit(fleet: PVOutputs, p_avail: Any, p: Any) -> Any:
+    """``L``, the bound of a drawn ``q``: the OPF's limit and the rating's circle, computed here
+    from the units' values."""
+    rated = np.array([u.s_rated_va for u in fleet.units])
+    fraction = np.array([u.reactive_fraction for u in fleet.units])
+    threshold = np.array([u.reactive_threshold for u in fleet.units])
+    q_opf = np.where(p_avail < threshold * rated, 0.0, fraction * rated)
+    return np.minimum(q_opf, np.sqrt(np.maximum(rated**2 - p**2, 0.0)))
+
+
+def test_a_uniform_reactive_mode_draws_q_both_ways_within_its_limits(
+    base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
+) -> None:
+    """Any hour (night, the threshold, the OPF's limit) at the default rating; at 11:00 under a
+    clear sky with inverters rated at their kWp the circle binds (p/S 0.97: 0.26 S < 0.44 S)."""
+    cases = ((1.1, PVProfile(), None), (1.0, PVProfile(cloudiness=0.0), 11 * 3600))
+    binds: set[str] = set()
+    q_all: list[Any] = []
+    for kva_per_kwp, profile, time_s in cases:
+        fleet, _ = outputs(base, targets, inverter_kva_per_kwp=kva_per_kwp)
+        drawn_fleet, _ = outputs(
+            base, targets, inverter_kva_per_kwp=kva_per_kwp, reactive_mode="uniform"
+        )
+        default = PVOutputs(fleet.units, fleet.spec, profile)
+        drawn = PVOutputs(drawn_fleet.units, drawn_fleet.spec, profile)
+        rated = np.array([u.s_rated_va for u in drawn.units])
+        for s in range(40):
+            a, b = default.draw(SEED, 0, 0, s, time_s), drawn.draw(SEED, 0, 0, s, time_s)
+            assert (a.hour, a.cloudiness) == (b.hour, b.cloudiness)
+            assert np.array_equal(a.p_avail_w, b.p_avail_w)  # the mode moves q only
+            assert np.array_equal(a.p_w, b.p_w)
+            assert not a.q_var.any()  # power factor 1
+            limit = reactive_limit(drawn, b.p_avail_w, b.p_w)
+            assert (np.abs(b.q_var) <= limit * (1 + 1e-9)).all()
+            assert not b.q_var[limit == 0].any()
+            circle = np.sqrt(rated**2 - b.p_w**2)
+            for name, where in (
+                ("none", limit == 0),
+                ("circle", (limit > 0) & (limit == circle)),
+                ("opf", (limit > 0) & (limit < circle)),
+            ):
+                if where.any():
+                    binds.add(name)
+            q_all.append(b.q_var)
+    q = np.concatenate(q_all)
+    assert (q > 0).any()  # both directions
+    assert (q < 0).any()
+    assert binds == {"none", "circle", "opf"}
+
+
 def test_the_engine_delivers_the_sampled_outputs(
     base: tuple[Network, Path, PreparedNetwork], targets: VariantTargets
 ) -> None:

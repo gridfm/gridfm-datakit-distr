@@ -178,6 +178,7 @@ def test_stream_codes_are_stable() -> None:
         "DG_AVAILABILITY": 12,
         "PV_TIME": 13,
         "SOURCE_UNBALANCE": 14,
+        "PV_Q": 15,
     }
 
 

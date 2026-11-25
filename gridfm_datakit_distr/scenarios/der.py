@@ -7,7 +7,11 @@ customer's nodes, ``model=1`` (constant P and Q within the load window).
 Output per scenario: ``p_avail = kWp · clear_sky(hour) · cloud_factor(cloudiness) · a``, injected
 up to the inverter rating, ``p = min(p_avail, s_rated)`` with ``s_rated = inverter_kva_per_kwp ·
 kWp`` (clipping; no curtailment in PF labels); ``q = -p · tan(acos(pf))`` (the inverter absorbs
-reactive power below unit power factor), limited so that ``p² + q² ≤ s_rated²``. The hour is the
+reactive power below unit power factor), limited so that ``p² + q² ≤ s_rated²``. With
+``der.pv.reactive_mode: uniform`` (power factor 1) ``q = u · L`` instead, ``u`` uniform on [-1, 1)
+per unit and scenario from ``PV_Q`` and ``L = min(q_max_var(p_avail), sqrt(s_rated² - p²))``, the
+OPF's limit and the rating's circle: IEEE 1547-2018's constant reactive power mode with a setpoint
+drawn per scenario (it does not follow the voltage). The hour is the
 time of day of the load profile when the scenario has one (seconds since the profile start, taken as
 midnight), else drawn uniformly from the scenario's ``PROFILE_TIME`` stream; cloudiness, one per
 scenario for the whole network, from ``PV_OUTPUT``; the availability ``a``, one per unit and
@@ -73,12 +77,14 @@ class PVUnit:
     s_rated_va: float
     power_factor: float
     reactive_fraction: float
-    """Largest |q| in the OPF, as a fraction of ``s_rated_va``."""
+    """Largest |q| in the OPF (and of a drawn q), as a fraction of ``s_rated_va``."""
     reactive_threshold: float
-    """No reactive power in the OPF below this available power (fraction of ``s_rated_va``)."""
+    """No reactive power in the OPF (nor a drawn q) below this available power (fraction of
+    ``s_rated_va``)."""
 
     def q_max_var(self, p_avail_w: float) -> float:
-        """The largest |q| (var) the OPF may dispatch at an available power (W)."""
+        """The largest |q| (var) the OPF may dispatch at an available power (W); with
+        ``reactive_mode: uniform`` also the bound of the power flow's drawn q."""
         if p_avail_w < self.reactive_threshold * self.s_rated_va:
             return 0.0
         return self.reactive_fraction * self.s_rated_va
@@ -163,7 +169,7 @@ class PVOutputs:
         cloudiness = float(self.profile.cloudiness.sample(rng))
         availability = self._availability(seed, net, k, s)
         p_avail = 1e3 * self._kwp * clear_sky(hour) * cloud_factor(cloudiness) * availability
-        return PVDraw(hour, cloudiness, p_avail, *self._setpoints(p_avail))
+        return PVDraw(hour, cloudiness, p_avail, *self._setpoints(p_avail, seed, net, k, s))
 
     def _draw_series(
         self, series: PVSeries, seed: int, net: int, k: int, s: int, time_s: int | None
@@ -172,7 +178,8 @@ class PVOutputs:
         i = draw_record(series, rng, None if time_s is None else int(time_s) % DAY_S)
         p_avail = self._kwp * series.p_w[i] * self._availability(seed, net, k, s)
         time_utc_s = series.start_s + 3600 * i
-        return PVDraw(None, None, p_avail, *self._setpoints(p_avail), time_utc_s=time_utc_s)
+        p, q = self._setpoints(p_avail, seed, net, k, s)
+        return PVDraw(None, None, p_avail, p, q, time_utc_s=time_utc_s)
 
     def _availability(self, seed: int, net: int, k: int, s: int) -> float | NDArray[np.float64]:
         spec = self.profile.availability
@@ -182,10 +189,14 @@ class PVOutputs:
         return np.array([float(spec.sample(rng)) for _ in self.units])
 
     def _setpoints(
-        self, p_avail: NDArray[np.float64]
+        self, p_avail: NDArray[np.float64], seed: int, net: int, k: int, s: int
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         p = np.minimum(p_avail, self._rated)  # inverter clipping when kVA < kWp
         q_limit = np.sqrt(np.maximum(self._rated**2 - p**2, 0.0))
+        if self.spec.reactive_mode == "uniform":
+            q_opf = [u.q_max_var(float(a)) for u, a in zip(self.units, p_avail, strict=True)]
+            rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_Q)
+            return p, rng.uniform(-1.0, 1.0, len(self.units)) * np.minimum(q_opf, q_limit)
         q = -np.minimum(p * self._tan, q_limit)
         return p, q
 

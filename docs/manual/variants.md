@@ -75,8 +75,9 @@ multi-phase loads. A perturbation without elements to act on does nothing, and i
   customer's consumption, so the size is drawn independently of the load. There is no export
   limit: a unit injects up to its inverter rating, also above 3.68 kW per phase, the limit of the
   UK's EREC G98 (larger units need an EREC G99 application).
-- **OPF only.** `reactive_fraction` and `reactive_threshold`, per unit, bound the reactive power the
-  OPF may dispatch ([OPF labels](opf.md#the-problem)).
+- **Reactive limits.** `reactive_fraction` and `reactive_threshold`, per unit, bound the reactive
+  power the OPF may dispatch ([OPF labels](opf.md#the-problem)) and, with `reactive_mode:
+  uniform`, the reactive power drawn for the power flow ([Scenarios](scenarios.md#inverter)).
 
 The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-output)).
 

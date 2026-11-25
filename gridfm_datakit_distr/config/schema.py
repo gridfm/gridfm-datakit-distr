@@ -355,6 +355,16 @@ class PV(_Config):
         "variant. Below 1 the inverter absorbs reactive power, `q = -p · tan(acos(pf))`, limited "
         "to its rating.",
     )
+    reactive_mode: Literal["power_factor", "uniform"] = Field(
+        default="power_factor",
+        description="Reactive power of each inverter in the power flow. `power_factor` "
+        "(default): from `power_factor`. `uniform`: drawn per unit and scenario in both "
+        "directions, `q = u · L` with `u` uniform on [-1, 1) and `L` the smaller of the OPF's "
+        "limit (`reactive_fraction` of the rating, none below `reactive_threshold`) and the "
+        "rating's circle at the unit's active power: IEEE 1547-2018's constant reactive power "
+        "mode with its setpoint drawn per scenario. It does not follow the voltage. Needs "
+        "`power_factor: 1`.",
+    )
     inverter_kva_per_kwp: float = Field(
         default=1.1,
         gt=0,
@@ -364,16 +374,23 @@ class PV(_Config):
     )
     reactive_fraction: FractionSpec = Field(
         default=Fixed(0.44),
-        description="OPF only: largest reactive power of each inverter, as a fraction of its "
-        "rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per unit "
-        "and variant.",
+        description="Largest reactive power of each inverter in the OPF, and in the power flow "
+        "with `reactive_mode: uniform`, as a fraction of its rating (IEEE 1547-2018 Category B: "
+        "0.44; 1: the rating's circle only); drawn per unit and variant.",
     )
     reactive_threshold: FractionSpec = Field(
         default=Fixed(0.05),
-        description="OPF only: a unit whose available power is below this fraction of its "
-        "rating gives no reactive power (IEEE 1547-2018 Category B: 0.05; 0: no threshold); "
-        "drawn per unit and variant.",
+        description="A unit whose available power is below this fraction of its rating gives "
+        "no reactive power in the OPF, and in the power flow with `reactive_mode: uniform` "
+        "(IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant.",
     )
+
+    @model_validator(mode="after")
+    def _a_drawn_q_needs_unit_power_factor(self) -> PV:
+        # by value, as a stored config (model_dump) sets every key
+        if self.reactive_mode == "uniform" and self.power_factor != Fixed(1.0):
+            raise ValueError("reactive_mode 'uniform' draws q itself: power_factor must be 1")
+        return self
 
 
 class Storage(_Config):
