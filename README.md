@@ -236,8 +236,6 @@ A dataset is written to `{settings.data_dir}/{dataset_name}`; every table and co
 - [ ] Wind units, in the scenarios and as OPF controls (the OPF controls the PV units and the
   dispatchable generators, `der.dg`), and storage as an OPF control, which needs time sequences
   of scenarios (storage is now fixed at a set-point per scenario: `der.storage`).
-- [ ] PV orientation per unit (output by location and date: `scenarios.pv_profile.provider:
-  pvgis`; per-unit shading and outages: `scenarios.pv_profile.availability`).
 - [ ] More variability, ordered by how much each moves the labels: multiple earthing of the neutral, upstream network strength beyond the CSIRO feeders
   (`variants.upstream`), voltage-dependent (ZIP) loads, a factor shared by the line lengths of a
   feeder, inverter volt-var and volt-watt.

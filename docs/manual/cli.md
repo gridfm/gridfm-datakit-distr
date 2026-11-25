@@ -36,7 +36,7 @@ id fetches its whole source: `fetch ieee13` installs every IEEE feeder.
 |---|---|
 | `--from-file PATH` | install from a local copy: a directory with the source's files, or the file itself for a single-file source; one source only; checksums are verified as for a download |
 | `--allow-unverified` | accept files that have no checksum in the manifest; their SHA-256 are written to `<cache>/<source>.unverified.sha256` for review |
-| `--config CONFIG` | also download the PVGIS series of a generation config with `scenarios.pv_profile.provider: pvgis`, one per location ([Scenarios](scenarios.md#pvgis-series)) |
+| `--config CONFIG` | also download the PVGIS series of a generation config with `scenarios.pv_profile.provider: pvgis`, one per location and, with `orientation`, per orientation class ([Scenarios](scenarios.md#pvgis-series)) |
 | `--force` | download even if the source (or series) is cached |
 | `--cache DIR` | cache directory |
 

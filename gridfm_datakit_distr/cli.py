@@ -45,7 +45,7 @@ def fetch(
         typer.Option(
             "--config",
             help="Also download the PVGIS series a generation config needs "
-            "(scenarios.pv_profile.provider: pvgis), one per location.",
+            "(scenarios.pv_profile.provider: pvgis), one per location and orientation class.",
         ),
     ] = None,
     from_file: Annotated[

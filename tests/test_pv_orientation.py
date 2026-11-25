@@ -201,6 +201,7 @@ def test_an_oriented_dataset_reads_each_units_class_series(
     from typer.testing import CliRunner
 
     from gridfm_datakit_distr.cli import app
+    from gridfm_datakit_distr.config.load import stored_config
     from gridfm_datakit_distr.config.schema import GenerationConfig
     from gridfm_datakit_distr.io.manifest import Manifest
     from gridfm_datakit_distr.networks import catalog
@@ -228,8 +229,13 @@ def test_an_oriented_dataset_reads_each_units_class_series(
     assert "slope 15, azimuth -90" in fetched.output
 
     config = GenerationConfig.model_validate(data)
+    assert stored_config(config.model_dump(mode="json")) == config
     pv_config = config.scenarios.pv_profile.pvgis
     assert pvgis.missing_series(pv_config, ["t/feeder", "t/reg"], tmp_path) == []
+    one = pvgis.series_path(asked[3], tmp_path)
+    one.rename(one.with_suffix(".away"))  # one class missing: every network at the location
+    assert pvgis.missing_series(pv_config, ["t/feeder", "t/reg"], tmp_path) == ["t/feeder", "t/reg"]
+    one.with_suffix(".away").rename(one)
     out = tmp_path / "out"
     generate(config, out, catalog=test_catalog(tmp_path), root=tmp_path)
 
