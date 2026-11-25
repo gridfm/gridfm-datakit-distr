@@ -26,7 +26,9 @@ Solar Energy 24, 1980).
 With ``scenarios.pv_profile.provider: pvgis`` the output per kWp is one hour of the network's PVGIS
 series instead (``scenarios/pvgis.py``): ``p_avail = kWp · P / 1 kW · a``, ``P`` the series' power
 of 1 kWp in the record drawn from ``PV_TIME``, at the load profile's local time of day when the
-scenario has one; no cloudiness is drawn. Clipping and reactive power as above.
+scenario has one; no cloudiness is drawn. With ``pvgis.orientation`` each unit reads the series of
+its orientation class (drawn per variant, ``variants/perturbation.py``) at that record, so the hour
+and the weather stay shared. Clipping and reactive power as above.
 
 Storage units (``Generator.bess_<load>``, placed with PV customers) are fixed at a set-point per
 scenario, ``p = setpoint · kW``, ``setpoint`` drawn per unit from ``STORAGE_SETPOINT`` (positive:
@@ -43,7 +45,7 @@ from ``DG_AVAILABILITY`` (a fixed value draws nothing); ``p_avail_w`` of a DG is
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -82,6 +84,9 @@ class PVUnit:
     reactive_threshold: float
     """No reactive power in the OPF (nor a drawn q) below this available power (fraction of
     ``s_rated_va``)."""
+    orientation: tuple[int, int] | None = None
+    """(tilt, azimuth) of the PVGIS series the unit reads (degrees), with
+    ``scenarios.pv_profile.pvgis.orientation``."""
 
     def q_max_var(self, p_avail_w: float) -> float:
         """The largest |q| (var) the OPF may dispatch at an available power (W); with
@@ -115,6 +120,7 @@ def pv_units(p: Perturbation, spec: PV) -> tuple[PVUnit, ...]:
             power_factor=p.pv_power_factor.get(load, 1.0),
             reactive_fraction=_per_unit(p.pv_reactive_fraction, load, spec.reactive_fraction),
             reactive_threshold=_per_unit(p.pv_reactive_threshold, load, spec.reactive_threshold),
+            orientation=p.pv_orientation.get(load),
         )
         for load, kwp in sorted(p.pv_kwp.items())
     )
@@ -139,18 +145,28 @@ class PVDraw:
 
 class PVOutputs:
     """The outputs of a variant's PV units, scenario by scenario; ``series``: the network's
-    PVGIS series (``provider: pvgis``), None for the synthetic clear sky."""
+    PVGIS series (``provider: pvgis``), with ``orientation`` one per class (each unit reads its
+    own at the scenario's hour), None for the synthetic clear sky."""
 
     def __init__(
         self,
         units: Sequence[PVUnit],
         spec: PV,
         profile: PVProfile,
-        series: PVSeries | None = None,
+        series: PVSeries | Mapping[tuple[int, int], PVSeries] | None = None,
     ) -> None:
         if (series is None) != (profile.provider != "pvgis"):
             raise ValueError(f"provider {profile.provider!r} with series {series!r}")
         self.units = tuple(units)
+        self._unit_series: list[PVSeries] | None = None
+        if isinstance(series, Mapping):
+            classes = [u.orientation for u in self.units]
+            if None in classes:
+                raise ValueError("a series per orientation class needs units with a class")
+            self._unit_series = [series[c] for c in classes if c is not None]
+            series = next(iter(series.values()))  # the clock: one location, one set of years
+        elif any(u.orientation is not None for u in self.units):
+            raise ValueError("units with an orientation class need a series per class")
         self.spec = spec
         self.profile = profile
         self.series = series
@@ -177,7 +193,12 @@ class PVOutputs:
     ) -> PVDraw:
         rng = scenario_rng(seed, net, k, s, ScenarioStream.PV_TIME)
         i = draw_record(series, rng, None if time_s is None else int(time_s) % DAY_S)
-        p_avail = self._kwp * series.p_w[i] * self._availability(seed, net, k, s)
+        per_kwp = (
+            series.p_w[i]
+            if self._unit_series is None
+            else np.array([u.p_w[i] for u in self._unit_series])
+        )
+        p_avail = self._kwp * per_kwp * self._availability(seed, net, k, s)
         time_utc_s = series.start_s + 3600 * i
         p, q = self._setpoints(p_avail, seed, net, k, s)
         return PVDraw(None, None, p_avail, p, q, time_utc_s=time_utc_s)

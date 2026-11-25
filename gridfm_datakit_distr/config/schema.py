@@ -524,11 +524,50 @@ class PVGISLocation(_Config):
         return name
 
 
+class PVOrientation(_Config):
+    """Orientation of each PV unit (`provider: pvgis` with `optimalangles: false` only): per
+    variant, each unit draws one (tilt, azimuth) pair uniformly among the pairs of the two lists
+    and reads the PVGIS series of that pair at its location; every tilt-0 pair reads the one
+    horizontal series. The defaults cover the orientations of residential PV in Europe and the
+    US (Killinger et al. 2018, [Scenarios](scenarios.md#orientation))."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Draw an orientation per unit and variant. `false` (default): every unit "
+        "reads the location's one series, and every output is the same as without this section.",
+    )
+    tilt_deg: list[Annotated[int, Field(ge=0, le=90)]] = Field(
+        default_factory=lambda: [0, 15, 30, 45, 60],
+        min_length=1,
+        description="Slopes of the modules from the horizontal (whole degrees), PVGIS's `angle`.",
+    )
+    azimuth_deg: list[Annotated[int, Field(ge=-180, le=180)]] = Field(
+        default_factory=lambda: [-90, -45, 0, 45, 90],
+        min_length=1,
+        description="Azimuths of the modules (whole degrees, 0 south, 90 west, -90 east), "
+        "PVGIS's `aspect`.",
+    )
+
+    @model_validator(mode="after")
+    def _distinct(self) -> PVOrientation:
+        for name in ("tilt_deg", "azimuth_deg"):
+            values = getattr(self, name)
+            if len(set(values)) != len(values):  # a repeat would weight the draw
+                raise ValueError(f"{name} has a duplicate value: {values}")
+        return self
+
+    def pairs(self) -> list[tuple[int, int]]:
+        """The (tilt, azimuth) pairs drawn, as the series each reads: a tilt-0 pair is the
+        horizontal series, ``(0, 0)``."""
+        return [(t, a if t else 0) for t in self.tilt_deg for a in self.azimuth_deg]
+
+
 class PVGIS(_Config):
     """Hourly PV output from PVGIS 5.3 of the EU Joint Research Centre, `provider: pvgis` only
-    (this section with another provider is an error). One `seriescalc` series per location: the
-    power `P` of a 1 kWp system, with PVGIS's temperature model and system loss, for every hour of
-    the years; `fetch --config` downloads it into the cache ([Scenarios](scenarios.md#pv-output)).
+    (this section with another provider is an error). One `seriescalc` series per location (with
+    `orientation`, one per orientation class): the power `P` of a 1 kWp system, with PVGIS's
+    temperature model and system loss, for every hour of the years; `fetch --config` downloads it
+    into the cache ([Scenarios](scenarios.md#pv-output)).
     The keys below are PVGIS's API parameters."""
 
     locations: Annotated[
@@ -574,7 +613,7 @@ class PVGIS(_Config):
         default=True,
         description="Use PVGIS's fixed slope and azimuth with the highest yearly energy at "
         "each location (the response reports them, `manifest.json`); `false` needs `angle` "
-        "and `aspect`.",
+        "and `aspect`, or `orientation`.",
     )
     angle: int | None = Field(
         default=None,
@@ -590,16 +629,25 @@ class PVGIS(_Config):
         description="Azimuth of the modules (whole degrees, 0 south, 90 west, -90 east); with "
         "`optimalangles: false` only.",
     )
+    orientation: PVOrientation = PVOrientation()
 
     @model_validator(mode="after")
     def _consistent(self) -> PVGIS:
         if self.startyear > self.endyear:
             raise ValueError(f"startyear {self.startyear} is after endyear {self.endyear}")
         explicit = (self.angle is not None, self.aspect is not None)
+        if self.orientation.enabled:
+            if self.optimalangles or any(explicit):
+                raise ValueError(
+                    "orientation is incompatible with optimalangles: true and with angle and "
+                    "aspect: it draws each unit's angles; set optimalangles: false and leave "
+                    "angle and aspect unset"
+                )
+            return self
         if self.optimalangles and any(explicit):
             raise ValueError("angle and aspect are used only with optimalangles: false")
         if not self.optimalangles and not all(explicit):
-            raise ValueError("optimalangles: false needs angle and aspect")
+            raise ValueError("optimalangles: false needs angle and aspect, or orientation")
         return self
 
     def matching_keys(self, network_id: str) -> list[str]:
@@ -648,6 +696,12 @@ class PVProfile(_Config):
         # values, not keys: a stored config (model_dump) sets every key
         if self.provider == "pvgis" and self.cloudiness != _CLOUDINESS:
             raise ValueError("cloudiness is used only with provider 'synthetic_clear_sky'")
+        if self.provider != "pvgis" and self.pvgis.orientation.enabled:
+            raise ValueError(
+                "orientation needs provider 'pvgis': the synthetic clear sky has the geometry of "
+                "latitude 0, where a tilt toward the equator only scales the output by "
+                "cos(tilt), while at the networks' latitudes it raises the yield"
+            )
         if self.provider != "pvgis" and self.pvgis != PVGIS():
             raise ValueError(f"pvgis is used only with provider 'pvgis', got {self.provider!r}")
         return self

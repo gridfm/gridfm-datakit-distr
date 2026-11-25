@@ -268,10 +268,14 @@ def _network_tables(
         if pv_profile.provider == "pvgis":
             record = series_record(pv_profile.pvgis, job.network.id, root)
             started = manifest.networks[j].get("pvgis", record)
-            if started["sha256"] != record["sha256"]:
+            now, then = (  # one record, or one per orientation class
+                ", ".join(r["sha256"] for r in (x if isinstance(x, list) else [x]))
+                for x in (record, started)
+            )
+            if now != then:
                 raise GenerationError(
-                    f"{job.network.id}: the PVGIS series in the cache ({record['sha256']}) is "
-                    f"not the one this dataset started with ({started['sha256']})"
+                    f"{job.network.id}: the PVGIS series in the cache ({now}) is "
+                    f"not the one this dataset started with ({then})"
                 )
             manifest.networks[j]["pvgis"] = passport["pv_series"] = record
         writer.write_json(f"catalog/passports/{job.network.id}.json", passport)
@@ -434,7 +438,8 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
         network, targets, config.variants, seed, k, options=options, root=root,
         der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw,
         upstream=task.job.upstream,
-        load_level=profiles.synthetic.variant_scale if level else None, keep_prepared=True,
+        load_level=profiles.synthetic.variant_scale if level else None,
+        orientation=config.scenarios.pv_profile.pvgis.orientation, keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":

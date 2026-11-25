@@ -116,10 +116,16 @@ def fetch(
 
 
 def _fetch_pvgis(config_path: Path, force: bool, cache: Path | None) -> None:
-    """Download the PVGIS series of a config, one per location (``fetch --config``)."""
+    """Download the PVGIS series of a config, one per location and orientation class
+    (``fetch --config``)."""
     from gridfm_datakit_distr.config.load import ConfigError, load_config, select_networks
     from gridfm_datakit_distr.networks.catalog import load_catalog
-    from gridfm_datakit_distr.scenarios.pvgis import PVGISError, fetch_series, location_of
+    from gridfm_datakit_distr.scenarios.pvgis import (
+        PVGISError,
+        class_settings,
+        fetch_series,
+        location_of,
+    )
 
     catalog = load_catalog()
     try:
@@ -135,17 +141,18 @@ def _fetch_pvgis(config_path: Path, force: bool, cache: Path | None) -> None:
         location_of(profile.pvgis, s.network_id) for s in select_networks(config.networks, catalog)
     }
     for location in sorted(locations, key=lambda loc: (loc.lat, loc.lon)):
-        try:
-            path, series, downloaded = fetch_series(profile.pvgis, location, cache, force=force)
-        except PVGISError as exc:
-            typer.echo(f"error: {exc}", err=True)
-            raise typer.Exit(1) from exc
-        state = "downloaded" if downloaded else "already fetched and verified"
-        typer.echo(
-            f"pvgis {location.lat}, {location.lon}: {state} ({path}; {series.radiation_db}, "
-            f"slope {series.slope_deg:g}, azimuth {series.azimuth_deg:g}, "
-            f"sha256 {series.sha256})"
-        )
+        for settings in class_settings(profile.pvgis):
+            try:
+                path, series, downloaded = fetch_series(settings, location, cache, force=force)
+            except PVGISError as exc:
+                typer.echo(f"error: {exc}", err=True)
+                raise typer.Exit(1) from exc
+            state = "downloaded" if downloaded else "already fetched and verified"
+            typer.echo(
+                f"pvgis {location.lat}, {location.lon}: {state} ({path}; {series.radiation_db}, "
+                f"slope {series.slope_deg:g}, azimuth {series.azimuth_deg:g}, "
+                f"sha256 {series.sha256})"
+            )
 
 
 @app.command()

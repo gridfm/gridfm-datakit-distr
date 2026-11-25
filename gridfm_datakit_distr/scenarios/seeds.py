@@ -51,6 +51,8 @@ class VariantStream(IntEnum):
     LOAD_LEVEL = 13
     """Load level ``L`` of the variant's synthetic loads
     (``scenarios.profiles.synthetic.variant_scale``)."""
+    PV_ORIENTATION = 15
+    """Orientation class of each PV unit (``scenarios.pv_profile.pvgis.orientation``)."""
 
 
 class ScenarioStream(IntEnum):

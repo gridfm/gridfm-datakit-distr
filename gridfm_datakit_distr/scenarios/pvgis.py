@@ -17,6 +17,9 @@ PVGIS as the hour's average, ERA5 values are hourly averages. A series must hold
 1 January 00:00 of its first year to 31 December 23:00 of its last, in order, with a finite,
 non-negative ``P``; anything else is refused.
 
+With ``orientation`` a location has one series per orientation class (:func:`class_settings`),
+each requested with its angles; every class reads the same record in a scenario.
+
 Per scenario (:func:`draw_record`, stream ``PV_TIME``): with a load time of day, a date drawn
 uniformly among the local days the series covers entirely and the record holding that local
 time on that date (``zoneinfo``, so DST applies; a wall time that does not exist or occurs twice
@@ -43,7 +46,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 from numpy.typing import NDArray
 
-from gridfm_datakit_distr.config.schema import PVGIS, PVGISLocation, PVProfile
+from gridfm_datakit_distr.config.schema import PVGIS, PVGISLocation, PVOrientation, PVProfile
 from gridfm_datakit_distr.networks.cache import cache_root
 from gridfm_datakit_distr.networks.catalog import CatalogError, format_manifest, parse_manifest
 from gridfm_datakit_distr.networks.fetch import USER_AGENT
@@ -95,6 +98,19 @@ def location_of(pvgis: PVGIS, network_id: str) -> PVGISLocation:
         found = "no location" if not keys else f"several locations ({', '.join(keys)})"
         raise PVGISError(f"{network_id}: {found} in scenarios.pv_profile.pvgis.locations")
     return pvgis.locations[keys[0]]
+
+
+def class_settings(pvgis: PVGIS) -> list[PVGIS]:
+    """The settings of each series of a location: the configured ones, or with ``orientation``
+    one per distinct class (tilt, azimuth), in the order of :meth:`PVOrientation.pairs`, with
+    those angles explicit (whole degrees, so PVGIS uses them as given)."""
+    if not pvgis.orientation.enabled:
+        return [pvgis]
+    off = PVOrientation()
+    return [
+        pvgis.model_copy(update={"angle": t, "aspect": a, "orientation": off})
+        for t, a in dict.fromkeys(pvgis.orientation.pairs())
+    ]
 
 
 def request_url(pvgis: PVGIS, location: PVGISLocation) -> str:
@@ -200,7 +216,7 @@ def _error_message(exc: urllib.error.HTTPError) -> str | None:
 # ------------------------------------------------------------------------------ reading
 
 
-@functools.lru_cache(maxsize=8)
+@functools.lru_cache(maxsize=64)  # 21 series per location with the default orientation classes
 def _cached(path: Path) -> PVSeries:
     return read_series(path)
 
@@ -230,14 +246,22 @@ def read_series(path: Path) -> PVSeries:
     return _series(_document(data, str(path)), digest, str(path))
 
 
-def series_for(profile: PVProfile, network_id: str, root: Path | None = None) -> PVSeries | None:
-    """The series of a network in its time zone, read once per process; None with another
-    provider."""
+def series_for(
+    profile: PVProfile, network_id: str, root: Path | None = None
+) -> PVSeries | dict[tuple[int, int], PVSeries] | None:
+    """The series of a network in its time zone, with ``orientation`` one per class (tilt,
+    azimuth), read once per process; None with another provider."""
     if profile.provider != "pvgis":
         return None
     location = location_of(profile.pvgis, network_id)
-    series = _cached(series_path(request_url(profile.pvgis, location), root))
-    return replace(series, tz=ZoneInfo(location.timezone))
+    tz = ZoneInfo(location.timezone)
+    found = [
+        replace(_cached(series_path(request_url(s, location), root)), tz=tz)
+        for s in class_settings(profile.pvgis)
+    ]
+    if not profile.pvgis.orientation.enabled:
+        return found[0]
+    return dict(zip(dict.fromkeys(profile.pvgis.orientation.pairs()), found, strict=True))
 
 
 def missing_series(pvgis: PVGIS, network_ids: Sequence[str], root: Path | None = None) -> list[str]:
@@ -245,19 +269,29 @@ def missing_series(pvgis: PVGIS, network_ids: Sequence[str], root: Path | None =
     (:class:`PVGISError` if one changed)."""
     missing, checked = [], set()
     for network_id in network_ids:
-        path = series_path(request_url(pvgis, location_of(pvgis, network_id)), root)
-        if not path.is_file():
+        location = location_of(pvgis, network_id)
+        paths = [series_path(request_url(s, location), root) for s in class_settings(pvgis)]
+        if not all(path.is_file() for path in paths):
             missing.append(network_id)
-        elif path not in checked:
-            read_series(path)
-            checked.add(path)
+        for path in paths:
+            if path.is_file() and path not in checked:
+                read_series(path)
+                checked.add(path)
     return missing
 
 
-def series_record(pvgis: PVGIS, network_id: str, root: Path | None = None) -> dict[str, Any]:
+def series_record(
+    pvgis: PVGIS, network_id: str, root: Path | None = None
+) -> dict[str, Any] | list[dict[str, Any]]:
     """A network's series as ``manifest.json`` (``networks[].pvgis``) and its passport
-    (``pv_series``) record it: request, databases and angles PVGIS used, checksum, attribution."""
+    (``pv_series``) record it: request, databases and angles PVGIS used, checksum, attribution;
+    with ``orientation``, a list of such records, one per class."""
     location = location_of(pvgis, network_id)
+    records = [_record(s, location, root) for s in class_settings(pvgis)]
+    return records if pvgis.orientation.enabled else records[0]
+
+
+def _record(pvgis: PVGIS, location: PVGISLocation, root: Path | None) -> dict[str, Any]:
     url = request_url(pvgis, location)
     series = _cached(series_path(url, root))
     return {

@@ -279,9 +279,10 @@ availability, injected up to the inverter rating ([Scenarios](scenarios.md)).
 #### `scenarios.pv_profile.pvgis`
 
 Hourly PV output from PVGIS 5.3 of the EU Joint Research Centre, `provider: pvgis` only
-(this section with another provider is an error). One `seriescalc` series per location: the
-power `P` of a 1 kWp system, with PVGIS's temperature model and system loss, for every hour of
-the years; `fetch --config` downloads it into the cache ([Scenarios](scenarios.md#pv-output)).
+(this section with another provider is an error). One `seriescalc` series per location (with
+`orientation`, one per orientation class): the power `P` of a 1 kWp system, with PVGIS's
+temperature model and system loss, for every hour of the years; `fetch --config` downloads it
+into the cache ([Scenarios](scenarios.md#pv-output)).
 The keys below are PVGIS's API parameters.
 
 | Key | Type | Default | Description |
@@ -292,9 +293,23 @@ The keys below are PVGIS's API parameters.
 | `scenarios.pv_profile.pvgis.loss` | number ≥ 0 and < 100 | `14.0` | System loss (%), PVGIS's recommended 14 by default. |
 | `scenarios.pv_profile.pvgis.pvtechchoice` | one of `crystSi`, `crystSi2025`, `CIS`, `CdTe`, `Unknown` | `crystSi` | PV technology (PVGIS's default `crystSi`). |
 | `scenarios.pv_profile.pvgis.mountingplace` | one of `free`, `building` | `free` | `free`: rack-mounted with air behind the modules (PVGIS's default); `building`: building-integrated, no air behind. PVGIS places roof-mounted systems somewhere between the two. |
-| `scenarios.pv_profile.pvgis.optimalangles` | boolean | `true` | Use PVGIS's fixed slope and azimuth with the highest yearly energy at each location (the response reports them, `manifest.json`); `false` needs `angle` and `aspect`. |
+| `scenarios.pv_profile.pvgis.optimalangles` | boolean | `true` | Use PVGIS's fixed slope and azimuth with the highest yearly energy at each location (the response reports them, `manifest.json`); `false` needs `angle` and `aspect`, or `orientation`. |
 | `scenarios.pv_profile.pvgis.angle` | integer ≥ 0 and ≤ 90 or null | null | Slope of the modules from the horizontal (whole degrees: PVGIS rounds others); with `optimalangles: false` only. |
 | `scenarios.pv_profile.pvgis.aspect` | integer ≥ -180 and ≤ 180 or null | null | Azimuth of the modules (whole degrees, 0 south, 90 west, -90 east); with `optimalangles: false` only. |
+
+##### `scenarios.pv_profile.pvgis.orientation`
+
+Orientation of each PV unit (`provider: pvgis` with `optimalangles: false` only): per
+variant, each unit draws one (tilt, azimuth) pair uniformly among the pairs of the two lists
+and reads the PVGIS series of that pair at its location; every tilt-0 pair reads the one
+horizontal series. The defaults cover the orientations of residential PV in Europe and the
+US (Killinger et al. 2018, [Scenarios](scenarios.md#orientation)).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `scenarios.pv_profile.pvgis.orientation.enabled` | boolean | `false` | Draw an orientation per unit and variant. `false` (default): every unit reads the location's one series, and every output is the same as without this section. |
+| `scenarios.pv_profile.pvgis.orientation.tilt_deg` | list of integers (each ≥ 0 and ≤ 90), at least 1 item | `[0, 15, 30, 45, 60]` | Slopes of the modules from the horizontal (whole degrees), PVGIS's `angle`. |
+| `scenarios.pv_profile.pvgis.orientation.azimuth_deg` | list of integers (each ≥ -180 and ≤ 180), at least 1 item | `[-90, -45, 0, 45, 90]` | Azimuths of the modules (whole degrees, 0 south, 90 west, -90 east), PVGIS's `aspect`. |
 
 ### `scenarios.storage_profile`
 

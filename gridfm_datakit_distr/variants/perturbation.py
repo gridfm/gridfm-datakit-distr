@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gridfm_datakit_distr.config.schema import PV, Storage, Variants
+from gridfm_datakit_distr.config.schema import PV, PVOrientation, Storage, Variants
 from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
 from gridfm_datakit_distr.model.electrical import ComplexMatrix, ElectricalModel
 from gridfm_datakit_distr.scenarios.seeds import VariantStream, variant_rng
@@ -118,6 +118,9 @@ class Perturbation:
     """The substation behind the source (``variants.upstream``); None: the source as loaded."""
     variant_scale: float = 1.0
     """Load level ``L``: factor on every nominal load of the variant (1: not drawn)."""
+    pv_orientation: dict[str, tuple[int, int]] = field(default_factory=dict)
+    """Customer load -> (tilt, azimuth) of the PVGIS series its PV unit reads (degrees), with
+    ``scenarios.pv_profile.pvgis.orientation``."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -131,6 +134,7 @@ class Perturbation:
             ("pv_power_factor", self.pv_power_factor),
             ("pv_reactive_fraction", self.pv_reactive_fraction),
             ("pv_reactive_threshold", self.pv_reactive_threshold),
+            ("pv_orientation", {k: list(v) for k, v in self.pv_orientation.items()}),
             ("storage_kw", self.storage_kw),
             ("dg_kw", self.dg_kw),
         ):
@@ -160,12 +164,14 @@ def sample_perturbation(
     dg_kw: float | None = None,
     upstream: Upstream | None = None,
     load_level: ValueSpec | None = None,
+    orientation: PVOrientation | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
     ``attempt``); with ``der``, the PV units of its customers too, with ``storage`` the
     storage units of the customers with PV, with ``dg_kw`` a dispatchable generator of that
     capacity (kW) at each of :func:`dg_sites`, with ``upstream`` the network's substation, and
-    with ``load_level`` its load level ``L``."""
+    with ``load_level`` its load level ``L``, and with an enabled ``orientation`` the orientation
+    class of each PV unit."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -213,6 +219,7 @@ def sample_perturbation(
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
         share, storage_kw, dg, substation, level,
+        pv_orientation=_orientation(orientation, targets, kwp, seed, net, k, attempt),
     )  # fmt: skip
 
 
@@ -293,6 +300,29 @@ def _pv(
             }
         drawn.append(values)
     return rho, kwp, pf, drawn[0], drawn[1]
+
+
+def _orientation(
+    spec: PVOrientation | None,
+    targets: VariantTargets,
+    pv: dict[str, float],
+    seed: int,
+    net: int,
+    k: int,
+    attempt: int,
+) -> dict[str, tuple[int, int]]:
+    """One pair per customer whatever the placement, uniform among :meth:`PVOrientation.pairs`;
+    kept for the customers with PV, so a unit keeps its class at every higher penetration."""
+    if spec is None or not spec.enabled or not pv:
+        return {}
+    pairs = spec.pairs()
+    rng = variant_rng(seed, net, k, VariantStream.PV_ORIENTATION, attempt)
+    drawn = rng.integers(len(pairs), size=len(targets.customers))
+    return {
+        c.element: pairs[j]
+        for c, j in zip(targets.customers, drawn, strict=True)
+        if c.element in pv
+    }
 
 
 def edit_script(

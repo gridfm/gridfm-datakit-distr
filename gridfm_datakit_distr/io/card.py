@@ -85,7 +85,7 @@ def dataset_card(
     """The dataset's ``README.md``; ``opf_statuses`` with OPF labels."""
     config = manifest.config
     name = config["dataset_name"]
-    pvgis = [n["pvgis"] for n in manifest.networks if "pvgis" in n]
+    pvgis = [r for n in manifest.networks if "pvgis" in n for r in _records(n["pvgis"])]
     units = Counter(u.status for u in manifest.units.values())
     lines = [
         f"# {name}",
@@ -190,12 +190,17 @@ def _dg(network: Mapping[str, Any]) -> str:
     )
 
 
+def _records(entry: Any) -> list[Mapping[str, Any]]:
+    """The series records of a ``networks[].pvgis`` entry: one, or one per orientation class."""
+    return entry if isinstance(entry, list) else [entry]
+
+
 def _pvgis(networks: Sequence[Mapping[str, Any]]) -> list[str]:
     """Each PVGIS series of the dataset: where, what PVGIS used, for which networks."""
     series: dict[str, tuple[Mapping[str, Any], list[str]]] = {}
     for n in networks:
-        if "pvgis" in n:
-            series.setdefault(n["pvgis"]["sha256"], (n["pvgis"], []))[1].append(n["network_id"])
+        for r in _records(n.get("pvgis", [])):
+            series.setdefault(r["sha256"], (r, []))[1].append(n["network_id"])
     return [
         f"{r['latitude']}, {r['longitude']} ({r['timezone']}), {r['years'][0]}-{r['years'][1]}, "
         f"{r['radiation_db']} and {r['meteo_db']}, slope {r['slope_deg']:g}°, azimuth "
