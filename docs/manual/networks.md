@@ -103,6 +103,18 @@ average to peak), which the other sources follow. `c` is 1.48 (rural), 1.32 (urb
 A peak over a window of one day to three weeks is a lower bound of the year's. Only these
 networks (EDP and the European LV feeder) carry loadshapes ([Scenarios](scenarios.md#loads)).
 
+### Load level
+
+With synthetic loads each variant draws a load level `L` that multiplies every nominal load
+([Scenarios](scenarios.md#loads)). The catalog field `load_level` says which networks draw it:
+`true` (the default) for the CSIRO feeders and the IEEE European LV feeder; `false`, `L = 1` and
+nothing drawn, for two reasons:
+
+- measured nominal loads: the EDP networks, whose nominal is the measured coincident peak (above);
+- MV feeders: `ieee13`, `ieee34`, `ieee37`, `ieee123`, `ieee8500`. Their loads are spot or
+  aggregate loads over many substation areas, while the spread of `L` is measured on LV feeders
+  of one substation area each, whose customers share a level.
+
 ## Locations
 
 The PVGIS provider of PV output ([Scenarios](scenarios.md#pvgis-series)) needs a point per

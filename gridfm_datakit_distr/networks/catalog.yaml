@@ -62,11 +62,15 @@ sources:
       in PQ_csv/ (rural, urban) and LV_PQ_csv/, MV_PQ_csv/ (industrial).
 
 networks:
-  - {id: ieee13, source: epri_ieee, master: 13Bus/IEEE13Nodeckt.dss, neutral: kron}
+  # The IEEE MV feeders draw no load level (load_level false): their loads are spot or aggregate
+  # loads over many substation areas, and the level's spread is measured on LV feeders of one
+  # area each.
+  - {id: ieee13, source: epri_ieee, master: 13Bus/IEEE13Nodeckt.dss, neutral: kron, load_level: false}
   - id: ieee34
     source: epri_ieee
     master: 34Bus/ieee34Mod1.dss
     neutral: kron
+    load_level: false
     # The 832-858 distributed loads are delta (IEEE data: D-PQ) but name one node each,
     # so OpenDSS ties their second conductor to ground. Phase pairs as the file's other
     # single-phase delta loads (a: 1.2, b: 2.3, c: 3.1).
@@ -77,13 +81,14 @@ networks:
       - Edit Load.D832_858rb bus1=858.2.3
       - Edit Load.D832_858sc bus1=832.3.1
       - Edit Load.D832_858rc bus1=858.3.1
-  - {id: ieee37, source: epri_ieee, master: 37Bus/ieee37.dss, neutral: kron}
+  - {id: ieee37, source: epri_ieee, master: 37Bus/ieee37.dss, neutral: kron, load_level: false}
   - id: ieee8500
     source: epri_ieee
     master: 8500-Node/Master.dss  # balanced load case, the reference of the test feeder
     neutral: kron
     representations: {unbalanced: 8500-Node/Master-unbal.dss}
-  - {id: ieee123, source: epri_ieee, master: 123Bus/IEEE123Master.dss, neutral: kron}
+    load_level: false
+  - {id: ieee123, source: epri_ieee, master: 123Bus/IEEE123Master.dss, neutral: kron, load_level: false}
   # A UK feeder: its loads are rated 0.23 kV on the 0.416 kV level, so 230 V is its nominal
   # phase-to-neutral voltage (voltage limits are per unit of it), not the 240.2 V base.
   - id: ieee_eulv
@@ -96,13 +101,14 @@ networks:
   # redirect is compiled. Base loads are placeholders (kW = kvar = 1): each takes the mean of
   # its daily loadshape times one factor per network, so that they add up to the network's
   # coincident peak over the profile window (OpenDSS's convention: base kW is the peak). The
-  # voltage bases sit after the cut.
+  # voltage bases sit after the cut. Measured nominal loads: no load level (load_level false).
   - id: edp/industrial
     source: edp
     master: Industrial/Master/master.dss
     neutral: mixed
     master_stop_before: redirect LV_Load_Monitor.txt
     base_loads: loadshape_coincident_peak
+    load_level: false
     extra_commands:
       - Set VoltageBases=[22 0.4]
       # LV neutrals grounded as in the rural and urban networks of the same dataset.
@@ -113,6 +119,7 @@ networks:
     neutral: explicit
     master_stop_before: redirect MonBus.dss
     base_loads: loadshape_coincident_peak
+    load_level: false
     extra_commands: ["Set VoltageBases=[22 0.4]"]
   - id: edp/urban
     source: edp
@@ -120,6 +127,7 @@ networks:
     neutral: explicit
     master_stop_before: redirect MonBus.dss
     base_loads: loadshape_coincident_peak
+    load_level: false
     extra_commands: ["Set VoltageBases=[22 0.4]"]
 
 # Collections expand into one network per feeder from the source manifest.

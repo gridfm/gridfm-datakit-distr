@@ -138,9 +138,9 @@ for k, (bus, conductor) in enumerate(zip(nodes["bus"].to_pylist(), nodes["conduc
 Output:
 
 ```text
-671.a: 1.016 pu at    -1.6 deg
-671.b: 1.026 pu at  -121.1 deg
-671.c: 1.031 pu at   118.8 deg
+671.a: 1.004 pu at    -3.1 deg
+671.b: 1.036 pu at  -121.9 deg
+671.c: 1.019 pu at   118.3 deg
 ```
 
 ### The network admittance and the power-flow equations
@@ -200,7 +200,7 @@ print(f"no current injected at the {(~injecting).sum()} nodes where nothing conn
 Output:
 
 ```text
-source 928.7 kW = loads 919.6 kW + losses 9.1 kW
+source 1855.0 kW = loads 1827.8 kW + losses 27.1 kW
 no current injected at the 19 nodes where nothing connects
 ```
 
@@ -232,11 +232,11 @@ Output:
 
 ```text
 line                 kVA in   loss kW
-Line.650632            1001      4.05
-Line.632670             832      0.98
-Line.670671             806      1.98
-Line.692675             587      0.99
-Line.632633             154      0.08
+Line.650632            1855     13.72
+Line.632670            1367      2.78
+Line.670671            1276      5.40
+Line.692675             623      1.60
+Line.632633             306      0.33
 ```
 
 ### The power flow without OpenDSS
@@ -295,7 +295,7 @@ assert gap < 0.01
 Output:
 
 ```text
-440 bus rows, 40 scenarios; largest |Vm - truth| 1.65e-03 pu
+440 bus rows, 40 scenarios; largest |Vm - truth| 2.17e-03 pu
 ```
 
 ## 5. OPF labels

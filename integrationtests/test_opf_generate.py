@@ -33,13 +33,7 @@ CONFIG: dict[str, Any] = {
     },  # unperturbed, as before the defaults
     # 40 kWp at every customer, inverters rated at their kWp: some scenarios curtail
     "der": {"pv": {"penetration": 1.0, "kwp": 40.0, "inverter_kva_per_kwp": 1.0}},
-    # the conditions these scenarios were chosen at: without a load level (at the default level
-    # 1.64 IEEE 13's scenario 5 verifies at 1.3e-6 pu, above the 1e-6 of verification)
-    "scenarios": {
-        "n_scenarios_per_variant": 6,
-        "pv_profile": {"cloudiness": 0.0},
-        "profiles": {"synthetic": {"variant_scale": 1.0}},
-    },
+    "scenarios": {"n_scenarios_per_variant": 6, "pv_profile": {"cloudiness": 0.0}},
     "labels": {"opf": {"enabled": True}},
     "settings": {"seed": 2, "num_processes": 1},  # two of the six scenarios curtail
 }

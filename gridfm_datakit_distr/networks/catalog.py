@@ -140,6 +140,11 @@ class Network(_Model):
     """Nominal phase-to-neutral voltage (kV) of the buses of a voltage level, keyed by the level's
     line-to-line base (kV), where it differs from the base (e.g. a 230 V network on a 416 V base);
     voltage limits are per unit of it. Levels not listed: the nominal voltage is the base."""
+    load_level: bool = True
+    """Whether the network's variants draw a load level ``L`` with synthetic loads
+    (``scenarios.profiles.synthetic.variant_scale``); false: ``L = 1``, nothing drawn. False for
+    measured nominal loads (EDP) and for MV feeders, whose loads are spot or aggregate loads over
+    many substation areas while ``L`` is measured on LV feeders of one area each (IEEE MV)."""
 
 
 class Collection(_Model):

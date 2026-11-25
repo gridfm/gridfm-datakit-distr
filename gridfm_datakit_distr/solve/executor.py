@@ -429,8 +429,7 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
             _TARGETS[base] = targets
     i, seed = task.job.network_idx, config.settings.seed
     profiles = config.scenarios.profiles
-    # measured nominal loads (EDP) keep their level
-    level = profiles.provider == "synthetic" and network.base_loads != "loadshape_coincident_peak"
+    level = profiles.provider == "synthetic" and network.load_level
     variant = generate_variant(
         network, targets, config.variants, seed, k, options=options, root=root,
         der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw,

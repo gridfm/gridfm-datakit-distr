@@ -450,10 +450,11 @@ class SyntheticProfiles(_Config):
         default=LogUniform(1 / 2.64, 2.64),
         description="Load level `L` of a network, drawn per variant: a factor on every nominal "
         "load of the variant, the other feeders' loads of `variants.upstream` included; "
-        "recorded as `variant_scale` in `variants/variants.perturbation`. The networks whose "
-        "nominal loads are measured (catalog `base_loads: loadshape_coincident_peak`, the EDP "
-        "networks) keep `L = 1`. Default log-uniform on [1/2.64, 2.64], median 1: the spread of "
-        "the peak load per customer across measured feeders ([Scenarios](scenarios.md#loads)). "
+        "recorded as `variant_scale` in `variants/variants.perturbation`. The networks with "
+        "catalog `load_level: false` keep `L = 1`: measured nominal loads (EDP) and MV feeders "
+        "(IEEE 13, 34, 37, 123, 8500) ([Networks](networks.md#load-level)). Default log-uniform "
+        "on [1/2.64, 2.64], median 1: the spread of the peak load per customer across measured "
+        "feeders ([Scenarios](scenarios.md#loads)). "
         "`1`: no load level (every network at its nominal level).",
     )
     global_scale: NonNegativeSpec = Field(

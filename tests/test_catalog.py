@@ -150,6 +150,15 @@ def test_packaged_catalog_has_the_planned_networks() -> None:
     assert catalog.network("ieee13").extra_commands == []
 
 
+def test_mv_feeders_and_measured_loads_draw_no_load_level() -> None:
+    catalog = load_catalog()
+    off = {n.id for n in catalog.networks.values() if not n.load_level}
+    assert off == {"ieee13", "ieee34", "ieee37", "ieee123", "ieee8500",
+                   "edp/industrial", "edp/rural", "edp/urban"}  # fmt: skip
+    assert catalog.network("ieee_eulv").load_level  # an LV feeder draws it, as the CSIRO ones
+    assert catalog.network("csiro_enwl/n01_f1").load_level
+
+
 def test_packaged_csiro_collection_has_128_four_wire_feeders() -> None:
     catalog = load_catalog()
     feeders = [n for n in catalog.networks.values() if n.source == "csiro_enwl"]

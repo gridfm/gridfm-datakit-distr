@@ -70,10 +70,11 @@ against 0.80 kW). k is the widest of the measured ratios to the CSIRO feeders' m
 0.38–2.58 (FeederBW) and 0.52–2.53 (Electricity North West), rounded to two decimals.
 `variant_scale: 1` turns it off.
 
-- The networks whose nominal loads are measured, the EDP networks (catalog
-  `base_loads: loadshape_coincident_peak`: their nominal load is the measured coincident peak,
-  [Networks](networks.md#networks)), keep `L = 1`; nothing is drawn for them. A loadshape provider
-  draws none either.
+- The networks with catalog `load_level: false` keep `L = 1`; nothing is drawn for them
+  ([Networks](networks.md#load-level)): the EDP networks, whose nominal load is the measured
+  coincident peak, and the IEEE MV feeders (13, 34, 37, 123, 8500), whose loads are spot or
+  aggregate loads over many substation areas while `L` is measured on LV feeders of one area
+  each. A loadshape provider draws none either.
 - `L` does not enter the variant's checks (the base case at the nominal loads), the dispatchable
   generators' capacity or the substation's rating: they stay as without it, so heavier networks
   meet the same transformer and DG as lighter ones.

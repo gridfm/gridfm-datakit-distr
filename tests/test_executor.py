@@ -446,23 +446,18 @@ def test_a_network_draws_the_same_whatever_else_the_dataset_holds(tmp_path: Path
         assert table.equals(pq.read_table(alone / f"{name}.parquet")), name
 
 
-def test_the_load_level_scales_each_variant_and_spares_measured_loads(tmp_path: Path) -> None:
+def test_the_load_level_scales_each_variant_and_spares_excluded_networks(tmp_path: Path) -> None:
     """Every load of a variant draws ``L`` times what it draws at ``variant_scale: 1``, one ``L``
-    per variant as recorded; a network with measured nominal loads draws no ``L``."""
-    shapes = VARIANT_FEEDER["master.dss"].replace("model=1\n", "model=1 daily=flat\n")
-    shapes = shapes.replace(
-        "New Load.h1", "New Loadshape.flat npts=2 interval=1 mult=(1 1)\nNew Load.h1"
-    )
+    per variant as recorded; a network with catalog ``load_level: false`` draws no ``L``."""
     write_circuit(tmp_path / "src" / "feeder", VARIANT_FEEDER)
-    write_circuit(tmp_path / "src" / "peak", {"master.dss": shapes})
     source = ArchivesSource(
         kind="archives", id="src", title="test", homepage="-", license="CC0-1.0",
         citation="-", archives={},
     )  # fmt: skip
     cat = Catalog(sources={"src": source}, networks={
         "t/feeder": Network(id="t/feeder", source="src", master="feeder/master.dss"),
-        "t/peak": Network(id="t/peak", source="src", master="peak/master.dss",
-                          base_loads="loadshape_coincident_peak"),
+        "t/peak": Network(id="t/peak", source="src", master="feeder/master.dss",
+                          load_level=False),
     })  # fmt: skip
     tables = {}
     for name, scale in (("on", None), ("off", 1.0)):
