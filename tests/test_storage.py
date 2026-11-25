@@ -127,7 +127,7 @@ def test_the_default_rating_follows_the_customers_pv(
     p = sample_perturbation(Variants(), targets, SEED, 0, 0, der=ALL_PV, storage=storage())
     assert len(p.storage_kw) == 6
     assert p.storage_kw == {e: storage_kw_for_pv(p.pv_kwp[e]) for e in p.storage_kw}
-    assert set(p.storage_kw.values()) == {4.0, 8.0}  # PV of 2-6 kWp: two bands
+    assert set(p.storage_kw.values()) == {4.0, 8.0}  # PV of 0.5-10 kWp: two bands
     assert VariantStream.STORAGE_PLACEMENT in streams
     assert VariantStream.STORAGE_SIZE not in streams  # no draw for the rating
 

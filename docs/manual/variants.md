@@ -63,6 +63,18 @@ multi-phase loads. A perturbation without elements to act on does nothing, and i
 - **Size and inverter.** `kwp` per unit; inverter rating `inverter_kva_per_kwp` × kWp (1.1 kVA per
   kWp by default); `power_factor` per unit (1 by default; below 1 the inverter absorbs reactive
   power within its rating).
+- **Default size.** Uniform on [0.5, 10) kWp: 10th percentile 1.45 kW, median 5.25 kW, 90th
+  percentile 9.05 kW. It covers UK installed sizes at both ends. The measured 10th percentile is
+  about 1.5 kW in the PV size histogram of Electricity North West's Low Voltage Network Solutions
+  project (2014, from UK statistics, none above 4 kW). The measured 90th percentile is 6.3 to
+  8.9 kW in DESNZ's solar photovoltaics deployment table (ET 6.3, to September 2026, installations
+  below 50 kW: 64.9 % below 4 kW, 30.7 % from 4 to 10 kW, 4.4 % from 10 to 50 kW), 8.9 with
+  sizes uniform within the 4–10 kW band and 6.3 with a truncated exponential matching that band's
+  mean (5.33 kW). The default covers the range; it does not match today's mean (domestic stock
+  4.04 kW in the same table, the default's 5.25 kW). No source found ties a unit's size to its
+  customer's consumption, so the size is drawn independently of the load. There is no export
+  limit: a unit injects up to its inverter rating, also above 3.68 kW per phase, the limit of the
+  UK's EREC G98 (larger units need an EREC G99 application).
 - **OPF only.** `reactive_fraction` and `reactive_threshold`, per unit, bound the reactive power the
   OPF may dispatch ([OPF labels](opf.md#the-problem)).
 
@@ -82,9 +94,10 @@ The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-outpu
   ([documentation](https://github.com/openEDI/documentation/blob/main/SMART-DS/Readme.md),
   Appendix 1): below 4 kWp 4 kW, from 4 to 10 kWp 8 kW, from 10 to 150 kWp 25 kW, from 150 kWp
   100 kW. The source gives the bands of installed PV capacity (kW) as `<4`, `4-10`, `10-150` and
-  `>150`; that each lower bound belongs to the band above it is our reading. With the default PV sizes (2–6 kWp) a unit
-  is 4 or 8 kW. SMART-DS sizes the stored energy at twice the rating (kWh = 2 × kW); a snapshot
-  has no state of charge, so it is not used. A value spec for `kw` draws the rating per unit and
+  `>150`; that each lower bound belongs to the band above it is our reading. With the default PV
+  sizes (0.5–10 kWp) a unit is 4 or 8 kW; a 0.5 kWp unit gets 4 kW, as the table gives. SMART-DS
+  sizes the stored energy at twice the rating (kWh = 2 × kW); a snapshot has no state of charge,
+  so it is not used. A value spec for `kw` draws the rating per unit and
   variant instead, e.g. `{distribution: uniform, low: 3.0, high: 5.0}`. The rating is stored as
   the unit's `s_rated_va`.
 

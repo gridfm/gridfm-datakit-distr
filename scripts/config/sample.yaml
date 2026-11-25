@@ -1,8 +1,8 @@
 # The v0.2 sample dataset: IEEE 13 (MV, three-wire) and the EDP rural MV/LV network (four-wire LV with
 # an explicit neutral, 2731 single-phase customers); both freely licensed, no CSIRO data. PV sized for
-# households: EDP rural customers draw 0.40 kW on average, and the default 2-6 kWp would reverse the
-# feeders and raise the neutral to 14 % of the phase voltage. It carries OPF labels as well as power
-# flow labels, so it needs the `opf` extra.
+# households: EDP rural customers draw 0.40 kW on average, and PV of 2-6 kWp already reverses the
+# feeders and raises the neutral to 14 % of the phase voltage (the default is 0.5-10 kWp, larger).
+# It carries OPF labels as well as power flow labels, so it needs the `opf` extra.
 # Unlisted keys take their defaults: docs/manual/config.md.
 dataset_name: gridfm_distr_sample_v0_2
 networks:

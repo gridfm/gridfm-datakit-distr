@@ -123,6 +123,10 @@ def test_dump_round_trip() -> None:
     }
 
 
+def test_the_pv_size_default_covers_uk_installed_sizes() -> None:
+    assert validate_config(MINIMAL).der.pv.kwp == Uniform(0.5, 10.0)
+
+
 def test_specs_take_numbers_and_distributions() -> None:
     config = validate_config(with_("der.pv.kwp", 4))
     assert config.der.pv.kwp == Fixed(4.0)

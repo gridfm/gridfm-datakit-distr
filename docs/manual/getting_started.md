@@ -139,7 +139,7 @@ Output:
 
 ```text
 671.a: 1.004 pu at    -3.1 deg
-671.b: 1.036 pu at  -122.0 deg
+671.b: 1.036 pu at  -121.9 deg
 671.c: 1.019 pu at   118.3 deg
 ```
 
@@ -200,7 +200,7 @@ print(f"no current injected at the {(~injecting).sum()} nodes where nothing conn
 Output:
 
 ```text
-source 1857.5 kW = loads 1830.3 kW + losses 27.2 kW
+source 1855.0 kW = loads 1827.8 kW + losses 27.1 kW
 no current injected at the 19 nodes where nothing connects
 ```
 
@@ -232,9 +232,9 @@ Output:
 
 ```text
 line                 kVA in   loss kW
-Line.650632            1857     13.75
-Line.632670            1370      2.78
-Line.670671            1277      5.41
+Line.650632            1855     13.72
+Line.632670            1367      2.78
+Line.670671            1276      5.40
 Line.692675             623      1.60
 Line.632633             306      0.33
 ```

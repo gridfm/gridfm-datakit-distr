@@ -176,7 +176,7 @@ variants:
 der:
   pv:
     penetration: {distribution: uniform, low: 0.0, high: 0.8} # share of customers with PV, per variant
-    kwp: {distribution: uniform, low: 2.0, high: 6.0} # peak power of each system (kW)
+    kwp: {distribution: uniform, low: 0.5, high: 10.0} # peak power of each system (kW)
     power_factor: 1.0
 
 scenarios:

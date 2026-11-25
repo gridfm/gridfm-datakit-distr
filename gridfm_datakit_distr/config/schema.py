@@ -338,12 +338,16 @@ class PV(_Config):
         default=Uniform(0.0, 0.8),
         description="Share of customers with PV, drawn per variant: each customer gets a unit "
         "with that probability, so the realised share (`scenario_meta.der_penetration`) varies "
-        "around the draw. `0`: no PV. The default puts a voltage violation in about 6 % of the "
-        "scenarios of a dataset of the whole catalog.",
+        "around the draw. `0`: no PV. The default put a voltage violation in about 6 % of the "
+        "scenarios of a dataset of the whole catalog when PV units were 2-6 kWp; not yet "
+        "measured at the current sizes.",
     )
     kwp: PositiveSpec = Field(
-        default=Uniform(2.0, 6.0),
-        description="Peak power (kW) of each unit, drawn per customer and variant.",
+        default=Uniform(0.5, 10.0),
+        description="Peak power (kW) of each unit, drawn per customer and variant. The default "
+        "spans UK installed sizes at both ends (sources in the Variants manual): its 10th "
+        "percentile (1.45 kW) lies below the measured one (about 1.5 kW) and its 90th (9.05 kW) "
+        "above it (6.3 to 8.9 kW). No export limit: a unit injects up to its rating.",
     )
     power_factor: PowerFactorSpec = Field(
         default=Fixed(1.0),
