@@ -289,8 +289,8 @@ settings, not over the ranges. The discrete uniform covers each published settin
 follow how common each is. One pair per variant stands for one setting per network area, as a
 national code or an area operator gives; mixed settings within a feeder are not drawn. Volt-watt
 curtailment is not modelled. Trip and OPF labels exclude each other (a config error): the OPF moves
-the voltages a trip was decided on, and within the default voltage limits (at most 1.10) its
-solution would trip no unit, so its labels could not keep the units the power flow tripped.
+the voltages a trip was decided on, and its default voltage limits (0.94 to 1.10 pu) lie within the
+default thresholds, so its labels could not keep the units the power flow tripped.
 
 ## Storage set-points
 
