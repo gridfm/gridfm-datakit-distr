@@ -212,6 +212,7 @@ def scenario_meta(precision: Precision) -> pa.Schema:
             _required("pf_status", pa.string()),
             _nullable("pf_message", pa.string()),
             _required("n_off_setpoint", pa.int32()),
+            _nullable("n_pv_tripped", pa.int32()),
             _required("pf_iterations", pa.int16()),
             _nullable("residual_rel", real),
             _required("t_solve_s", real),
@@ -275,6 +276,7 @@ def der(precision: Precision) -> pa.Schema:
             _required("q_var", real),
             _required("p_avail_w", real),
             _required("s_rated_va", real),
+            _nullable("tripped", pa.bool_()),
         ]
     )
 

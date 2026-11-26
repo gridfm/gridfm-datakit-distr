@@ -41,6 +41,7 @@ import pyarrow as pa
 from gridfm_datakit_distr import __version__
 from gridfm_datakit_distr.config.load import select_networks
 from gridfm_datakit_distr.config.schema import GenerationConfig
+from gridfm_datakit_distr.config.value_spec import ValueSpec
 from gridfm_datakit_distr.engine.context import DssContext
 from gridfm_datakit_distr.extract.extract_semantic import extract_semantic
 from gridfm_datakit_distr.extract.source import read_source, source_tables
@@ -91,6 +92,9 @@ class Job:
     :func:`generate`; None: no DG."""
     upstream: Upstream | None = None
     """The network's substation (``variants.upstream``), read once by :func:`generate`."""
+    pv_trip: tuple[ValueSpec, ValueSpec] | None = None
+    """(OV, UV) specs of the PV trip thresholds for the network's country (``der.pv.trip``);
+    None: no trip."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,14 +129,23 @@ def peak_rss_mib() -> float:
 
 
 def jobs_of(config: GenerationConfig, catalog: Catalog) -> list[Job]:
-    """The networks of the dataset, in seed-tree order, with their representation's master."""
+    """The networks of the dataset, in seed-tree order, with their representation's master and,
+    with ``der.pv.trip``, the trip settings of their country (:class:`GenerationError` when
+    ``national`` has none)."""
     jobs = []
+    trip = config.der.pv.trip
     for i, selected in enumerate(select_networks(config.networks, catalog)):
         network = catalog.network(selected.network_id)
         if selected.representation is not None:
             master = network.representations[selected.representation]
             network = network.model_copy(update={"master": master})
-        jobs.append(Job(i, network, selected.representation))
+        settings = None
+        if trip.enabled:
+            try:
+                settings = trip.settings(catalog.source(network.source).country)
+            except ValueError as exc:
+                raise GenerationError(f"{network.id}: der.pv.trip {exc}") from exc
+        jobs.append(Job(i, network, selected.representation, pv_trip=settings))
     return jobs
 
 
@@ -278,6 +291,14 @@ def _network_tables(
                     f"not the one this dataset started with ({then})"
                 )
             manifest.networks[j]["pvgis"] = passport["pv_series"] = record
+        if job.pv_trip is not None:
+            ov, uv = job.pv_trip
+            manifest.networks[j]["pv_trip"] = passport["pv_trip"] = {
+                "mode": config.der.pv.trip.mode,
+                "country": passport["country"],
+                "ov_pu": ov.to_config(),
+                "uv_pu": uv.to_config(),
+            }
         writer.write_json(f"catalog/passports/{job.network.id}.json", passport)
         passports.append(passport)
         if config.labels.opf.enabled:  # the reason a network has no OPF labels, once
@@ -439,7 +460,8 @@ def _slot(slot_idx: int, task: Task, config: GenerationConfig, root: Path | None
         der=config.der.pv, storage=config.der.storage, dg_kw=task.job.dg_kw,
         upstream=task.job.upstream,
         load_level=profiles.synthetic.variant_scale if level else None,
-        orientation=config.scenarios.pv_profile.pvgis.orientation, keep_prepared=True,
+        orientation=config.scenarios.pv_profile.pvgis.orientation, pv_trip=task.job.pv_trip,
+        keep_prepared=True,
     )  # fmt: skip
     slot.variant = variant
     if variant.status == "ok":

@@ -184,15 +184,16 @@ def generate_variant(
     upstream: Upstream | None = None,
     load_level: ValueSpec | None = None,
     orientation: PVOrientation | None = None,
+    pv_trip: tuple[ValueSpec, ValueSpec] | None = None,
     keep_prepared: bool = False,
 ) -> VariantResult:
     """Variant ``k`` of ``network``; with ``der``, the PV units of its customers, with
     ``storage`` the storage units of those with PV, with ``dg_kw`` the network's dispatchable
     generators at that capacity (kW), with ``upstream`` its substation, with ``load_level`` the
     spec of its load level (:func:`sample_perturbation`), with ``orientation`` its PV units'
-    orientation classes. Its draws depend on the network's id, not on its place in the dataset.
-    With ``keep_prepared`` the result carries the accepted attempt's compiled network (its
-    OpenDSS context stays alive)."""
+    orientation classes, with ``pv_trip`` the specs of its PV trip thresholds. Its draws depend
+    on the network's id, not on its place in the dataset. With ``keep_prepared`` the result
+    carries the accepted attempt's compiled network (its OpenDSS context stays alive)."""
     vid = variant_id(network.id, k)
     net = network_key(network.id)
     fingerprint = variant_seed(seed, net, k)
@@ -201,7 +202,7 @@ def generate_variant(
     for attempt in range(MAX_ATTEMPTS):
         p = sample_perturbation(
             config, targets, seed, net, k, attempt, der=der, storage=storage, dg_kw=dg_kw,
-            upstream=upstream, load_level=load_level, orientation=orientation,
+            upstream=upstream, load_level=load_level, orientation=orientation, pv_trip=pv_trip,
         )  # fmt: skip
         script = edit_script(p, targets, (opts.vminpu, opts.vmaxpu))
         prepared = prepare_network(network, options, root, variant_id=vid, edits=script)

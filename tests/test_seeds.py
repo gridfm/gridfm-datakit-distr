@@ -163,6 +163,7 @@ def test_stream_codes_are_stable() -> None:
         "UPSTREAM_RATING": 12,
         "LOAD_LEVEL": 13,
         "PV_ORIENTATION": 15,
+        "PV_TRIP": 16,
     }
     assert {s.name: int(s) for s in ScenarioStream} == {
         "PROFILE_TIME": 0,

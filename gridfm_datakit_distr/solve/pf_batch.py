@@ -9,7 +9,11 @@ runs scenarios by index. Each scenario:
    source of :func:`add_negative_sequence_source`);
 3. resets the controls to the variant's compiled state, then settles or keeps them;
 4. solves with ``ControlMode=OFF``; a non-converged solve is retried once with ``MaxIterations``
-   x 5; then the setpoint check and, on a sample of scenarios, the KCL residual;
+   x 5; then the setpoint check and, on a sample of scenarios, the KCL residual. With
+   ``der.pv.trip``, a converged solve at its setpoints where PV units are beyond their trip
+   thresholds trips them all (``p = q = 0``, latched) and steps 2-4 run again, until no unit
+   trips: the tripped set only grows, and the label is the power flow, at a state the controls
+   hold, of the scenario with those units out;
 5. returns a :class:`ScenarioOutcome`: status, draws and, if converged at its setpoints, the node
    voltages (and the element currents with ``labels.element_currents``). Any exception becomes
    ``pf_status = error`` with its message: nothing is dropped.
@@ -59,6 +63,7 @@ from gridfm_datakit_distr.scenarios.der import (
     PVDraw,
     PVOutputs,
     StorageSetpoints,
+    VoltageTrip,
     dg_units,
     pv_units,
     storage_units,
@@ -229,6 +234,9 @@ class ScenarioOutcome:
     """Currents into the PD elements per local position (``VariantRunner.plan`` rows, A); only
     with ``labels.element_currents`` (otherwise ``Yprim · V``, recomputed when needed)."""
     t_extract_s: float = 0.0
+    pv_tripped: NDArray[np.bool_] | None = None
+    """Per PV unit: tripped in the label (its ``pv_p_w``, ``pv_q_var`` are 0); None without
+    ``der.pv.trip`` or when the scenario failed before its draws."""
 
 
 class VariantRunner:
@@ -294,6 +302,10 @@ class VariantRunner:
         ``scenarios/der``)."""
         n = len(self.customers)
         self.der_penetration = len(units) / n if n else 0.0
+        thresholds = variant.perturbation.pv_trip
+        self.trip = VoltageTrip(self.model, units, *thresholds) if thresholds and units else None
+        """The PV units' protection (``der.pv.trip``); None without trip or without units."""
+        self._trips = thresholds is not None
         self.initial_state = read_state(self.ctx, self.variant_id, "as_is")
         self._settles = has_controls(self.ctx)
         """Without a control element the label solve is the power flow: no settling solves."""
@@ -330,6 +342,7 @@ class VariantRunner:
         seed, net, k = self.config.settings.seed, self.net, self.k
         start = time.perf_counter()
         draws = _Draws(np.zeros(0), np.zeros(0), None, None, 0.0, None)
+        tripped: NDArray[np.bool_] | None = None
         try:
             loads = self.loads.draw(seed, net, k, s)
             p_w, q_var = loads.p_w, loads.q_var
@@ -349,24 +362,37 @@ class VariantRunner:
             bess = self.storage.draw(seed, net, k, s) if self.storage is not None else None
             dg = self.dg.draw(seed, net, k, s) if self.dg is not None else None
             dg_avail = self.dg.capacity(seed, net, k, s) if self.dg is not None else None
-            draws = _Draws(p_w, q_var, pv, loads.time_s, v_src, bess, dg, dg_avail, u2, angle)
-            self._set(draws)
-            self._draws, self._note = draws, None
-            state, status = self._controls(s)
-            if status is not None and not status.converged:
-                return self._outcome(
-                    s, draws, start, "not_converged", None, status.iterations, note=self._note
-                )
-            status = self._solve()
+            drawn = _Draws(p_w, q_var, pv, loads.time_s, v_src, bess, dg, dg_avail, u2, angle)
+            draws = drawn
+            if self._trips:
+                tripped = np.zeros(len(pv.p_w) if pv is not None else 0, dtype=bool)
+            while True:  # one pass without trip; with it, until no unit trips
+                self._set(draws)
+                self._draws, self._note = draws, None
+                state, status = self._controls(s)
+                if status is not None and not status.converged:
+                    return self._outcome(
+                        s, draws, start, "not_converged", None, status.iterations,
+                        note=self._note, tripped=tripped,
+                    )  # fmt: skip
+                status = self._solve()
+                new = self._new_trips(status, tripped) if self.trip is not None else None
+                if new is None:
+                    break
+                assert tripped is not None
+                tripped = tripped | new  # latched: tripped units stay out in every next pass
+                draws = _without(drawn, tripped)
             self._at_state(state.state_id)  # the state's Yprims, rebuilt by this solve
             state_id = self.registry.add(state)  # once it reaches the dataset
             if not status.converged:
-                return self._outcome(s, draws, start, "not_converged", state, status.iterations)
+                return self._outcome(
+                    s, draws, start, "not_converged", state, status.iterations, tripped=tripped
+                )
             report = setpoint_report(self.ctx)
             if not report.passes():
                 return self._outcome(
                     s, draws, start, "off_setpoint", state, status.iterations,
-                    n_off=len(report.off),
+                    n_off=len(report.off), tripped=tripped,
                 )  # fmt: skip
             solved = time.perf_counter()
             v = self.ctx.ynode_voltages()[self._to_model]
@@ -376,12 +402,25 @@ class VariantRunner:
             return self._outcome(
                 s, draws, start, "converged", state, status.iterations,
                 rel=self._residual(s, model), v=v, i_pd=i_pd,
-                t_solve_s=solved - start, t_extract_s=extracted - solved,
+                t_solve_s=solved - start, t_extract_s=extracted - solved, tripped=tripped,
             )  # fmt: skip
         except Exception as exc:  # recorded, never dropped
-            return self._outcome(s, draws, start, "error", None, 0, error=exc)
+            return self._outcome(s, draws, start, "error", None, 0, error=exc, tripped=tripped)
 
     # ------------------------------------------------------------------ steps
+
+    def _new_trips(
+        self, status: SolveStatus, tripped: NDArray[np.bool_] | None
+    ) -> NDArray[np.bool_] | None:
+        """The PV units not yet tripped that a converged solve at its setpoints puts beyond their
+        thresholds; None when there are none, or the solve is not such a state (a trip is
+        decided on power-flow solutions only)."""
+        assert self.trip is not None
+        assert tripped is not None
+        if not status.converged or not setpoint_report(self.ctx).passes():
+            return None
+        new = self.trip.beyond(self.ctx.ynode_voltages()[self._to_model]) & ~tripped
+        return new if new.any() else None
 
     def _set(self, draws: _Draws) -> None:
         pv = draws.pv
@@ -525,11 +564,15 @@ class VariantRunner:
         t_extract_s: float = 0.0,
         error: Exception | None = None,
         note: str | None = None,
+        tripped: NDArray[np.bool_] | None = None,
     ) -> ScenarioOutcome:
         message = note
         if error is not None:
             first = str(error).splitlines()[0] if str(error) else ""
             message = f"{type(error).__name__}: {first}"
+        if status != "converged" and tripped is not None and tripped.any():
+            after = f"after tripping {int(tripped.sum())} PV unit(s)"
+            message = after if message is None else f"{message}; {after}"
         pv = draws.pv
         return ScenarioOutcome(
             scenario_id=scenario_id(self.i, self.k, s),
@@ -562,6 +605,7 @@ class VariantRunner:
             v=v,
             i_pd=i_pd,
             t_extract_s=t_extract_s,
+            pv_tripped=None if tripped is None else tripped.copy(),
         )
 
 
@@ -582,6 +626,14 @@ class _Draws:
     """Negative-sequence ratio of the source."""
     u2_angle: float | None = None
     """Its angle (rad); None when not drawn."""
+
+
+def _without(draws: _Draws, tripped: NDArray[np.bool_]) -> _Draws:
+    """``draws`` with the tripped PV units at ``p = q = 0`` (available power kept)."""
+    pv = draws.pv
+    assert pv is not None
+    p, q = np.where(tripped, 0.0, pv.p_w), np.where(tripped, 0.0, pv.q_var)
+    return replace(draws, pv=replace(pv, p_w=p, q_var=q))
 
 
 def _scaled(draws: _Draws, factor: float) -> _Draws:

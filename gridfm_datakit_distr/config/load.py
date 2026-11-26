@@ -82,7 +82,8 @@ def validate_config(
     catalog = catalog or load_catalog()
     issues = [issue for rule in _RULES for issue in rule(config)]
     selected, found = _selection(config.networks, catalog)
-    issues += found + _pv_locations(config, [s.network_id for s in selected], catalog)
+    ids = [s.network_id for s in selected]
+    issues += found + _pv_locations(config, ids, catalog) + _trip_countries(config, ids, catalog)
     if issues:
         raise ConfigError(source, issues)
     return config
@@ -199,6 +200,21 @@ def _pv_locations(config: GenerationConfig, selected: list[str], catalog: Catalo
         if len(k) > 1
     ]
     return issues
+
+
+def _trip_countries(config: GenerationConfig, selected: list[str], catalog: Catalog) -> list[Issue]:
+    """``der.pv.trip.mode: national`` needs national settings for every selected network's
+    country (catalog ``country`` of its source)."""
+    trip = config.der.pv.trip
+    if not trip.enabled or trip.mode != "national":
+        return []
+    by_reason: dict[str, list[str]] = {}
+    for n in selected:
+        try:
+            trip.settings(catalog.source(catalog.network(n).source).country)
+        except ValueError as exc:
+            by_reason.setdefault(str(exc), []).append(n)
+    return [("der.pv.trip.mode", f"{', '.join(n)}: {r}") for r, n in by_reason.items()]
 
 
 # ------------------------------------------------------------------ error formatting

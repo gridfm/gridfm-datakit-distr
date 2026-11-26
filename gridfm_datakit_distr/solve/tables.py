@@ -146,6 +146,7 @@ def chunk_tables(
             "pf_status": o.pf_status,
             "pf_message": o.message,
             "n_off_setpoint": o.n_off_setpoint,
+            "n_pv_tripped": None if o.pv_tripped is None else int(o.pv_tripped.sum()),
             "pf_iterations": o.pf_iterations,
             "residual_rel": o.residual_rel,
             "t_solve_s": o.t_solve_s,
@@ -186,6 +187,9 @@ def chunk_tables(
             continue
         # storage: its p; DG: its available capacity
         p_avail = [a for a in (o.pv_p_avail_w, o.bess_p_w, o.dg_p_avail_w) if a is not None]
+        tripped = [None] * der_idx.size  # null for storage, DG and without der.pv.trip
+        if o.pv_tripped is not None:
+            tripped[: o.pv_tripped.size] = o.pv_tripped.tolist()
         der_parts.append(
             pa.table(
                 {
@@ -196,6 +200,7 @@ def chunk_tables(
                     "q_var": q,
                     "p_avail_w": np.concatenate(p_avail),
                     "s_rated_va": rated,
+                    "tripped": pa.array(tripped, pa.bool_()),
                 },
             )
         )

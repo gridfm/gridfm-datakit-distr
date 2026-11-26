@@ -70,6 +70,9 @@ class _SourceBase(_Model):
     citation: str
     doi: str | None = None
     notes: str = ""
+    country: str | None = None
+    """ISO 3166-1 alpha-2 code of the country whose networks (or, for test cases, whose standard)
+    the source holds; picks the national settings of ``der.pv.trip``."""
     manifest: dict[str, str] = Field(default_factory=dict)
     """Relative path -> SHA-256 of every file of the source (from ``manifests/<id>.sha256``)."""
 

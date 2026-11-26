@@ -114,6 +114,7 @@ def build_passport(prepared: PreparedNetwork, catalog: Catalog) -> dict[str, Any
         "doi": source.doi,
         "license": source.license,
         "citation": source.citation,
+        "country": source.country,
         "checksums": {
             "source_manifest_sha256": source.manifest_sha256,
             "master_sha256": source.manifest.get(network.master),

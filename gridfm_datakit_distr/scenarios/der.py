@@ -35,6 +35,10 @@ scenario, ``p = setpoint · kW``, ``setpoint`` drawn per unit from ``STORAGE_SET
 discharging), ``q = 0``. ``p_avail_w`` of a storage unit is its set-point: it has nothing to
 curtail.
 
+With ``der.pv.trip`` a unit trips (``p = q = 0``) when a voltage its protection reads is beyond
+the variant's over- or under-voltage threshold (:class:`VoltageTrip`; the loop is the runner's,
+``solve/pf_batch.py``).
+
 Dispatchable generators (``Generator.dg_<load>``, at every 4th customer, ``variants/dg.py``) are
 set per scenario to ``p = setpoint · a · P^max``, ``setpoint`` drawn per unit from
 ``DG_SETPOINT``, ``q = 0``: the power flow's operating point; the OPF dispatches them within
@@ -53,6 +57,9 @@ from numpy.typing import NDArray
 
 from gridfm_datakit_distr.config.schema import PV, DGProfile, PVProfile, StorageProfile
 from gridfm_datakit_distr.config.value_spec import Fixed, ValueSpec
+from gridfm_datakit_distr.model.electrical import GROUND, ElectricalModel, Element
+from gridfm_datakit_distr.model.ground import unit_branches
+from gridfm_datakit_distr.model.units import SQRT3
 from gridfm_datakit_distr.scenarios.pvgis import PVSeries, draw_record
 from gridfm_datakit_distr.scenarios.seeds import ScenarioStream, scenario_rng
 from gridfm_datakit_distr.variants.perturbation import Perturbation
@@ -226,6 +233,64 @@ class PVOutputs:
             return p, rng.uniform(-1.0, 1.0, len(self.units)) * np.minimum(q_opf, q_limit)
         q = -np.minimum(p * self._tan, q_limit)
         return p, q
+
+
+def protection_pairs(model: ElectricalModel, element: Element) -> list[tuple[int, int]]:
+    """The node pairs whose voltages a unit's protection reads (:data:`GROUND` allowed second):
+    its own terminal branches (``unit_branches``: wye, each phase to its neutral node or to
+    ground; delta, phase to phase) and, for a wye unit on several phases, phase to phase too
+    (EN 50549-1 4.9.3). ``ValueError`` for a connection ``unit_branches`` does not cover."""
+    branches = unit_branches(model, element)
+    if branches is None:
+        raise ValueError(f"{element.name}: connection not covered by the voltage trip")
+    if len(branches) >= 2 and all(
+        q == GROUND or model.nodes[q].conductor == "n" for _, q in branches
+    ):
+        phases = [p for p, _ in branches]
+        ring = list(zip(phases, phases[1:] + phases[:1], strict=True))
+        branches += ring if len(phases) > 2 else ring[:1]
+    return branches
+
+
+def pair_base_v(model: ElectricalModel, p: int, q: int) -> float:
+    """Nominal voltage (V) of a pair: the phase node's nominal line-to-neutral voltage to a
+    neutral or ground; between two phases √3 times it, across the two halves of a split-phase
+    service (s1, s2) 2 times it."""
+    ln = model.nodes[p].nominal_v_ln
+    if q == GROUND or model.nodes[q].conductor == "n":
+        return ln
+    if {model.nodes[p].conductor, model.nodes[q].conductor} == {"s1", "s2"}:
+        return 2.0 * ln
+    return SQRT3 * ln
+
+
+class VoltageTrip:
+    """Over- and under-voltage disconnection of a variant's PV units: a unit trips when any
+    voltage of :func:`protection_pairs`, per unit of :func:`pair_base_v`, is above ``ov_pu`` or
+    below ``uv_pu`` (snapshot thresholds: no delay)."""
+
+    def __init__(
+        self, model: ElectricalModel, units: Sequence[PVUnit], ov_pu: float, uv_pu: float
+    ) -> None:
+        elements = {e.name.lower(): e for e in model.elements}
+        n, rows = len(model.nodes), []
+        for i, u in enumerate(units):
+            for p, q in protection_pairs(model, elements[u.generator.lower()]):
+                rows.append((p, n if q == GROUND else q, i, pair_base_v(model, p, q)))
+        self.ov_pu, self.uv_pu, self.n_units = ov_pu, uv_pu, len(units)
+        self._p = np.array([r[0] for r in rows], dtype=np.int64)
+        self._q = np.array([r[1] for r in rows], dtype=np.int64)
+        """Second node of each pair; ``n`` (one past the nodes) is ground, at 0 V."""
+        self._unit = np.array([r[2] for r in rows], dtype=np.int64)
+        self._base = np.array([r[3] for r in rows], dtype=np.float64)
+
+    def beyond(self, v: NDArray[np.complex128]) -> NDArray[np.bool_]:
+        """Per unit: whether a voltage it reads is beyond a threshold; ``v`` the node voltages
+        (V) in the model's node order."""
+        vg = np.append(v, 0.0)
+        pu = np.abs(vg[self._p] - vg[self._q]) / self._base
+        out = (pu > self.ov_pu) | (pu < self.uv_pu)
+        return np.bincount(self._unit[out], minlength=self.n_units) > 0
 
 
 @dataclass(frozen=True, slots=True)

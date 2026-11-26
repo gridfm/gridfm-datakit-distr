@@ -205,6 +205,23 @@ unit sits on the load's nodes (after any phase move), constant P, Q within the l
 | `der.pv.reactive_fraction` | value spec, ≥ 0 and ≤ 1 | `0.44` | Largest reactive power of each inverter in the OPF, and in the power flow with `reactive_mode: uniform`, as a fraction of its rating (IEEE 1547-2018 Category B: 0.44; 1: the rating's circle only); drawn per unit and variant. |
 | `der.pv.reactive_threshold` | value spec, ≥ 0 and ≤ 1 | `0.05` | A unit whose available power is below this fraction of its rating gives no reactive power in the OPF, and in the power flow with `reactive_mode: uniform` (IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant. |
 
+#### `der.pv.trip`
+
+Over- and under-voltage disconnection of the PV inverters
+([Scenarios](scenarios.md#pv-voltage-trip)). Each variant draws one over-voltage and one
+under-voltage threshold for all its units; a unit whose terminal voltage is beyond either in a
+solved scenario trips and stays tripped (`p` = `q` = 0, `scenarios/der.tripped`), and the
+scenario is solved again until no unit trips. The thresholds are effective snapshot values:
+a power flow has no time, so the trip delays are not represented and a unit beyond a
+threshold is taken to have tripped. Not with OPF labels.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `der.pv.trip.enabled` | boolean | `false` | Trip the PV units beyond their thresholds. `false` (default): no trip, and every output is the same as without this section. |
+| `der.pv.trip.mode` | one of `union`, `national` | `union` | `union`: the thresholds drawn from `ov_pu` and `uv_pu`. `national`: the settings of the network's country (catalog `country`): GB 1.14 and 0.80 (G98 and G99 Issue 2); US 1.10 and the IEEE 1547-2018 category defaults uniform over Categories I, II and III (0.70 with weight 2/3, 0.88 with 1/3). A selected network of another country is a config error (Portugal: no public national setpoint was found). |
+| `der.pv.trip.ov_pu` | value spec, > 0 | `{distribution: choice, values: [1.1, 1.14], weights: [0.5, 0.5]}` | Over-voltage threshold (pu of the nominal voltage), drawn per variant with `mode: union`. Default: uniform over the effective settings of the published profiles (IEEE 1547-2018, G98/G99, VDE-AR-N 4105, CEI 0-21, C10/11), 1.10 and 1.14. |
+| `der.pv.trip.uv_pu` | value spec, > 0 | `{distribution: choice, values: [0.7, 0.8, 0.85, 0.88], weights: [0.25, 0.25, 0.25, 0.25]}` | Under-voltage threshold (pu of the nominal voltage), drawn per variant with `mode: union`, independently of `ov_pu`. Default: uniform over the same profiles' effective settings, 0.70, 0.80, 0.85 and 0.88. Every value must lie below every value of `ov_pu`. |
+
 ### `der.storage`
 
 Battery storage units, placed and sized per variant, set-point per scenario

@@ -29,6 +29,7 @@ from pydantic import (
 from gridfm_datakit_distr.config.value_spec import (
     NON_NEGATIVE,
     POSITIVE,
+    Choice,
     Fixed,
     Floor,
     LogUniform,
@@ -330,6 +331,83 @@ class Variants(_Config):
     upstream: Upstream = Upstream()
 
 
+TRIP_OV_UNION = Choice((1.10, 1.14), (0.5, 0.5))
+"""Effective over-voltage trip settings (pu of nominal) of the published profiles: 1.10 (IEEE
+1547-2018 Categories I-III; the 10-min mean of VDE-AR-N 4105, CEI 0-21 and C10/11), 1.14 (G98 and
+G99 Issue 2)."""
+TRIP_UV_UNION = Choice((0.70, 0.80, 0.85, 0.88), (0.25, 0.25, 0.25, 0.25))
+"""Effective under-voltage trip settings (pu of nominal): 0.70 (IEEE 1547-2018 Categories I and
+II, C10/11 Table 9), 0.80 (G98/G99 Issue 2, VDE-AR-N 4105, C10/11 Table 8), 0.85 (CEI 0-21), 0.88
+(IEEE 1547-2018 Category III)."""
+TRIP_NATIONAL: dict[str, tuple[ValueSpec, ValueSpec]] = {
+    "GB": (Fixed(1.14), Fixed(0.80)),
+    "US": (Fixed(1.10), Choice((0.70, 0.88), (2 / 3, 1 / 3))),
+}
+"""(OV, UV) settings per catalog country: GB, G98 and G99 Issue 2 (2025); US, the IEEE 1547-2018
+defaults, uniform over Categories I, II, III (the area operator chooses the category)."""
+TRIP_NO_NATIONAL = {
+    "PT": "no public national setpoint was found for Portugal (E-REDES leaves the low-voltage "
+    "setpoints to the network operator)",
+}
+"""Why a catalog country has no national settings."""
+
+
+class PVTrip(_Config):
+    """Over- and under-voltage disconnection of the PV inverters
+    ([Scenarios](scenarios.md#pv-voltage-trip)). Each variant draws one over-voltage and one
+    under-voltage threshold for all its units; a unit whose terminal voltage is beyond either in a
+    solved scenario trips and stays tripped (`p` = `q` = 0, `scenarios/der.tripped`), and the
+    scenario is solved again until no unit trips. The thresholds are effective snapshot values:
+    a power flow has no time, so the trip delays are not represented and a unit beyond a
+    threshold is taken to have tripped. Not with OPF labels."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Trip the PV units beyond their thresholds. `false` (default): no trip, and "
+        "every output is the same as without this section.",
+    )
+    mode: Literal["union", "national"] = Field(
+        default="union",
+        description="`union`: the thresholds drawn from `ov_pu` and `uv_pu`. `national`: the "
+        "settings of the network's country (catalog `country`): GB 1.14 and 0.80 (G98 and G99 "
+        "Issue 2); US 1.10 and the IEEE 1547-2018 category defaults uniform over Categories I, "
+        "II and III (0.70 with weight 2/3, 0.88 with 1/3). A selected network of another "
+        "country is a config error (Portugal: no public national setpoint was found).",
+    )
+    ov_pu: PositiveSpec = Field(
+        default=TRIP_OV_UNION,
+        description="Over-voltage threshold (pu of the nominal voltage), drawn per variant with "
+        "`mode: union`. Default: uniform over the effective settings of the published profiles "
+        "(IEEE 1547-2018, G98/G99, VDE-AR-N 4105, CEI 0-21, C10/11), 1.10 and 1.14.",
+    )
+    uv_pu: PositiveSpec = Field(
+        default=TRIP_UV_UNION,
+        description="Under-voltage threshold (pu of the nominal voltage), drawn per variant with "
+        "`mode: union`, independently of `ov_pu`. Default: uniform over the same profiles' "
+        "effective settings, 0.70, 0.80, 0.85 and 0.88. Every value must lie below every value "
+        "of `ov_pu`.",
+    )
+
+    @model_validator(mode="after")
+    def _consistent(self) -> PVTrip:
+        # values, not keys: a stored config (model_dump) sets every key
+        if self.mode == "national" and (self.ov_pu, self.uv_pu) != (TRIP_OV_UNION, TRIP_UV_UNION):
+            raise ValueError("mode 'national' takes the country's settings: ov_pu and uv_pu unset")
+        if self.uv_pu.support()[1] >= self.ov_pu.support()[0]:
+            raise ValueError("every uv_pu value must lie below every ov_pu value")
+        return self
+
+    def settings(self, country: str | None) -> tuple[ValueSpec, ValueSpec]:
+        """The (OV, UV) specs of a network of ``country``; ``ValueError`` when ``national`` has
+        none for it."""
+        if self.mode == "union":
+            return self.ov_pu, self.uv_pu
+        if country in TRIP_NATIONAL:
+            return TRIP_NATIONAL[country]
+        reason = TRIP_NO_NATIONAL.get(str(country), f"no national settings for {country!r}")
+        raise ValueError(f"mode 'national': {reason}; use mode 'union'")
+
+
 class PV(_Config):
     """Rooftop PV units, placed and sized per variant (`variants/variants.perturbation`), output
     per scenario (`scenarios.pv_profile`). Every enabled load is a customer that can get one: the
@@ -385,6 +463,7 @@ class PV(_Config):
         "no reactive power in the OPF, and in the power flow with `reactive_mode: uniform` "
         "(IEEE 1547-2018 Category B: 0.05; 0: no threshold); drawn per unit and variant.",
     )
+    trip: PVTrip = PVTrip()
 
     @model_validator(mode="after")
     def _a_drawn_q_needs_unit_power_factor(self) -> PV:
@@ -964,6 +1043,14 @@ class GenerationConfig(_Config):
     labels: Labels = Labels()
     views: Views = Views()
     settings: Settings
+
+    @model_validator(mode="after")
+    def _trip_without_opf(self) -> GenerationConfig:
+        """The OPF moves the voltages a trip was decided on: its labels would not hold the
+        units the power flow tripped."""
+        if self.der.pv.trip.enabled and self.labels.opf.enabled:
+            raise ValueError("der.pv.trip and labels.opf cannot both be enabled")
+        return self
 
     @model_validator(mode="after")
     def _upstream_needs_synthetic_loads(self) -> GenerationConfig:

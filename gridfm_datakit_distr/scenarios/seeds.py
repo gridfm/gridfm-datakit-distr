@@ -53,6 +53,9 @@ class VariantStream(IntEnum):
     (``scenarios.profiles.synthetic.variant_scale``)."""
     PV_ORIENTATION = 15
     """Orientation class of each PV unit (``scenarios.pv_profile.pvgis.orientation``)."""
+    PV_TRIP = 16
+    """Over- and under-voltage trip thresholds of the variant's PV units (``der.pv.trip``), each
+    from its own child of this stream."""
 
 
 class ScenarioStream(IntEnum):

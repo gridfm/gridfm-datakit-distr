@@ -16,6 +16,7 @@ sources:
     revision: 3b208397160213cae4a9e2d0a7d1aa3528ce26e1  # 2024-06-24, latest commit
     subdir: Version8/Distrib/IEEETestCases
     include: [IEEELineCodes.DSS, 13Bus/, 34Bus/, 37Bus/, 123Bus/, LVTestCase/, 8500-Node/]
+    country: US  # test cases, labelled by the country of their standard (IEEE)
     license: >-
       Feeder data: IEEE PES test feeders, no formal licence. OpenDSS scripts: BSD-3-Clause
       (Copyright EPRI and DSS-Extensions contributors; License.txt of the repository).
@@ -31,6 +32,7 @@ sources:
     collection: 62996
     version: 1
     exclude: ["*.DS_Store"]
+    country: GB  # Electricity North West, England
     license: >-
       CC-BY-4.0 (collection licence) AND CC-BY-NC-3.0 for the cable impedance data adapted
       from Urquhart & Thomson (2019), as stated in README.md and in every Master.dss.
@@ -53,6 +55,7 @@ sources:
       Rural.rar: https://data.mendeley.com/public-files/datasets/gspyzvvrhm/files/4c5ab724-47b9-4ea1-9339-934d1095b06d/file_downloaded
       Urban.rar: https://data.mendeley.com/public-files/datasets/gspyzvvrhm/files/3ed18f16-16f9-49ab-8bdd-4f5fbc74f2fa/file_downloaded
     license: CC-BY-4.0
+    country: PT  # E-REDES networks, Portugal
     citation: >-
       Tegene, T. T.; Mohamed, B.; Arboleya, P.; Suárez Ramón, L. (2023): A Set of
       Non-Synthetic Test Systems of European LV Rural, LV Urban and Hybrid MV/LV Industrial

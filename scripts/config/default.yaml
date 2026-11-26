@@ -22,6 +22,7 @@ der:
     penetration: {distribution: uniform, low: 0.0, high: 0.8} # share of customers with PV, per variant
     kwp: {distribution: uniform, low: 0.5, high: 10.0} # peak power of each system (kW)
     power_factor: 1.0
+    # trip: {enabled: true} # inverters trip on over/under-voltage (thresholds drawn per variant)
   # storage: {share: 0.3} # storage at that share of the PV customers (default 0: none)
   # dg: {enabled: true} # dispatchable generators at every 4th load, capacity per network
 

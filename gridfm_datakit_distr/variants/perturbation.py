@@ -16,7 +16,9 @@ Each quantity draws from its own stream of the variant's seed, in name order:
   are added as loads at the source bus;
 - the load level ``L`` (``scenarios.profiles.synthetic.variant_scale``): a factor on the
   variant's nominal loads, applied by the synthetic provider and to the substation's lumped
-  loads; no edit.
+  loads; no edit;
+- the PV units' trip thresholds (``der.pv.trip``): one over- and one under-voltage threshold for
+  the variant, each from its own child of the stream; no edit.
 
 Dispatchable generators are not drawn: one at every :data:`DG_EVERY`-th customer
 (:func:`dg_sites`), at the network's capacity (``variants/dg.py``), the same in every variant.
@@ -121,6 +123,9 @@ class Perturbation:
     pv_orientation: dict[str, tuple[int, int]] = field(default_factory=dict)
     """Customer load -> (tilt, azimuth) of the PVGIS series its PV unit reads (degrees), with
     ``scenarios.pv_profile.pvgis.orientation``."""
+    pv_trip: tuple[float, float] | None = None
+    """Over- and under-voltage trip thresholds of the variant's PV units (pu of nominal);
+    None: no trip."""
 
     def to_json(self) -> str:
         """The ``perturbation`` column of ``variants.parquet``: the drawn quantities only."""
@@ -148,6 +153,8 @@ class Perturbation:
             data["upstream"] = self.upstream.record()
         if self.variant_scale != 1.0:
             data["variant_scale"] = self.variant_scale
+        if self.pv_trip is not None:
+            data["pv_trip"] = {"ov_pu": self.pv_trip[0], "uv_pu": self.pv_trip[1]}
         return json.dumps(data, sort_keys=True)
 
 
@@ -165,13 +172,15 @@ def sample_perturbation(
     upstream: Upstream | None = None,
     load_level: ValueSpec | None = None,
     orientation: PVOrientation | None = None,
+    pv_trip: tuple[ValueSpec, ValueSpec] | None = None,
 ) -> Perturbation:
     """Draw the perturbation of variant ``k`` of the network of key ``net`` (attempt
     ``attempt``); with ``der``, the PV units of its customers too, with ``storage`` the
     storage units of the customers with PV, with ``dg_kw`` a dispatchable generator of that
-    capacity (kW) at each of :func:`dg_sites`, with ``upstream`` the network's substation, and
-    with ``load_level`` its load level ``L``, and with an enabled ``orientation`` the orientation
-    class of each PV unit."""
+    capacity (kW) at each of :func:`dg_sites`, with ``upstream`` the network's substation,
+    with ``load_level`` its load level ``L``, with an enabled ``orientation`` the orientation
+    class of each PV unit, and with ``pv_trip`` the (OV, UV) specs of its PV units' trip
+    thresholds."""
     spec = config.admittance
     line_length: dict[str, float] = {}
     if spec.line_length_scale != _IDENTITY:
@@ -216,10 +225,20 @@ def sample_perturbation(
         level = float(
             load_level.sample(variant_rng(seed, net, k, VariantStream.LOAD_LEVEL, attempt))
         )
+    trip = None
+    if pv_trip is not None:  # one child per threshold: a fixed one does not shift the other
+        seq = variant_rng(seed, net, k, VariantStream.PV_TRIP, attempt).bit_generator.seed_seq
+        assert isinstance(seq, np.random.SeedSequence)
+        ov, uv = (
+            float(spec.sample(np.random.default_rng(child)))
+            for spec, child in zip(pv_trip, seq.spawn(2), strict=True)
+        )
+        trip = (ov, uv)
     return Perturbation(
         attempt, line_length, neutral, grounding, phases, rho, kwp, pf, fraction, threshold,
         share, storage_kw, dg, substation, level,
         pv_orientation=_orientation(orientation, targets, kwp, seed, net, k, attempt),
+        pv_trip=trip,
     )  # fmt: skip
 
 
