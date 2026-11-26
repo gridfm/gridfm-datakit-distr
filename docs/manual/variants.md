@@ -80,6 +80,8 @@ multi-phase loads. A perturbation without elements to act on does nothing, and i
   uniform`, the reactive power drawn for the power flow ([Scenarios](scenarios.md#inverter)).
 - **Orientation.** With `scenarios.pv_profile.pvgis.orientation`, a (tilt, azimuth) class per
   unit, whose PVGIS series the unit reads ([Scenarios](scenarios.md#orientation)).
+- **Trip thresholds.** With `der.pv.trip`, one over- and one under-voltage threshold per variant
+  for all its units ([Scenarios](scenarios.md#pv-voltage-trip)).
 
 The output of each unit is drawn per scenario ([Scenarios](scenarios.md#pv-output)).
 

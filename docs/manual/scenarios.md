@@ -232,6 +232,66 @@ gives reactive power injected at high voltage, absorbed at low voltage, and insi
 deadband, states that volt-var never produces. Voltage-dependent control (volt-var, volt-watt) is
 not modelled.
 
+### PV voltage trip
+
+With `der.pv.trip.enabled: true` the inverters disconnect on over- and under-voltage. Each variant
+draws one over-voltage threshold `OV` and one under-voltage threshold `UV` (pu of the nominal
+voltage), shared by all its units and recorded as `pv_trip` in `variants/variants.perturbation`:
+
+- `mode: union` (default): `OV` from `ov_pu`, uniform over {1.10, 1.14}, and `UV` from `uv_pu`,
+  uniform over {0.70, 0.80, 0.85, 0.88}, drawn independently, each from its own stream. Either
+  can be any value spec, every `UV` value below every `OV` value.
+- `mode: national`: the settings of the network's country, the catalog `country` of its source
+  ([Networks](networks.md#sources-and-the-cache)): GB `OV` 1.14, `UV` 0.80; US `OV` 1.10, `UV`
+  0.70 with probability 2/3 and 0.88 with 1/3, the defaults of IEEE 1547-2018 Categories I, II
+  and III drawn uniformly, since the standard leaves the category to the area operator. The EDP
+  networks (Portugal) are a config error: no public national setpoint was found.
+
+**What a unit reads.** The voltages across its own terminals, each per unit of its nominal: phase
+to neutral where the unit connects to a neutral conductor (the four-wire feeders), phase to ground
+where its neutral is the ground (Kron-reduced and MV feeders), phase to phase for a delta unit.
+A wye unit on several phases also reads its phase-to-phase voltages, as EN 50549-1 (4.9.3)
+measures every phase-to-phase and phase-to-neutral voltage; a unit trips when any of them is
+above `OV` or below `UV`. The nominal is the phase node's nominal line-to-neutral voltage
+(`variants/nodes.kv_nominal_ln`, else its base, as for the voltage limits), √3 times it between
+two phases and 2 times it across the two halves of a split-phase service (240 V on IEEE 8500).
+
+**The label.** A converged solve at its setpoints is checked: every unit beyond a threshold trips,
+all at once, to `p = q = 0` (its available power `p_avail_w` kept). The scenario is then solved
+again from the start, its controls settled from the variant's compiled state with the same tap
+jitter ([Controls](#controls)), until no unit is added. A tripped unit stays out even if its
+voltage comes back within the thresholds (latched): an inverter reconnects only after a delay,
+which a snapshot does not have. The tripped set only grows, so the result does not depend on the
+order of the units. The label is the power flow, at a state the controls hold, of the scenario
+with the tripped units out; `scenarios/der.tripped` flags them and
+`scenario_meta.n_pv_tripped` counts them. A trip is decided on power-flow solutions only: when a
+pass does not converge or is off its setpoints the scenario ends with that status, and after a trip
+`pf_message` says how many units tripped. Each pass is one more settling and label solve.
+
+**A snapshot, not a protection study.** A power flow has no time, so the trip delays are not
+represented: a unit beyond a threshold in a solved state is taken to have tripped. The thresholds
+are therefore the effective ones of a steady state: the lowest over-voltage setting, the
+10-minute mean included (a voltage that holds is held for ten minutes), and the highest
+under-voltage setting. The settings behind the defaults:
+
+| Profile | `OV` | `UV` | Source (as read) |
+|---|---|---|---|
+| IEEE 1547-2018, Categories I and II | 1.10 | 0.70 | Tables 11 and 12, default OV1 and UV1 (via the NRECA and NERC guides) |
+| IEEE 1547-2018, Category III | 1.10 | 0.88 | the same |
+| GB, EREC G98 Issue 2 and G99 Issue 2 (2025) | 1.14 | 0.80 | G98 Table 2, G99 Table 10.1; per phase, phase to neutral (G99 10.6.8) |
+| DE, VDE-AR-N 4105:2018 | 1.10 | 0.80 | 10-minute mean and U<, from two device certificates |
+| IT, CEI 0-21:2022-03 | 1.10 | 0.85 | Table 13, 10-minute mean and U< stage 1 |
+| BE, Synergrid C10/11 ed. 2.4 | 1.10 | 0.70 | Table 9 (0.80 in Table 8, integrated protection up to 30 kVA) |
+
+EN 50549-1:2019 sets only ranges (4.9.2: over-voltage down to 1.0 pu, under-voltage up to
+1.0 pu), whose edges would trip at nominal voltage, so the union is taken over the published
+settings, not over the ranges. The discrete uniform covers each published setting; it does not
+follow how common each is. One pair per variant stands for one setting per network area, as a
+national code or an area operator gives; mixed settings within a feeder are not drawn. Volt-watt
+curtailment is not modelled. Trip and OPF labels exclude each other (a config error): the OPF moves
+the voltages a trip was decided on, and within the default voltage limits (at most 1.10) its
+solution would trip no unit, so its labels could not keep the units the power flow tripped.
+
 ## Storage set-points
 
 Each storage unit ([Variants](variants.md#storage)) is fixed at `p = setpoint · kW` per scenario,
@@ -344,7 +404,8 @@ happens:
 | `not_converged` | no converged solution; `pf_message` reports the load ramp if it was tried | no |
 | `error` | an exception; `pf_message` holds its type and message | no |
 
-Setpoints (`scenarios/loads`, `scenarios/der`) are stored for every scenario whose draws were made.
+Setpoints (`scenarios/loads`, `scenarios/der`) are stored for every scenario whose draws were made;
+with `der.pv.trip`, a tripped unit's are zero ([PV voltage trip](#pv-voltage-trip)).
 A sample of scenarios (`settings.residual_sample_rate`, 1 %, chosen by a hash of the scenario id)
 gets the full Kirchhoff residual check of the stored solution; its value is recorded in
 `residual_rel` and does not change `pf_status`.
