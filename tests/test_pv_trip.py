@@ -28,13 +28,15 @@ from gridfm_datakit_distr.engine.context import SolveStatus
 from gridfm_datakit_distr.model.electrical import GROUND
 from gridfm_datakit_distr.networks.catalog import ArchivesSource, Catalog, Network
 from gridfm_datakit_distr.networks.prepare import prepare_network
-from gridfm_datakit_distr.scenarios.der import pair_base_v, protection_pairs
+from gridfm_datakit_distr.scenarios.controls import MAX_CONTROL_ITER, read_state
+from gridfm_datakit_distr.scenarios.der import VoltageTrip, pair_base_v, protection_pairs
 from gridfm_datakit_distr.solve.executor import GenerationError, generate, jobs_of
 from gridfm_datakit_distr.solve.pf_batch import VariantRunner, prepare_options
 from gridfm_datakit_distr.variants.generate import generate_variant
 from gridfm_datakit_distr.variants.perturbation import sample_perturbation
 from gridfm_datakit_distr.variants.targets import collect_targets
 from tests.circuits import (
+    CONTROLLED,
     DG_FEEDER,
     OPF_DEVICES,
     OPF_LOADS,
@@ -146,6 +148,12 @@ def test_a_unit_trips_beyond_either_threshold_on_any_pair(tmp_path: Path) -> Non
     one = v.copy()
     one[first] *= 1.2  # only the first unit reads this node
     assert r.trip.beyond(one).tolist() == [True] + [False] * (n_units - 1)
+    # strict: a voltage exactly at a threshold does not trip (2 x nominal is exact in floating
+    # point; every unit here reads phase to neutral)
+    exact = np.array([0.0 if n.conductor == "n" else 2.0 * n.nominal_v_ln for n in r.model.nodes])
+    assert not VoltageTrip(r.model, r.pv.units, 2.0, 0.5).beyond(exact).any()
+    assert not VoltageTrip(r.model, r.pv.units, 3.0, 2.0).beyond(exact).any()
+    assert VoltageTrip(r.model, r.pv.units, np.nextafter(2.0, 0.0), 0.5).beyond(exact).all()
 
 
 # ------------------------------------------------------------------- the loop
@@ -203,6 +211,39 @@ def test_the_label_is_the_engine_state_with_the_tripped_units_at_zero(tmp_path: 
         api.Circuit.SetActiveElement(unit.generator)
         assert float(np.abs(np.asarray(api.CktElement.Powers())).sum()) == 0.0
     assert o.n_off_setpoint == 0
+
+
+def test_a_trip_resettles_the_controls(tmp_path: Path) -> None:
+    """With a compensated regulator and a switched capacitor: every label is a state the controls
+    hold with the tripped units out (a trip at the frozen taps would leave states they move), and
+    only the last pass of a scenario reaches the states."""
+    trip = {"enabled": True, "ov_pu": 1.0, "uv_pu": 0.5}
+    cfg = config(
+        der={"pv": {"penetration": 1.0, "kwp": 1000.0, "trip": trip}},
+        scenarios={"n_scenarios_per_variant": 30, "source_voltage_pu": 1.0},
+        controls={"mode": "static_settle"},
+    )
+    # line-drop compensation: the regulator sees the current the unit's trip removes
+    ldc = {"master.dss": CONTROLLED["master.dss"].replace("ptratio=60", "ptratio=60 R=10 X=10")}
+    r = runner(tmp_path, cfg, ldc)
+    assert r.trip is not None
+    ctx, outcomes = r.ctx, []
+    for s in range(30):
+        o = r.run(s)
+        outcomes.append(o)
+        if o.pf_status != "converged":
+            continue
+        ctx.command(f"Set ControlMode=STATIC MaxControlIter={MAX_CONTROL_ITER}")
+        ctx.command("Set Mode=Snap")
+        assert ctx.solve().converged
+        assert read_state(ctx, r.variant_id, "static_settle").state_id == o.state_id
+        ctx.command("Set ControlMode=OFF")
+    tripped = [o for o in outcomes if o.pv_tripped is not None and o.pv_tripped.any()]
+    assert tripped
+    assert any(o.pf_status == "converged" for o in tripped)
+    referenced = {o.state_id for o in outcomes if o.state_id is not None}
+    assert sum(r.registry.counts.values()) == sum(o.state_id is not None for o in outcomes)
+    assert set(r.new_states()) <= referenced
 
 
 def test_the_trip_is_deterministic_and_order_free(tmp_path: Path) -> None:
@@ -378,6 +419,7 @@ def test_the_dataset_records_the_trip(tmp_path: Path, enabled: bool) -> None:
     variants = pq.read_table(out / "variants" / "variants").to_pylist()
     passport = json.loads((out / "catalog" / "passports" / "t" / "lv.json").read_text())
     assert passport["country"] == "GB"
+    assert [n["country"] for n in manifest.networks] == ["GB", "GB"]
     if not enabled:
         assert all(d["tripped"] is None for d in der)
         assert all(m["n_pv_tripped"] is None for m in meta)
