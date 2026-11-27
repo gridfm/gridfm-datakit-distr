@@ -349,18 +349,20 @@ def test_national_settings_by_country() -> None:
     ov, uv = trip.settings("US")
     assert ov == Fixed(1.10)
     assert uv.support() == (0.70, 0.88)
-    with pytest.raises(ValueError, match="no public national setpoint was found for Portugal"):
-        trip.settings("PT")
+    with pytest.raises(ValueError, match="no Spanish national setting read yet"):
+        trip.settings("ES")
     union = PVTrip.model_validate({"enabled": True})
-    assert union.settings("PT") == (TRIP_OV_UNION, TRIP_UV_UNION)
+    assert union.settings("ES") == (TRIP_OV_UNION, TRIP_UV_UNION)
 
 
-def test_national_on_a_portuguese_network_is_a_config_error() -> None:
+def test_national_on_a_spanish_network_is_a_config_error() -> None:
     data = {
         **BASE, "networks": {"include": ["edp/rural", "ieee13"]},
         "der": {"pv": {"trip": {"enabled": True, "mode": "national"}}},
     }  # fmt: skip
-    with pytest.raises(ConfigError, match=r"der\.pv\.trip\.mode: edp/rural: .*Portugal"):
+    with pytest.raises(
+        ConfigError, match=r"der\.pv\.trip\.mode: edp/rural: .*no Spanish national setting"
+    ):
         validate_config(data)
     data["networks"] = {"include": ["ieee13", "csiro_enwl/n01_f1"]}
     assert validate_config(data).der.pv.trip.mode == "national"
@@ -373,8 +375,10 @@ def test_generate_refuses_national_without_settings(tmp_path: Path) -> None:
     """The executor checks too: ``generate`` is called without ``load_config`` in tests and
     scripts."""
     cfg = config(der={"pv": {"trip": {"enabled": True, "mode": "national"}}})
-    with pytest.raises(GenerationError, match=r"t/lv: der\.pv\.trip mode 'national': .*Portugal"):
-        jobs_of(cfg, catalog(tmp_path, "PT"))
+    with pytest.raises(
+        GenerationError, match=r"t/lv: der\.pv\.trip mode 'national': no Spanish national setting"
+    ):
+        jobs_of(cfg, catalog(tmp_path, "ES"))
     assert [j.pv_trip for j in jobs_of(cfg, catalog(tmp_path, "GB"))] == [TRIP_NATIONAL["GB"]]
 
 

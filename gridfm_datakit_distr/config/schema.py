@@ -345,10 +345,7 @@ TRIP_NATIONAL: dict[str, tuple[ValueSpec, ValueSpec]] = {
 }
 """(OV, UV) settings per catalog country: GB, G98 and G99 Issue 2 (2025); US, the IEEE 1547-2018
 defaults, uniform over Categories I, II, III (the area operator chooses the category)."""
-TRIP_NO_NATIONAL = {
-    "PT": "no public national setpoint was found for Portugal (E-REDES: the setpoints are "
-    "supplied by the distribution network operator; its manual defers to a DGEG guide)",
-}
+TRIP_NO_NATIONAL = {"ES": "no Spanish national setting read yet"}
 """Why a catalog country has no national settings."""
 
 
@@ -372,7 +369,7 @@ class PVTrip(_Config):
         "settings of the network's country (catalog `country`): GB 1.14 and 0.80 (G98 and G99 "
         "Issue 2); US 1.10 and the IEEE 1547-2018 category defaults uniform over Categories I, "
         "II and III (0.70 with weight 2/3, 0.88 with 1/3). A selected network of another "
-        "country is a config error (Portugal: no public national setpoint was found).",
+        "country is a config error (ES, the EDP networks: no Spanish national setting read yet).",
     )
     ov_pu: PositiveSpec = Field(
         default=TRIP_OV_UNION,

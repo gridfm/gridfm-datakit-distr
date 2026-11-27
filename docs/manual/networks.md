@@ -17,7 +17,7 @@ cache and verifies every file against its SHA-256 manifest. Every network carrie
 citation in its passport and in the dataset card.
 
 Each source has a `country` (ISO 3166-1 alpha-2, in the passport): `epri_ieee` US (test cases,
-labelled by the country of their standard), `csiro_enwl` GB, `edp` PT. It picks the national
+labelled by the country of their standard), `csiro_enwl` GB, `edp` ES. It picks the national
 inverter trip settings ([Scenarios](scenarios.md#pv-voltage-trip)).
 
 ## How a network is prepared

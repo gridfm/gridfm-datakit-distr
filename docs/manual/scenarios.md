@@ -245,9 +245,7 @@ voltage), shared by all its units and recorded as `pv_trip` in `variants/variant
   ([Networks](networks.md#sources-and-the-cache)): GB `OV` 1.14, `UV` 0.80; US `OV` 1.10, `UV`
   0.70 with probability 2/3 and 0.88 with 1/3, the defaults of IEEE 1547-2018 Categories I, II
   and III drawn uniformly, since the standard leaves the category to the area operator. The EDP
-  networks (catalog country PT) are a config error: no public Portuguese national setpoint was
-  found (E-REDES says the setpoints are supplied by the distribution network operator, and its
-  manual defers to a DGEG guide).
+  networks (catalog country ES) are a config error: no Spanish national setting read yet.
 
 **What a unit reads.** The voltages across its own terminals, each per unit of its nominal: phase
 to neutral where the unit connects to a neutral conductor (the four-wire feeders), phase to ground
