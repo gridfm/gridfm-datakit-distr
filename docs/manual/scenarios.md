@@ -245,7 +245,9 @@ voltage), shared by all its units and recorded as `pv_trip` in `variants/variant
   ([Networks](networks.md#sources-and-the-cache)): GB `OV` 1.14, `UV` 0.80; US `OV` 1.10, `UV`
   0.70 with probability 2/3 and 0.88 with 1/3, the defaults of IEEE 1547-2018 Categories I, II
   and III drawn uniformly, since the standard leaves the category to the area operator. The EDP
-  networks (Portugal) are a config error: no public national setpoint was found.
+  networks (catalog country PT) are a config error: no public Portuguese national setpoint was
+  found (E-REDES says the setpoints are supplied by the distribution network operator, and its
+  manual defers to a DGEG guide).
 
 **What a unit reads.** The voltages across its own terminals, each per unit of its nominal: phase
 to neutral where the unit connects to a neutral conductor (the four-wire feeders), phase to ground
@@ -281,7 +283,7 @@ under-voltage setting. The settings behind the defaults:
 | GB, EREC G98 Issue 2 and G99 Issue 2 (2025) | 1.14 | 0.80 | G98 Table 2, G99 Table 10.1; per phase, phase to neutral (G99 10.6.8) |
 | DE, VDE-AR-N 4105:2018 | 1.10 | 0.80 | 10-minute mean and U<, from two device certificates |
 | IT, CEI 0-21:2022-03 | 1.10 | 0.85 | Table 13, 10-minute mean and U< stage 1 |
-| BE, Synergrid C10/11 ed. 2.4 | 1.10 | 0.70 | Table 9 (0.80 in Table 8, integrated protection up to 30 kVA) |
+| BE, C10/11 ed. 2.4 | 1.10 | 0.70 | Table 9 (0.80 in Table 8, integrated protection up to 30 kVA) |
 
 EN 50549-1:2019 sets only ranges (4.9.2: over-voltage down to 1.0 pu, under-voltage up to
 1.0 pu), whose edges would trip at nominal voltage, so the union is taken over the published

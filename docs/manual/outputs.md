@@ -45,7 +45,9 @@ This document is the contract between the generator and its consumers (models, b
 ```
 <data_dir>/<dataset_name>/
   manifest.json                    # schema_version, config_hash, versions, config (resolved, with
-                                   # the seed), networks (with OPF labels: opf_not_supported; with
+                                   # the seed), networks (country, the catalog country of the
+                                   # network's source; with OPF labels: opf_not_supported; with
+                                   # der.pv.trip: pv_trip; with
                                    # der.dg: dg, the capacity of the dispatchable generators;
                                    # with PVGIS: pvgis, the network's PV series: request URL,
                                    # databases and angles used, SHA-256, attribution; with

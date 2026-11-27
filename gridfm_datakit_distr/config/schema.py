@@ -346,8 +346,8 @@ TRIP_NATIONAL: dict[str, tuple[ValueSpec, ValueSpec]] = {
 """(OV, UV) settings per catalog country: GB, G98 and G99 Issue 2 (2025); US, the IEEE 1547-2018
 defaults, uniform over Categories I, II, III (the area operator chooses the category)."""
 TRIP_NO_NATIONAL = {
-    "PT": "no public national setpoint was found for Portugal (E-REDES leaves the low-voltage "
-    "setpoints to the network operator)",
+    "PT": "no public national setpoint was found for Portugal (E-REDES: the setpoints are "
+    "supplied by the distribution network operator; its manual defers to a DGEG guide)",
 }
 """Why a catalog country has no national settings."""
 

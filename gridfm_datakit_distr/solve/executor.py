@@ -278,6 +278,7 @@ def _network_tables(
     for j, job in enumerate(jobs):
         prepared = prepare_network(job.network, options, root)
         passport = build_passport(prepared, catalog)
+        manifest.networks[j]["country"] = passport["country"]
         if pv_profile.provider == "pvgis":
             record = series_record(pv_profile.pvgis, job.network.id, root)
             started = manifest.networks[j].get("pvgis", record)
