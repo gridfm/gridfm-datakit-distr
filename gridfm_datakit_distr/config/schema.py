@@ -333,20 +333,20 @@ class Variants(_Config):
 
 TRIP_OV_UNION = Choice((1.10, 1.14), (0.5, 0.5))
 """Effective over-voltage trip settings (pu of nominal) of the published profiles: 1.10 (IEEE
-1547-2018 Categories I-III; the 10-min mean of VDE-AR-N 4105, CEI 0-21 and C10/11), 1.14 (G98 and
-G99 Issue 2)."""
+1547-2018 Categories I-III; RD 1699/2011 art. 14.1.d) Table 1; the 10-min mean of VDE-AR-N 4105,
+CEI 0-21 and C10/11), 1.14 (G98 and G99 Issue 2)."""
 TRIP_UV_UNION = Choice((0.70, 0.80, 0.85, 0.88), (0.25, 0.25, 0.25, 0.25))
 """Effective under-voltage trip settings (pu of nominal): 0.70 (IEEE 1547-2018 Categories I and
-II, C10/11 Table 9), 0.80 (G98/G99 Issue 2, VDE-AR-N 4105, C10/11 Table 8), 0.85 (CEI 0-21), 0.88
-(IEEE 1547-2018 Category III)."""
+II, C10/11 Table 9), 0.80 (G98/G99 Issue 2, VDE-AR-N 4105, C10/11 Table 8), 0.85 (CEI 0-21,
+RD 1699/2011), 0.88 (IEEE 1547-2018 Category III)."""
 TRIP_NATIONAL: dict[str, tuple[ValueSpec, ValueSpec]] = {
     "GB": (Fixed(1.14), Fixed(0.80)),
     "US": (Fixed(1.10), Choice((0.70, 0.88), (2 / 3, 1 / 3))),
+    "ES": (Fixed(1.10), Fixed(0.85)),
 }
 """(OV, UV) settings per catalog country: GB, G98 and G99 Issue 2 (2025); US, the IEEE 1547-2018
-defaults, uniform over Categories I, II, III (the area operator chooses the category)."""
-TRIP_NO_NATIONAL = {"ES": "no Spanish national setting read yet"}
-"""Why a catalog country has no national settings."""
+defaults, uniform over Categories I, II, III (the area operator chooses the category); ES, RD
+1699/2011 art. 14.1.d) Table 1 as amended by RD 647/2020 (OV1 and UV; no 10-min stage)."""
 
 
 class PVTrip(_Config):
@@ -368,14 +368,15 @@ class PVTrip(_Config):
         description="`union`: the thresholds drawn from `ov_pu` and `uv_pu`. `national`: the "
         "settings of the network's country (catalog `country`): GB 1.14 and 0.80 (G98 and G99 "
         "Issue 2); US 1.10 and the IEEE 1547-2018 category defaults uniform over Categories I, "
-        "II and III (0.70 with weight 2/3, 0.88 with 1/3). A selected network of another "
-        "country is a config error (ES, the EDP networks: no Spanish national setting read yet).",
+        "II and III (0.70 with weight 2/3, 0.88 with 1/3); ES 1.10 and 0.85 (RD 1699/2011 art. "
+        "14.1.d) Table 1). A selected network of another country is a config error.",
     )
     ov_pu: PositiveSpec = Field(
         default=TRIP_OV_UNION,
         description="Over-voltage threshold (pu of the nominal voltage), drawn per variant with "
         "`mode: union`. Default: uniform over the effective settings of the published profiles "
-        "(IEEE 1547-2018, G98/G99, VDE-AR-N 4105, CEI 0-21, C10/11), 1.10 and 1.14.",
+        "(IEEE 1547-2018, G98/G99, RD 1699/2011, VDE-AR-N 4105, CEI 0-21, C10/11), 1.10 and "
+        "1.14.",
     )
     uv_pu: PositiveSpec = Field(
         default=TRIP_UV_UNION,
@@ -401,8 +402,7 @@ class PVTrip(_Config):
             return self.ov_pu, self.uv_pu
         if country in TRIP_NATIONAL:
             return TRIP_NATIONAL[country]
-        reason = TRIP_NO_NATIONAL.get(str(country), f"no national settings for {country!r}")
-        raise ValueError(f"mode 'national': {reason}; use mode 'union'")
+        raise ValueError(f"mode 'national': no national settings for {country!r}; use mode 'union'")
 
 
 class PV(_Config):

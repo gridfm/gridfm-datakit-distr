@@ -244,8 +244,8 @@ voltage), shared by all its units and recorded as `pv_trip` in `variants/variant
 - `mode: national`: the settings of the network's country, the catalog `country` of its source
   ([Networks](networks.md#sources-and-the-cache)): GB `OV` 1.14, `UV` 0.80; US `OV` 1.10, `UV`
   0.70 with probability 2/3 and 0.88 with 1/3, the defaults of IEEE 1547-2018 Categories I, II
-  and III drawn uniformly, since the standard leaves the category to the area operator. The EDP
-  networks (catalog country ES) are a config error: no Spanish national setting read yet.
+  and III drawn uniformly, since the standard leaves the category to the area operator; ES `OV`
+  1.10, `UV` 0.85. A network of a country without national settings is a config error.
 
 **What a unit reads.** The voltages across its own terminals, each per unit of its nominal: phase
 to neutral where the unit connects to a neutral conductor (the four-wire feeders), phase to ground
@@ -279,6 +279,7 @@ under-voltage setting. The settings behind the defaults:
 | IEEE 1547-2018, Categories I and II | 1.10 | 0.70 | Tables 11 and 12, default OV1 and UV1 (via the NRECA and NERC guides) |
 | IEEE 1547-2018, Category III | 1.10 | 0.88 | the same |
 | GB, EREC G98 Issue 2 and G99 Issue 2 (2025) | 1.14 | 0.80 | G98 Table 2, G99 Table 10.1; per phase, phase to neutral (G99 10.6.8) |
+| ES, RD 1699/2011 as amended by RD 647/2020 | 1.10 | 0.85 | art. 14.1.d) Table 1, OV1 (OV2 1.15) and UV; no 10-minute stage; the article names the voltage between phases |
 | DE, VDE-AR-N 4105:2018 | 1.10 | 0.80 | 10-minute mean and U<, from two device certificates |
 | IT, CEI 0-21:2022-03 | 1.10 | 0.85 | Table 13, 10-minute mean and U< stage 1 |
 | BE, C10/11 ed. 2.4 | 1.10 | 0.70 | Table 9 (0.80 in Table 8, integrated protection up to 30 kVA) |

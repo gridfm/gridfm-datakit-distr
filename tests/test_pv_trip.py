@@ -349,26 +349,36 @@ def test_national_settings_by_country() -> None:
     ov, uv = trip.settings("US")
     assert ov == Fixed(1.10)
     assert uv.support() == (0.70, 0.88)
-    with pytest.raises(ValueError, match="no Spanish national setting read yet"):
-        trip.settings("ES")
+    assert trip.settings("ES") == (Fixed(1.10), Fixed(0.85))
+    with pytest.raises(ValueError, match="no national settings for 'PT'"):
+        trip.settings("PT")
     union = PVTrip.model_validate({"enabled": True})
     assert union.settings("ES") == (TRIP_OV_UNION, TRIP_UV_UNION)
 
 
-def test_national_on_a_spanish_network_is_a_config_error() -> None:
+def test_national_settings_cover_the_catalog_and_refuse_other_countries(tmp_path: Path) -> None:
+    from gridfm_datakit_distr.networks.catalog import load_catalog
+
+    national = {"pv": {"trip": {"enabled": True, "mode": "national"}}}
     data = {
-        **BASE, "networks": {"include": ["edp/rural", "ieee13"]},
-        "der": {"pv": {"trip": {"enabled": True, "mode": "national"}}},
+        **BASE, "networks": {"include": ["edp/rural", "ieee13", "csiro_enwl/n01_f1"]},
+        "der": national,
     }  # fmt: skip
+    cfg = validate_config(data)
+    jobs = {j.network.id: j.pv_trip for j in jobs_of(cfg, load_catalog())}
+    assert jobs == {
+        "csiro_enwl/n01_f1": TRIP_NATIONAL["GB"],
+        "edp/rural": TRIP_NATIONAL["ES"],
+        "ieee13": TRIP_NATIONAL["US"],
+    }
+    data["networks"] = {"include": ["t/*"]}
+    other = catalog(tmp_path, "XX")
     with pytest.raises(
-        ConfigError, match=r"der\.pv\.trip\.mode: edp/rural: .*no Spanish national setting"
+        ConfigError, match=r"der\.pv\.trip\.mode: t/dg, t/lv: .*no national settings for 'XX'"
     ):
-        validate_config(data)
-    data["networks"] = {"include": ["ieee13", "csiro_enwl/n01_f1"]}
-    assert validate_config(data).der.pv.trip.mode == "national"
+        validate_config(data, catalog=other)
     data["der"] = {"pv": {"trip": {"enabled": True}}}  # union: any country
-    data["networks"] = {"include": ["edp/rural"]}
-    validate_config(data)
+    validate_config(data, catalog=other)
 
 
 def test_generate_refuses_national_without_settings(tmp_path: Path) -> None:
@@ -376,10 +386,10 @@ def test_generate_refuses_national_without_settings(tmp_path: Path) -> None:
     scripts."""
     cfg = config(der={"pv": {"trip": {"enabled": True, "mode": "national"}}})
     with pytest.raises(
-        GenerationError, match=r"t/lv: der\.pv\.trip mode 'national': no Spanish national setting"
+        GenerationError, match=r"t/lv: der\.pv\.trip mode 'national': no national settings for 'XX'"
     ):
-        jobs_of(cfg, catalog(tmp_path, "ES"))
-    assert [j.pv_trip for j in jobs_of(cfg, catalog(tmp_path, "GB"))] == [TRIP_NATIONAL["GB"]]
+        jobs_of(cfg, catalog(tmp_path, "XX"))
+    assert [j.pv_trip for j in jobs_of(cfg, catalog(tmp_path, "ES"))] == [TRIP_NATIONAL["ES"]]
 
 
 @pytest.mark.parametrize(
