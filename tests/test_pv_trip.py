@@ -440,3 +440,62 @@ def test_the_dataset_records_the_trip(tmp_path: Path, enabled: bool) -> None:
     assert {m["scenario_id"]: m["n_pv_tripped"] for m in meta} == {
         m["scenario_id"]: per_scenario.get(m["scenario_id"], 0) for m in meta
     }
+
+
+def test_oriented_units_trip_from_their_class_series(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With per-unit orientation each unit's available power comes from its class's series; a
+    tripped unit keeps it in ``p_avail_w`` and is zero in the label, the others inject it."""
+    from typer.testing import CliRunner
+
+    from gridfm_datakit_distr.cli import app
+    from gridfm_datakit_distr.networks import catalog as catalog_module
+    from gridfm_datakit_distr.scenarios import pvgis
+    from tests.test_executor import CONFIG
+    from tests.test_executor import catalog as test_catalog
+    from tests.test_pv_orientation import ORIENTED, answer, class_power
+    from tests.test_pvgis import LONDON, series
+
+    data = copy.deepcopy(CONFIG)
+    data["der"] = {"pv": {"penetration": 1.0, "kwp": 30.0, "trip": TRIP}}
+    data["settings"]["float_precision"] = "full"
+    section = {**ORIENTED, "startyear": 2020, "endyear": 2020, "locations": {"t/*": LONDON}}
+    data["scenarios"]["pv_profile"] = {"provider": "pvgis", "pvgis": section}
+    data["scenarios"]["source_voltage_pu"] = {"distribution": "uniform", "low": 1.0, "high": 1.12}
+    config_path = tmp_path / "c.yaml"
+    config_path.write_text(json.dumps(data))  # JSON is YAML
+    monkeypatch.setattr(pvgis.urllib.request, "urlopen", lambda r, timeout: answer(r))
+    monkeypatch.setattr(catalog_module, "load_catalog", lambda: test_catalog(tmp_path))
+    fetched = CliRunner().invoke(
+        app, ["fetch", "--config", str(config_path), "--cache", str(tmp_path)]
+    )
+    assert fetched.exit_code == 0, fetched.output
+    out = tmp_path / "out"
+    generate(
+        GenerationConfig.model_validate(data), out, catalog=test_catalog(tmp_path), root=tmp_path
+    )
+
+    meta = pq.read_table(out / "scenarios" / "scenario_meta").to_pylist()
+    der = pq.read_table(out / "scenarios" / "der").to_pylist()
+    variants = {
+        v["variant_id"]: json.loads(v["perturbation"])
+        for v in pq.read_table(out / "variants" / "variants").to_pylist()
+    }
+    start, states = series().start_s, Counter()
+    for m in meta:
+        drawn = variants[m["variant_id"]]
+        kwp, classes = drawn["pv_kwp"], drawn["pv_orientation"]
+        i = (m["pv_time_utc_s"] - start) // 3600
+        rows = [r for r in der if r["scenario_id"] == m["scenario_id"] and r["der_type"] == "pv"]
+        expected = [kwp[e] * class_power(*classes[e])(i) for e in sorted(kwp)]
+        assert [r["p_avail_w"] for r in rows] == expected
+        for r in rows:
+            states[r["tripped"]] += 1
+            if r["tripped"]:
+                assert r["p_w"] == r["q_var"] == 0.0
+            else:
+                assert r["p_w"] == min(r["p_avail_w"], r["s_rated_va"])
+        assert m["n_pv_tripped"] == sum(r["tripped"] for r in rows)
+    assert states[True] > 0
+    assert states[False] > 0
